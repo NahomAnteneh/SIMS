@@ -16,7 +16,17 @@ type Metrics struct {
 	RequestsTotal   *prometheus.CounterVec
 	RequestDuration *prometheus.HistogramVec
 	BuildInfo       *prometheus.GaugeVec
-	serviceName     string
+
+	// Collector & Persistence Metrics
+	HydrationDuration     *prometheus.HistogramVec
+	HydrationObjectsTotal *prometheus.CounterVec
+	BatchSize             *prometheus.HistogramVec
+	FlushDuration         *prometheus.HistogramVec
+	CopyDuration          *prometheus.HistogramVec
+	MergeDuration         *prometheus.HistogramVec
+	CompactionRatio       *prometheus.HistogramVec
+
+	serviceName string
 }
 
 // NewMetrics initializes Prometheus metrics for the given service.
@@ -52,18 +62,94 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"service", "version"},
 	)
 
+	hydrationDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_hydration_duration_seconds",
+			Help:    "Duration of vSphere inventory hydration runs.",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	hydrationObjectsTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_hydration_objects_total",
+			Help: "Total count of objects hydrated from vSphere.",
+		},
+		[]string{"vcenter_id", "kind"},
+	)
+
+	batchSize := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_persistence_batch_size",
+			Help:    "Number of records in persistence flush batches.",
+			Buckets: []float64{10, 50, 100, 250, 500, 1000, 2500, 5000},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	flushDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_persistence_flush_duration_seconds",
+			Help:    "Total wall-clock duration of persistence batch flush.",
+			Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	copyDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_persistence_copy_duration_seconds",
+			Help:    "Duration of binary COPY FROM STDIN to staging table.",
+			Buckets: []float64{0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	mergeDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_persistence_merge_duration_seconds",
+			Help:    "Duration of set-based merge from staging into production tables.",
+			Buckets: []float64{0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	compactionRatio := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_persistence_compaction_ratio",
+			Help:    "Ratio of deduplicated records in batch compaction: (raw - compacted) / raw.",
+			Buckets: []float64{0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 0.9},
+		},
+		[]string{"vcenter_id"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
+	reg.MustRegister(hydrationDuration)
+	reg.MustRegister(hydrationObjectsTotal)
+	reg.MustRegister(batchSize)
+	reg.MustRegister(flushDuration)
+	reg.MustRegister(copyDuration)
+	reg.MustRegister(mergeDuration)
+	reg.MustRegister(compactionRatio)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
 	return &Metrics{
-		Registry:        reg,
-		RequestsTotal:   requestsTotal,
-		RequestDuration: requestDuration,
-		BuildInfo:       buildInfo,
-		serviceName:     serviceName,
+		Registry:              reg,
+		RequestsTotal:         requestsTotal,
+		RequestDuration:       requestDuration,
+		BuildInfo:             buildInfo,
+		HydrationDuration:     hydrationDuration,
+		HydrationObjectsTotal: hydrationObjectsTotal,
+		BatchSize:             batchSize,
+		FlushDuration:         flushDuration,
+		CopyDuration:          copyDuration,
+		MergeDuration:         mergeDuration,
+		CompactionRatio:       compactionRatio,
+		serviceName:           serviceName,
 	}
 }
 
