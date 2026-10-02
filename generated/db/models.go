@@ -178,6 +178,14 @@ type VirtualMachine struct {
 	UpdatedAt       pgtype.Timestamptz
 }
 
+type VmCustomAttribute struct {
+	ID        int64
+	VmID      pgtype.UUID
+	Name      string
+	Value     string
+	CreatedAt pgtype.Timestamptz
+}
+
 type VmDatastore struct {
 	VmID        pgtype.UUID
 	DatastoreID pgtype.UUID
@@ -194,4 +202,13 @@ type VmNetworkInterface struct {
 	VlanIds     pgtype.Multirange[pgtype.Range[pgtype.Int4]]
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+}
+
+type VmTag struct {
+	ID           int64
+	VmID         pgtype.UUID
+	TagID        string
+	CategoryName string
+	TagName      string
+	CreatedAt    pgtype.Timestamptz
 }
