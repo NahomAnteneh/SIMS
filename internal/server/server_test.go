@@ -72,6 +72,12 @@ func TestCoreEndpoints(t *testing.T) {
 
 	// Test /metrics
 	t.Run("GET /metrics returns prometheus text", func(t *testing.T) {
+		// Exercise the tag and attribute metrics
+		srv.Metrics.TagFetchDuration.WithLabelValues("vc-1").Observe(0.123)
+		srv.Metrics.TagFetchFailures.WithLabelValues("vc-1").Inc()
+		srv.Metrics.TagsPersisted.WithLabelValues("vc-1").Add(10)
+		srv.Metrics.CustomAttributesPersisted.WithLabelValues("vc-1").Add(5)
+
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 		rec := httptest.NewRecorder()
 		srv.Mux.ServeHTTP(rec, req)
@@ -82,6 +88,18 @@ func TestCoreEndpoints(t *testing.T) {
 		body := rec.Body.String()
 		if !strings.Contains(body, "sims_build_info") {
 			t.Errorf("expected sims_build_info in metrics, got:\n%s", body)
+		}
+		if !strings.Contains(body, "sims_tag_fetch_duration_seconds") {
+			t.Errorf("expected sims_tag_fetch_duration_seconds in metrics, got:\n%s", body)
+		}
+		if !strings.Contains(body, "sims_tag_fetch_failures_total") {
+			t.Errorf("expected sims_tag_fetch_failures_total in metrics, got:\n%s", body)
+		}
+		if !strings.Contains(body, "sims_tags_persisted_total") {
+			t.Errorf("expected sims_tags_persisted_total in metrics, got:\n%s", body)
+		}
+		if !strings.Contains(body, "sims_custom_attributes_persisted_total") {
+			t.Errorf("expected sims_custom_attributes_persisted_total in metrics, got:\n%s", body)
 		}
 	})
 }
