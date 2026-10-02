@@ -8,7 +8,7 @@ SQLC := $(BIN_DIR)/sqlc
 GOOSE := $(BIN_DIR)/goose
 GOVULNCHECK := $(BIN_DIR)/govulncheck
 
-.PHONY: all help format lint test-unit test-race build clean
+.PHONY: all help format lint test test-unit test-race build clean
 .PHONY: sqlc-generate sqlc-verify test-migration test-db-integration test-vcsim-integration
 .PHONY: vulncheck container-build dev-up dev-down dev-reset tools
 
@@ -33,6 +33,8 @@ format: ## Format all Go source files and check formatting
 
 lint: tools ## Run golangci-lint on backend code
 	$(GOLANGCI_LINT) run ./...
+
+test: test-unit ## Alias for test-unit
 
 test-unit: ## Run unit tests with standard timeout
 	$(GO) test -v -short ./internal/... ./cmd/...
