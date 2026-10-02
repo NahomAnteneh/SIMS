@@ -50,12 +50,30 @@ func (q *Queries) CountActiveVMsByVCenter(ctx context.Context, vcenterID pgtype.
 	return count, err
 }
 
+const deleteCustomAttributesForVM = `-- name: DeleteCustomAttributesForVM :exec
+DELETE FROM vm_custom_attributes WHERE vm_id = $1
+`
+
+func (q *Queries) DeleteCustomAttributesForVM(ctx context.Context, vmID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteCustomAttributesForVM, vmID)
+	return err
+}
+
 const deleteNetworkInterfacesForVM = `-- name: DeleteNetworkInterfacesForVM :exec
 DELETE FROM vm_network_interfaces WHERE vm_id = $1
 `
 
 func (q *Queries) DeleteNetworkInterfacesForVM(ctx context.Context, vmID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteNetworkInterfacesForVM, vmID)
+	return err
+}
+
+const deleteTagsForVM = `-- name: DeleteTagsForVM :exec
+DELETE FROM vm_tags WHERE vm_id = $1
+`
+
+func (q *Queries) DeleteTagsForVM(ctx context.Context, vmID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTagsForVM, vmID)
 	return err
 }
 
@@ -223,6 +241,38 @@ func (q *Queries) InsertVMNetworkInterface(ctx context.Context, arg InsertVMNetw
 	return i, err
 }
 
+const listCustomAttributesForVM = `-- name: ListCustomAttributesForVM :many
+SELECT id, vm_id, name, value, created_at FROM vm_custom_attributes
+WHERE vm_id = $1
+ORDER BY name ASC
+`
+
+func (q *Queries) ListCustomAttributesForVM(ctx context.Context, vmID pgtype.UUID) ([]VmCustomAttribute, error) {
+	rows, err := q.db.Query(ctx, listCustomAttributesForVM, vmID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VmCustomAttribute
+	for rows.Next() {
+		var i VmCustomAttribute
+		if err := rows.Scan(
+			&i.ID,
+			&i.VmID,
+			&i.Name,
+			&i.Value,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDatastoresForVM = `-- name: ListDatastoresForVM :many
 SELECT d.id, d.vcenter_id, d.datacenter_id, d.moref, d.name, d.type, d.capacity_bytes, d.free_bytes, d.accessible, d.created_at, d.updated_at FROM datastores d
 JOIN vm_datastores vd ON d.id = vd.datastore_id
@@ -288,6 +338,39 @@ func (q *Queries) ListNetworkInterfacesForVM(ctx context.Context, vmID pgtype.UU
 			&i.VlanIds,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTagsForVM = `-- name: ListTagsForVM :many
+SELECT id, vm_id, tag_id, category_name, tag_name, created_at FROM vm_tags
+WHERE vm_id = $1
+ORDER BY category_name ASC, tag_name ASC
+`
+
+func (q *Queries) ListTagsForVM(ctx context.Context, vmID pgtype.UUID) ([]VmTag, error) {
+	rows, err := q.db.Query(ctx, listTagsForVM, vmID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VmTag
+	for rows.Next() {
+		var i VmTag
+		if err := rows.Scan(
+			&i.ID,
+			&i.VmID,
+			&i.TagID,
+			&i.CategoryName,
+			&i.TagName,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

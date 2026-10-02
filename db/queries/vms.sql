@@ -117,3 +117,20 @@ ORDER BY device_key ASC, id ASC;
 
 -- name: DeleteNetworkInterfacesForVM :exec
 DELETE FROM vm_network_interfaces WHERE vm_id = $1;
+
+-- name: ListTagsForVM :many
+SELECT * FROM vm_tags
+WHERE vm_id = $1
+ORDER BY category_name ASC, tag_name ASC;
+
+-- name: DeleteTagsForVM :exec
+DELETE FROM vm_tags WHERE vm_id = $1;
+
+-- name: ListCustomAttributesForVM :many
+SELECT * FROM vm_custom_attributes
+WHERE vm_id = $1
+ORDER BY name ASC;
+
+-- name: DeleteCustomAttributesForVM :exec
+DELETE FROM vm_custom_attributes WHERE vm_id = $1;
+
