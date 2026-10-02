@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/infrastructure/sims/internal/collector"
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/infrastructure/sims/internal/telemetry"
@@ -298,8 +299,12 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 
 			var guestIP any
 			if r.GuestIPAddress != "" {
-				if parsed, err := netip.ParseAddr(r.GuestIPAddress); err == nil {
-					guestIP = parsed
+				addrStr := strings.TrimSpace(r.GuestIPAddress)
+				if idx := strings.Index(addrStr, "%"); idx != -1 {
+					addrStr = addrStr[:idx]
+				}
+				if parsed, err := netip.ParseAddr(addrStr); err == nil {
+					guestIP = parsed.WithZone("")
 				}
 			}
 
@@ -313,10 +318,15 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 				folderPath = r.FolderPath
 			}
 
+			instUUID := strings.TrimSpace(r.InstanceUUID)
+			if instUUID == "" {
+				instUUID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(r.VCenterID+":"+r.MoRef)).String()
+			}
+
 			return []any{
 				r.VCenterID,
 				r.MoRef,
-				r.InstanceUUID,
+				instUUID,
 				biosUUID,
 				r.Name,
 				r.PowerState,
@@ -370,7 +380,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			host_id, cluster_id, datacenter_id, guest_os, guest_host_name,
 			guest_ip_address, annotation, deleted_at, updated_at
 		)
-		SELECT 
+		SELECT DISTINCT ON (vcenter_id, moref)
 			vcenter_id, moref, instance_uuid, bios_uuid, name, power_state,
 			connection_state, cpu_cores, memory_mb, folder_id,
 			CASE WHEN folder_path IS NOT NULL AND folder_path != '' THEN folder_path::ltree ELSE NULL END,
@@ -378,6 +388,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_ip_address, annotation, deleted_at, NOW()
 		FROM staging_vms
 		WHERE deleted_at IS NULL
+		ORDER BY vcenter_id, moref
 		ON CONFLICT (vcenter_id, moref) WHERE deleted_at IS NULL
 		DO UPDATE SET
 			instance_uuid = EXCLUDED.instance_uuid,
@@ -414,6 +425,10 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		}
 		morefToVMID[moref] = id
 		affectedVMIDs = append(affectedVMIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("set-based upsert merge iteration failed: %w", err)
 	}
 	rows.Close()
 
@@ -463,8 +478,12 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			for _, nic := range r.NetworkInterfaces {
 				var parsedIP any
 				if nic.IPAddress != "" {
-					if ip, err := netip.ParseAddr(nic.IPAddress); err == nil {
-						parsedIP = ip
+					addrStr := strings.TrimSpace(nic.IPAddress)
+					if idx := strings.Index(addrStr, "%"); idx != -1 {
+						addrStr = addrStr[:idx]
+					}
+					if ip, err := netip.ParseAddr(addrStr); err == nil {
+						parsedIP = ip.WithZone("")
 					}
 				}
 				var netID, pgID any

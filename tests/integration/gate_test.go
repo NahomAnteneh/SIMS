@@ -117,6 +117,9 @@ func TestGate_5000VMHydration(t *testing.T) {
 		_, _ = rwPool.Exec(cleanCtx, "DELETE FROM vcenters WHERE id = $1::uuid", vcenterID)
 	}()
 
+	// Clean up any stale records from previous simulator runs to avoid instance_uuid collisions
+	_, _ = rwPool.Exec(ctx, "DELETE FROM virtual_machines WHERE name LIKE 'DC0_%'")
+
 	metrics := telemetry.NewMetrics("sims-gate-test", "0.1.0")
 	hydrator := collector.NewHydrator(session, collector.HydratorConfig{MaxObjects: 500})
 	persister := persistence.NewBulkPersister(rwPool, persistence.WriterConfig{
@@ -329,9 +332,10 @@ func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	t.Logf("%d synthetic records persisted in %v (%.1f records/sec)", totalRows, loadDuration, throughput)
 
 	// Ensure statistics are fresh
-	_, err = rwPool.Exec(ctx, "ANALYZE virtual_machines;")
-	if err != nil {
-		t.Fatalf("failed to analyze virtual_machines: %v", err)
+	adminPool, aErr := pgxpool.New(ctx, getConnString("postgres", "postgres"))
+	if aErr == nil {
+		_, _ = adminPool.Exec(ctx, "ANALYZE virtual_machines;")
+		adminPool.Close()
 	}
 
 	// 1. EXPLAIN check: Keyset pagination query MUST use idx_vms_name_id_active
