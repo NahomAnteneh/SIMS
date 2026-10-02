@@ -138,6 +138,21 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 	// Network interfaces extraction with hardware fallback
 	nics := extractNetworkInterfaces(vm, snap)
 
+	// Custom attributes extraction
+	var customAttrs []domain.CustomAttributeRecord
+	if len(vm.CustomValue) > 0 && snap != nil && len(snap.CustomFieldsByKey) > 0 {
+		for _, val := range vm.CustomValue {
+			if strVal, ok := val.(*types.CustomFieldStringValue); ok {
+				if attrName, exists := snap.CustomFieldsByKey[strVal.Key]; exists && attrName != "" && strVal.Value != "" {
+					customAttrs = append(customAttrs, domain.CustomAttributeRecord{
+						Name:  attrName,
+						Value: strVal.Value,
+					})
+				}
+			}
+		}
+	}
+
 	return domain.VMRecord{
 		VCenterID:         vcenterID,
 		MoRef:             moref,
@@ -160,6 +175,7 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 		DatastoreMoRefs:   dsMoRefs,
 		DatastoreIDs:      dsIDs,
 		NetworkInterfaces: nics,
+		CustomAttributes:  customAttrs,
 	}
 }
 

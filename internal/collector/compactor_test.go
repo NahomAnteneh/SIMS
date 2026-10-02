@@ -176,3 +176,44 @@ func TestCompactBatch_UpdateThenDelete(t *testing.T) {
 		t.Errorf("expected name vm-active preserved, got %s", compacted[0].Name)
 	}
 }
+
+func TestCompactBatch_TagsAndCustomAttributes(t *testing.T) {
+	records := []domain.VMRecord{
+		{
+			InstanceUUID: "uuid-tags-1",
+			Name:         "vm-tagged",
+			Tags: []domain.TagRecord{
+				{TagID: "tag-1", CategoryName: "Environment", TagName: "Dev"},
+			},
+			CustomAttributes: []domain.CustomAttributeRecord{
+				{Name: "Owner", Value: "Alice"},
+			},
+		},
+		{
+			InstanceUUID: "uuid-tags-1",
+			Tags: []domain.TagRecord{
+				{TagID: "tag-1", CategoryName: "Environment", TagName: "Dev"},
+				{TagID: "tag-2", CategoryName: "Tier", TagName: "Backend"},
+			},
+			CustomAttributes: []domain.CustomAttributeRecord{
+				{Name: "Owner", Value: "Bob"},
+				{Name: "CostCenter", Value: "1001"},
+			},
+		},
+	}
+
+	compacted := collector.CompactBatch(records)
+	if len(compacted) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(compacted))
+	}
+	res := compacted[0]
+	if len(res.Tags) != 2 {
+		t.Errorf("expected 2 tags, got %d", len(res.Tags))
+	}
+	if len(res.CustomAttributes) != 2 {
+		t.Errorf("expected 2 custom attributes, got %d", len(res.CustomAttributes))
+	}
+	if res.CustomAttributes[0].Value != "Bob" {
+		t.Errorf("expected updated owner Bob, got %s", res.CustomAttributes[0].Value)
+	}
+}

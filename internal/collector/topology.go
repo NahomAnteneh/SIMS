@@ -40,6 +40,9 @@ type TopologySnapshot struct {
 	HostIDByMoRef       map[string]string
 	ClusterIDByMoRef    map[string]string
 	DatacenterIDByMoRef map[string]string
+
+	// Custom fields definitions (key -> field name)
+	CustomFieldsByKey map[int32]string
 }
 
 // NewEmptySnapshot returns an empty, initialized TopologySnapshot.
@@ -62,6 +65,7 @@ func NewEmptySnapshot(vcenterID string) *TopologySnapshot {
 		HostIDByMoRef:       make(map[string]string),
 		ClusterIDByMoRef:    make(map[string]string),
 		DatacenterIDByMoRef: make(map[string]string),
+		CustomFieldsByKey:   make(map[int32]string),
 	}
 }
 

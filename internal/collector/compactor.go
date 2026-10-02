@@ -133,6 +133,12 @@ func mergeRecords(existing, incoming domain.VMRecord) domain.VMRecord {
 	if len(incoming.NetworkInterfaces) > 0 {
 		out.NetworkInterfaces = incoming.NetworkInterfaces
 	}
+	if incoming.Tags != nil {
+		out.Tags = incoming.Tags
+	}
+	if incoming.CustomAttributes != nil {
+		out.CustomAttributes = incoming.CustomAttributes
+	}
 
 	return out
 }
