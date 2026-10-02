@@ -219,10 +219,29 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// 3. Create unlogged/temporary staging table without foreign keys or indexes
+	// 3. Create unlogged/temporary staging table without foreign keys or indexes.
+	// folder_path is typed as TEXT to allow native string streaming via CopyFrom without ltree binary framing.
 	_, err = tx.Exec(ctx, `
 		CREATE TEMP TABLE staging_vms (
-			LIKE virtual_machines INCLUDING DEFAULTS
+			vcenter_id UUID NOT NULL,
+			moref TEXT NOT NULL,
+			instance_uuid TEXT NOT NULL,
+			bios_uuid TEXT,
+			name TEXT NOT NULL,
+			power_state TEXT NOT NULL,
+			connection_state TEXT NOT NULL,
+			cpu_cores INT NOT NULL,
+			memory_mb BIGINT NOT NULL,
+			folder_id UUID,
+			folder_path TEXT,
+			host_id UUID,
+			cluster_id UUID,
+			datacenter_id UUID,
+			guest_os TEXT NOT NULL,
+			guest_host_name TEXT NOT NULL,
+			guest_ip_address inet,
+			annotation TEXT NOT NULL,
+			deleted_at TIMESTAMPTZ
 		) ON COMMIT DROP;
 	`)
 	if err != nil {
@@ -353,7 +372,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		)
 		SELECT 
 			vcenter_id, moref, instance_uuid, bios_uuid, name, power_state,
-			connection_state, cpu_cores, memory_mb, folder_id, folder_path,
+			connection_state, cpu_cores, memory_mb, folder_id,
+			CASE WHEN folder_path IS NOT NULL AND folder_path != '' THEN folder_path::ltree ELSE NULL END,
 			host_id, cluster_id, datacenter_id, guest_os, guest_host_name,
 			guest_ip_address, annotation, deleted_at, NOW()
 		FROM staging_vms

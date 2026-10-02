@@ -63,6 +63,15 @@ test-db-integration: tools ## Run PostgreSQL integration tests (requires Postgre
 test-vcsim-integration: ## Run vcsim simulator integration tests
 	$(GO) test -v -tags=integration ./tests/integration -run TestVCSim
 
+test-integration: tools ## Run all integration tests (database, identity, topology, network, API)
+	$(GO) test -v -tags=integration ./tests/integration -run 'Test(Migrations|Identity|Topology|Network|VLAN|BulkPersistence|API|OpenAPI|VCSim)'
+
+test-gate: tools ## Run Sprint 1 Test Gate (5,000-VM vcsim hydration & 50,000 synthetic DB load)
+	$(GO) test -v -tags=integration -timeout 10m ./tests/integration -run TestGate
+
+demo-s1: tools ## Run Sprint 1 end-to-end demo (starts stack, hydrates 5,000 VMs, queries API)
+	./scripts/demo-s1.sh
+
 vulncheck: tools ## Scan Go dependencies for known vulnerabilities
 	$(GOVULNCHECK) ./...
 

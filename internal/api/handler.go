@@ -67,27 +67,27 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, errTitle, errMsg
 
 // VMListItem represents a VM entry in list pagination responses.
 type VMListItem struct {
-	ID              string  `json:"id"`
-	VCenterID       string  `json:"vcenter_id"`
-	MoRef           string  `json:"moref"`
-	InstanceUUID    string  `json:"instance_uuid"`
-	BiosUUID        string  `json:"bios_uuid,omitempty"`
-	Name            string  `json:"name"`
-	PowerState      string  `json:"power_state"`
-	ConnectionState string  `json:"connection_state"`
-	CPUCores        int32   `json:"cpu_cores"`
-	MemoryMB        int64   `json:"memory_mb"`
-	FolderID        string  `json:"folder_id,omitempty"`
-	FolderPath      string  `json:"folder_path,omitempty"`
-	HostID          string  `json:"host_id,omitempty"`
-	ClusterID       string  `json:"cluster_id,omitempty"`
-	DatacenterID    string  `json:"datacenter_id,omitempty"`
-	GuestOS         string  `json:"guest_os,omitempty"`
-	GuestHostName   string  `json:"guest_host_name,omitempty"`
-	GuestIPAddress  string  `json:"guest_ip_address,omitempty"`
-	Annotation      string  `json:"annotation,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+	ID              string `json:"id"`
+	VCenterID       string `json:"vcenter_id"`
+	MoRef           string `json:"moref"`
+	InstanceUUID    string `json:"instance_uuid"`
+	BiosUUID        string `json:"bios_uuid,omitempty"`
+	Name            string `json:"name"`
+	PowerState      string `json:"power_state"`
+	ConnectionState string `json:"connection_state"`
+	CPUCores        int32  `json:"cpu_cores"`
+	MemoryMB        int64  `json:"memory_mb"`
+	FolderID        string `json:"folder_id,omitempty"`
+	FolderPath      string `json:"folder_path,omitempty"`
+	HostID          string `json:"host_id,omitempty"`
+	ClusterID       string `json:"cluster_id,omitempty"`
+	DatacenterID    string `json:"datacenter_id,omitempty"`
+	GuestOS         string `json:"guest_os,omitempty"`
+	GuestHostName   string `json:"guest_host_name,omitempty"`
+	GuestIPAddress  string `json:"guest_ip_address,omitempty"`
+	Annotation      string `json:"annotation,omitempty"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
 }
 
 // PaginationMeta contains keyset pagination metadata.
@@ -156,8 +156,8 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 				PageLimit:  fetchLimit,
 			})
 		} else {
-			cursorUUID, err := uuid.Parse(cursor.ID)
-			if err != nil {
+			cursorUUID, parseErr := uuid.Parse(cursor.ID)
+			if parseErr != nil {
 				h.writeError(w, http.StatusBadRequest, "Bad Request", "malformed cursor ID")
 				return
 			}
@@ -176,8 +176,8 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 				PageLimit:  fetchLimit,
 			})
 		} else {
-			cursorUUID, err := uuid.Parse(cursor.ID)
-			if err != nil {
+			cursorUUID, parseErr := uuid.Parse(cursor.ID)
+			if parseErr != nil {
 				h.writeError(w, http.StatusBadRequest, "Bad Request", "malformed cursor ID")
 				return
 			}
