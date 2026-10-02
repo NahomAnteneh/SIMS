@@ -187,6 +187,19 @@ Response:
       "ip_address": "10.0.10.15",
       "network_id": "02000000-0000-0000-0000-000000000001"
     }
+  ],
+  "tags": [
+    {
+      "tag_id": "urn:vmomi:InventoryServiceTag:00000000-0000-0000-0000-000000000001:GLOBAL",
+      "category_name": "Environment",
+      "tag_name": "Production"
+    }
+  ],
+  "custom_attributes": [
+    {
+      "name": "CostCenter",
+      "value": "CC-90210"
+    }
   ]
 }
 ```
