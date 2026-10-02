@@ -26,6 +26,12 @@ type Metrics struct {
 	MergeDuration         *prometheus.HistogramVec
 	CompactionRatio       *prometheus.HistogramVec
 
+	// Tag & Custom Attribute Metrics
+	TagFetchDuration          *prometheus.HistogramVec
+	TagFetchFailures          *prometheus.CounterVec
+	TagsPersisted             *prometheus.CounterVec
+	CustomAttributesPersisted *prometheus.CounterVec
+
 	serviceName string
 }
 
@@ -124,6 +130,39 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"vcenter_id"},
 	)
 
+	tagFetchDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_tag_fetch_duration_seconds",
+			Help:    "Duration of vSphere Automation REST tag fetch operations.",
+			Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	tagFetchFailures := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_tag_fetch_failures_total",
+			Help: "Total count of vSphere Automation REST tag fetch failures.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	tagsPersisted := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_tags_persisted_total",
+			Help: "Total count of VM tags persisted into database.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	customAttributesPersisted := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_custom_attributes_persisted_total",
+			Help: "Total count of VM custom attributes persisted into database.",
+		},
+		[]string{"vcenter_id"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
@@ -134,22 +173,30 @@ func NewMetrics(serviceName, version string) *Metrics {
 	reg.MustRegister(copyDuration)
 	reg.MustRegister(mergeDuration)
 	reg.MustRegister(compactionRatio)
+	reg.MustRegister(tagFetchDuration)
+	reg.MustRegister(tagFetchFailures)
+	reg.MustRegister(tagsPersisted)
+	reg.MustRegister(customAttributesPersisted)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
 	return &Metrics{
-		Registry:              reg,
-		RequestsTotal:         requestsTotal,
-		RequestDuration:       requestDuration,
-		BuildInfo:             buildInfo,
-		HydrationDuration:     hydrationDuration,
-		HydrationObjectsTotal: hydrationObjectsTotal,
-		BatchSize:             batchSize,
-		FlushDuration:         flushDuration,
-		CopyDuration:          copyDuration,
-		MergeDuration:         mergeDuration,
-		CompactionRatio:       compactionRatio,
-		serviceName:           serviceName,
+		Registry:                  reg,
+		RequestsTotal:             requestsTotal,
+		RequestDuration:           requestDuration,
+		BuildInfo:                 buildInfo,
+		HydrationDuration:         hydrationDuration,
+		HydrationObjectsTotal:     hydrationObjectsTotal,
+		BatchSize:                 batchSize,
+		FlushDuration:             flushDuration,
+		CopyDuration:              copyDuration,
+		MergeDuration:             mergeDuration,
+		CompactionRatio:           compactionRatio,
+		TagFetchDuration:          tagFetchDuration,
+		TagFetchFailures:          tagFetchFailures,
+		TagsPersisted:             tagsPersisted,
+		CustomAttributesPersisted: customAttributesPersisted,
+		serviceName:               serviceName,
 	}
 }
 

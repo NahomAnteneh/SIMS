@@ -216,6 +216,13 @@ func (sm *SessionManager) Client() *govmomi.Client {
 	return sm.client
 }
 
+// UserInfo returns the user credentials used for session login.
+func (sm *SessionManager) UserInfo() *url.Userinfo {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.user
+}
+
 // classifyError maps raw errors into typed platform errors.
 func (sm *SessionManager) classifyError(err error) error {
 	if err == nil {
