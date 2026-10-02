@@ -1,4 +1,4 @@
-module github.com/infrastruture/sims
+module github.com/infrastructure/sims
 
 go 1.27.1
 

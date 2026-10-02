@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/infrastruture/sims/internal/telemetry"
+	"github.com/infrastructure/sims/internal/telemetry"
 )
 
 // ReadinessCheck is a function returning nil if a component is ready, or an error otherwise.

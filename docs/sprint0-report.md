@@ -19,7 +19,7 @@ All baseline technologies were pinned to verified versions. All 15 Architecture 
 
 ### S0.1 Repository Bootstrap
 - **Directory Layout:** Initialized standard layout (`cmd/collector`, `cmd/query-api`, `internal/`, `db/migrations`, `db/queries`, `generated/`, `api/`, `web/`, `deploy/`, `tests/`, `docs/`).
-- **Module Strategy:** Created single Go root module `github.com/infrastruture/sims` for backend binaries and internal packages, keeping Next.js in `web/` with dedicated `package.json` and lockfile.
+- **Module Strategy:** Created single Go root module `github.com/infrastructure/sims` for backend binaries and internal packages, keeping Next.js in `web/` with dedicated `package.json` and lockfile.
 - **Service Stubs:** Both `cmd/collector` and `cmd/query-api` implement `/healthz` (liveness), `/readyz` (readiness with dependency probes), `/metrics` (Prometheus telemetry), graceful SIGTERM/SIGINT shutdown, and structured JSON logging.
 - **Credential Redaction:** Implemented `internal/logging` with automated masking for sensitive keys (`password`, `secret`, `token`, `api_key`, `auth`) and URL credentials sanitization via `RedactURL()`.
 - **OpenAPI 3.1 Skeleton:** Created `api/openapi.yaml` documenting operational health, readiness, and metrics endpoints.
@@ -122,7 +122,7 @@ All requested technology versions were verified in upstream registries. No silen
 
 1. **Migration Tool Choice (goose):** Goose v3.28.0 was chosen over golang-migrate because it supports single-file forward/rollback migrations (`000001_extensions.sql`), is parsed natively by sqlc without requiring separate `.up.sql`/`.down.sql` files, and provides direct programmatic integration in Go tests via `pgx/stdlib`. Recorded in ADR-003.
 2. **CI Platform (GitHub Actions):** Implemented GitHub Actions with thin, portable steps that delegate directly to root `Makefile` targets.
-3. **Module Structure:** Single root Go module `github.com/infrastruture/sims` for all backend binaries, tests, and internal libraries, with Next.js UI isolated in `web/`.
+3. **Module Structure:** Single root Go module `github.com/infrastructure/sims` for all backend binaries, tests, and internal libraries, with Next.js UI isolated in `web/`.
 4. **PostgreSQL Port Config:** The local development Docker Compose exposes PostgreSQL on host port `5433` (configurable via `POSTGRES_PORT`) to prevent collisions when a host PostgreSQL service is already bound to `5432`. Inside Docker network, services communicate directly on `postgres:5432`.
 5. **PostgreSQL 18 Data Volume:** Docker image `postgres:18.6-alpine` enforces a volume mount at `/var/lib/postgresql` rather than `/var/lib/postgresql/data` to support `pg_ctlcluster` and version subdirectories. `deploy/docker-compose.yml` was configured accordingly.
 

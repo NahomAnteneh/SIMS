@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/infrastruture/sims/internal/config"
-	"github.com/infrastruture/sims/internal/logging"
-	"github.com/infrastruture/sims/internal/server"
+	"github.com/infrastructure/sims/internal/config"
+	"github.com/infrastructure/sims/internal/logging"
+	"github.com/infrastructure/sims/internal/server"
 )
 
 const version = "0.1.0"

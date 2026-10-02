@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/infrastruture/sims/internal/logging"
+	"github.com/infrastructure/sims/internal/logging"
 )
 
 func TestRedactionHandler(t *testing.T) {

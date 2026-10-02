@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/infrastruture/sims/internal/server"
+	"github.com/infrastructure/sims/internal/server"
 )
 
 func TestCoreEndpoints(t *testing.T) {

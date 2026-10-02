@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/infrastruture/sims/internal/logging"
+	"github.com/infrastructure/sims/internal/logging"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/event"
 	"github.com/vmware/govmomi/property"
