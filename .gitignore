@@ -1,0 +1,58 @@
+# Binaries and build artifacts
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+dist/
+build/
+
+# Test artifacts and coverage
+*.out
+*.test
+coverage.txt
+coverage.html
+profile.pprof
+
+# Environment variables and secrets (NEVER COMMIT CREDENTIALS)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.crt
+id_rsa
+id_ecdsa
+id_ed25519
+secrets/
+
+# Go workspace and cache
+vendor/
+
+# Node.js and Next.js artifacts
+web/node_modules/
+web/.next/
+web/out/
+web/.turbo/
+web/*.tsbuildinfo
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/.pnpm-debug.log*
+
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Docker volumes and local runtime artifacts
+data/
+pgdata/
+prometheus_data/
+grafana_data/

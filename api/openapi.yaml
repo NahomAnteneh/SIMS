@@ -1,0 +1,81 @@
+openapi: 3.1.0
+info:
+  title: Distributed vSphere Inventory & Search Platform API
+  description: >
+    Query API for distributed vSphere inventory, full-text search,
+    topology traversal, and system operational observability.
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Returns 200 if the process is running.
+      operationId: getLiveness
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Returns 200 if the service has verified downstream dependencies and can serve requests.
+      operationId: getReadiness
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Returns Prometheus format telemetry metrics.
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus text format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - service
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-10-02T08:00:00Z"
+        service:
+          type: string
+          example: query-api
+        version:
+          type: string
+          example: "0.1.0"
+        details:
+          type: object
+          additionalProperties: true
