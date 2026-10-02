@@ -54,6 +54,99 @@ paths:
               schema:
                 type: string
 
+  /v1/vms:
+    get:
+      summary: List virtual machines
+      description: Returns a paginated list of virtual machines ordered by (name ASC, id ASC) using keyset pagination.
+      operationId: listVMs
+      parameters:
+        - name: vcenter_id
+          in: query
+          required: false
+          description: Filter virtual machines by vCenter UUID
+          schema:
+            type: string
+            format: uuid
+        - name: name
+          in: query
+          required: false
+          description: Substring match filter on virtual machine name
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of records to return (1-100, default 20)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque base64-encoded keyset pagination cursor
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated list of virtual machines
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+        "400":
+          description: Invalid request parameters or malformed cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/vms/{id}:
+    get:
+      summary: Get virtual machine details
+      description: Retrieves complete details of a single virtual machine by internal UUID, including attached datastores and network interfaces.
+      operationId: getVM
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Virtual machine internal UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Detailed virtual machine record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMDetailResponse"
+        "400":
+          description: Invalid UUID format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Virtual machine not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthResponse:
@@ -79,3 +172,219 @@ components:
         details:
           type: object
           additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - code
+      properties:
+        error:
+          type: string
+          example: Bad Request
+        message:
+          type: string
+          example: malformed pagination cursor
+        code:
+          type: integer
+          example: 400
+
+    PaginationMeta:
+      type: object
+      required:
+        - limit
+        - has_more
+      properties:
+        limit:
+          type: integer
+          example: 20
+        next_cursor:
+          type: string
+          example: "eyJuYW1lIjoidm0tMDIwIiwiaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMTQifQ=="
+        has_more:
+          type: boolean
+          example: true
+
+    VMListItem:
+      type: object
+      required:
+        - id
+        - vcenter_id
+        - moref
+        - instance_uuid
+        - name
+        - power_state
+        - connection_state
+        - cpu_cores
+        - memory_mb
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        vcenter_id:
+          type: string
+          format: uuid
+          example: "a0000000-0000-0000-0000-000000000001"
+        moref:
+          type: string
+          example: "vm-42"
+        instance_uuid:
+          type: string
+          example: "5024b486-11f2-76bb-9cb9-43c242c1618a"
+        bios_uuid:
+          type: string
+          example: "42245b73-0aa7-4bca-86b2-658a221f7e02"
+        name:
+          type: string
+          example: "web-prod-01"
+        power_state:
+          type: string
+          enum: [poweredOn, poweredOff, suspended]
+          example: "poweredOn"
+        connection_state:
+          type: string
+          enum: [connected, disconnected, orphaned, inaccessible, invalid]
+          example: "connected"
+        cpu_cores:
+          type: integer
+          format: int32
+          example: 4
+        memory_mb:
+          type: integer
+          format: int64
+          example: 8192
+        folder_id:
+          type: string
+          format: uuid
+          example: "b0000000-0000-0000-0000-000000000001"
+        folder_path:
+          type: string
+          example: "Datacenters.DC1.vm.Production"
+        host_id:
+          type: string
+          format: uuid
+          example: "c0000000-0000-0000-0000-000000000001"
+        cluster_id:
+          type: string
+          format: uuid
+          example: "d0000000-0000-0000-0000-000000000001"
+        datacenter_id:
+          type: string
+          format: uuid
+          example: "e0000000-0000-0000-0000-000000000001"
+        guest_os:
+          type: string
+          example: "rhel9_64Guest"
+        guest_host_name:
+          type: string
+          example: "web-prod-01.corp.local"
+        guest_ip_address:
+          type: string
+          example: "10.0.10.15"
+        annotation:
+          type: string
+          example: "Production frontend web server"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-10-01T12:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-10-02T08:30:00Z"
+
+    ListVMsResponse:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VMListItem"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+
+    DatastoreAttachment:
+      type: object
+      required:
+        - id
+        - moref
+        - name
+        - type
+        - capacity_bytes
+        - free_bytes
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "f0000000-0000-0000-0000-000000000001"
+        moref:
+          type: string
+          example: "datastore-10"
+        name:
+          type: string
+          example: "vsanDatastore"
+        type:
+          type: string
+          example: "vsan"
+        capacity_bytes:
+          type: integer
+          format: int64
+          example: 10995116277760
+        free_bytes:
+          type: integer
+          format: int64
+          example: 5497558138880
+
+    NICAttachment:
+      type: object
+      required:
+        - id
+        - device_key
+        - mac_address
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "01000000-0000-0000-0000-000000000001"
+        device_key:
+          type: integer
+          format: int32
+          example: 4000
+        mac_address:
+          type: string
+          example: "00:50:56:a1:b2:c3"
+        ip_address:
+          type: string
+          example: "10.0.10.15"
+        network_id:
+          type: string
+          format: uuid
+          example: "02000000-0000-0000-0000-000000000001"
+        portgroup_id:
+          type: string
+          format: uuid
+          example: "03000000-0000-0000-0000-000000000001"
+
+    VMDetailResponse:
+      allOf:
+        - $ref: "#/components/schemas/VMListItem"
+        - type: object
+          required:
+            - datastores
+            - network_interfaces
+          properties:
+            datastores:
+              type: array
+              items:
+                $ref: "#/components/schemas/DatastoreAttachment"
+            network_interfaces:
+              type: array
+              items:
+                $ref: "#/components/schemas/NICAttachment"
