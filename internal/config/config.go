@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // BaseConfig provides shared runtime configuration.
@@ -20,12 +21,14 @@ type CollectorConfig struct {
 	VCenterUsername string
 	VCenterPassword string
 	InsecureTLS     bool
+	SyncInterval    time.Duration
 }
 
 // QueryAPIConfig holds runtime settings for the query API daemon.
 type QueryAPIConfig struct {
 	BaseConfig
-	DatabaseURL string
+	DatabaseURL        string
+	CORSAllowedOrigins string
 }
 
 // LoadCollectorConfig populates CollectorConfig from environment variables.
@@ -40,6 +43,7 @@ func LoadCollectorConfig() CollectorConfig {
 		VCenterUsername: getEnv("VCENTER_USER", "user"),
 		VCenterPassword: getEnv("VCENTER_PASSWORD", "pass"),
 		InsecureTLS:     getEnvBool("VCENTER_INSECURE", true),
+		SyncInterval:    getEnvDuration("SYNC_INTERVAL", 30*time.Second),
 	}
 }
 
@@ -50,7 +54,8 @@ func LoadQueryAPIConfig() QueryAPIConfig {
 			Port:     getEnv("PORT", "8080"),
 			LogLevel: getEnv("LOG_LEVEL", "info"),
 		},
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://query_ro:query_ro_pass@localhost:5432/sims?sslmode=disable"),
+		DatabaseURL:        getEnv("DATABASE_URL", "postgres://query_ro:query_ro_pass@localhost:5432/sims?sslmode=disable"),
+		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
 	}
 }
 
@@ -66,6 +71,16 @@ func getEnvBool(key string, defaultVal bool) bool {
 		b, err := strconv.ParseBool(strings.TrimSpace(val))
 		if err == nil {
 			return b
+		}
+	}
+	return defaultVal
+}
+
+func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
+	if val, ok := os.LookupEnv(key); ok {
+		d, err := time.ParseDuration(strings.TrimSpace(val))
+		if err == nil {
+			return d
 		}
 	}
 	return defaultVal

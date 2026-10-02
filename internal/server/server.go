@@ -27,6 +27,7 @@ type Server struct {
 	Metrics         *telemetry.Metrics
 	Mux             *http.ServeMux
 	readinessChecks map[string]ReadinessCheck
+	middlewares     []func(http.Handler) http.Handler
 }
 
 // New creates a new Server instance.
@@ -46,6 +47,20 @@ func New(serviceName, version, port string, logger *slog.Logger) *Server {
 
 	s.setupCoreRoutes()
 	return s
+}
+
+// Use adds a middleware to the server handler chain.
+func (s *Server) Use(mw func(http.Handler) http.Handler) {
+	s.middlewares = append(s.middlewares, mw)
+}
+
+// Handler returns the HTTP handler wrapped with registered middlewares and metrics.
+func (s *Server) Handler() http.Handler {
+	var h http.Handler = s.Mux
+	for i := len(s.middlewares) - 1; i >= 0; i-- {
+		h = s.middlewares[i](h)
+	}
+	return s.Metrics.Middleware(h)
 }
 
 // AddReadinessCheck registers a named dependency readiness check.
@@ -118,7 +133,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 // Run starts the HTTP server and blocks until a SIGINT/SIGTERM is received, performing graceful shutdown.
 func (s *Server) Run() error {
 	addr := fmt.Sprintf(":%s", s.Port)
-	handler := s.Metrics.Middleware(s.Mux)
+	handler := s.Handler()
 
 	httpServer := &http.Server{
 		Addr:              addr,
