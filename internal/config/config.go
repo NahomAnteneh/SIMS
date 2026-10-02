@@ -25,7 +25,8 @@ type CollectorConfig struct {
 // QueryAPIConfig holds runtime settings for the query API daemon.
 type QueryAPIConfig struct {
 	BaseConfig
-	DatabaseURL string
+	DatabaseURL        string
+	CORSAllowedOrigins string
 }
 
 // LoadCollectorConfig populates CollectorConfig from environment variables.
@@ -50,7 +51,8 @@ func LoadQueryAPIConfig() QueryAPIConfig {
 			Port:     getEnv("PORT", "8080"),
 			LogLevel: getEnv("LOG_LEVEL", "info"),
 		},
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://query_ro:query_ro_pass@localhost:5432/sims?sslmode=disable"),
+		DatabaseURL:        getEnv("DATABASE_URL", "postgres://query_ro:query_ro_pass@localhost:5432/sims?sslmode=disable"),
+		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
 	}
 }
 
