@@ -445,6 +445,16 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			return 0, fmt.Errorf("failed to clear stale NICs: %w", err)
 		}
 
+		_, err = tx.Exec(ctx, `DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
+		if err != nil {
+			return 0, fmt.Errorf("failed to clear stale tags: %w", err)
+		}
+
+		_, err = tx.Exec(ctx, `DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
+		if err != nil {
+			return 0, fmt.Errorf("failed to clear stale custom attributes: %w", err)
+		}
+
 		// Prepare bulk datastore attachments
 		type dsAttach struct {
 			vmID string
@@ -462,6 +472,21 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			vlanRange any
 		}
 		var nicList []nicAttach
+
+		type tagAttach struct {
+			vmID         string
+			tagID        string
+			categoryName string
+			tagName      string
+		}
+		var tagList []tagAttach
+
+		type customAttrAttach struct {
+			vmID  string
+			name  string
+			value string
+		}
+		var attrList []customAttrAttach
 
 		for _, r := range compacted {
 			vmID, ok := morefToVMID[r.MoRef]
@@ -510,6 +535,27 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 					vlanRange: vlanLit,
 				})
 			}
+
+			for _, tag := range r.Tags {
+				if tag.TagID != "" && tag.TagName != "" {
+					tagList = append(tagList, tagAttach{
+						vmID:         vmID,
+						tagID:        tag.TagID,
+						categoryName: tag.CategoryName,
+						tagName:      tag.TagName,
+					})
+				}
+			}
+
+			for _, attr := range r.CustomAttributes {
+				if attr.Name != "" {
+					attrList = append(attrList, customAttrAttach{
+						vmID:  vmID,
+						name:  attr.Name,
+						value: attr.Value,
+					})
+				}
+			}
 		}
 
 		// COPY datastores
@@ -540,6 +586,44 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			)
 			if err != nil {
 				return 0, fmt.Errorf("bulk copy vm_network_interfaces failed: %w", err)
+			}
+		}
+
+		// COPY tags
+		if len(tagList) > 0 {
+			_, err = tx.CopyFrom(
+				ctx,
+				pgx.Identifier{"vm_tags"},
+				[]string{"vm_id", "tag_id", "category_name", "tag_name"},
+				pgx.CopyFromSlice(len(tagList), func(i int) ([]any, error) {
+					t := tagList[i]
+					return []any{t.vmID, t.tagID, t.categoryName, t.tagName}, nil
+				}),
+			)
+			if err != nil {
+				return 0, fmt.Errorf("bulk copy vm_tags failed: %w", err)
+			}
+			if p.metrics != nil {
+				p.metrics.TagsPersisted.WithLabelValues(vcenterID).Add(float64(len(tagList)))
+			}
+		}
+
+		// COPY custom attributes
+		if len(attrList) > 0 {
+			_, err = tx.CopyFrom(
+				ctx,
+				pgx.Identifier{"vm_custom_attributes"},
+				[]string{"vm_id", "name", "value"},
+				pgx.CopyFromSlice(len(attrList), func(i int) ([]any, error) {
+					a := attrList[i]
+					return []any{a.vmID, a.name, a.value}, nil
+				}),
+			)
+			if err != nil {
+				return 0, fmt.Errorf("bulk copy vm_custom_attributes failed: %w", err)
+			}
+			if p.metrics != nil {
+				p.metrics.CustomAttributesPersisted.WithLabelValues(vcenterID).Add(float64(len(attrList)))
 			}
 		}
 	}
