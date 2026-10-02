@@ -130,6 +130,24 @@ func main() {
 		)
 
 		hydrator := collector.NewHydrator(session, collector.HydratorConfig{MaxObjects: 500})
+		tagFetcher := collector.NewRestTagFetcher(
+			client.Client,
+			vcenterID,
+			collector.TagFetcherConfig{Timeout: 15 * time.Second, BatchSize: 500},
+			srv.Metrics,
+		)
+		if err := tagFetcher.Init(ctx, session.UserInfo()); err != nil {
+			logger.Warn("tagging REST service unavailable; proceeding with tags degraded", slog.String("error", err.Error()))
+		} else {
+			logger.Info("tagging REST service initialized successfully")
+		}
+		defer func() {
+			logoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = tagFetcher.Close(logoutCtx)
+		}()
+		hydrator.SetTagFetcher(tagFetcher)
+
 		persister := persistence.NewBulkPersister(pool, persistence.WriterConfig{}, srv.Metrics)
 
 		runSync := func() {

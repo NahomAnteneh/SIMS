@@ -8,6 +8,7 @@ import (
 
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/infrastructure/sims/internal/vsphere"
+	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25/methods"
@@ -22,8 +23,9 @@ type HydratorConfig struct {
 
 // Hydrator executes full snapshot hydration of vSphere topology and virtual machine inventory.
 type Hydrator struct {
-	session *vsphere.SessionManager
-	cfg     HydratorConfig
+	session    *vsphere.SessionManager
+	cfg        HydratorConfig
+	tagFetcher TagFetcher
 }
 
 // NewHydrator constructs an inventory hydrator with verified default configuration.
@@ -35,6 +37,16 @@ func NewHydrator(sm *vsphere.SessionManager, cfg HydratorConfig) *Hydrator {
 		session: sm,
 		cfg:     cfg,
 	}
+}
+
+// SetTagFetcher assigns an optional TagFetcher for enriching VMs with vSphere tags.
+func (h *Hydrator) SetTagFetcher(tf TagFetcher) {
+	h.tagFetcher = tf
+}
+
+// TagFetcher returns the configured TagFetcher, if any.
+func (h *Hydrator) TagFetcher() TagFetcher {
+	return h.tagFetcher
 }
 
 // HydrateTopology retrieves all structural topology objects and builds an immutable TopologySnapshot.
@@ -116,6 +128,19 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 		folder.Path = path
 		snap.Folders[moref] = folder
 		snap.ByMoRef[moref] = folder
+	}
+
+	// Populate CustomFieldsManager definitions if available
+	if client.ServiceContent.CustomFieldsManager != nil {
+		cfm, err := object.GetCustomFieldsManager(client.Client)
+		if err == nil && cfm != nil {
+			fieldDefs, err := cfm.Field(ctx)
+			if err == nil {
+				for _, f := range fieldDefs {
+					snap.CustomFieldsByKey[f.Key] = f.Name
+				}
+			}
+		}
 	}
 
 	return snap, nil
@@ -215,6 +240,7 @@ func (h *Hydrator) HydrateInventory(
 			"parent",
 			"datastore",
 			"network",
+			"customValue",
 		},
 	}
 
@@ -256,6 +282,24 @@ func (h *Hydrator) HydrateInventory(
 			records := make([]domain.VMRecord, len(vms))
 			for i, v := range vms {
 				records[i] = NormalizeVM(vcenterID, v, snap)
+			}
+
+			// Enrich with tags via TagFetcher if configured
+			if h.tagFetcher != nil {
+				refs := make([]types.ManagedObjectReference, len(vms))
+				for i, v := range vms {
+					refs[i] = v.Reference()
+				}
+				tagMap, tErr := h.tagFetcher.FetchTagsForObjects(ctx, refs)
+				if tErr != nil {
+					// Degradation: tagging REST failure must NOT fail inventory hydration
+				} else if tagMap != nil {
+					for i, v := range vms {
+						if vmTags, ok := tagMap[v.Reference().Value]; ok {
+							records[i].Tags = vmTags
+						}
+					}
+				}
 			}
 
 			if err := onBatch(records); err != nil {

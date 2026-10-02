@@ -142,3 +142,117 @@ func TestNormalizeVMFallbackToHardwareDevices(t *testing.T) {
 		t.Errorf("expected empty IP address in hardware fallback mode, got %s", nic.IPAddress)
 	}
 }
+
+func TestNormalizeVMCustomAttributes(t *testing.T) {
+	snap := collector.NewEmptySnapshot("vc-test-01")
+	snap.CustomFieldsByKey[101] = "Environment"
+	snap.CustomFieldsByKey[102] = "CostCenter"
+	snap.CustomFieldsByKey[103] = "Owner"
+
+	t.Run("multiple attributes with key-to-name resolution", func(t *testing.T) {
+		vm := mo.VirtualMachine{
+			ManagedEntity: mo.ManagedEntity{
+				ExtensibleManagedObject: mo.ExtensibleManagedObject{
+					Self: types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-301"},
+				},
+				CustomValue: []types.BaseCustomFieldValue{
+					&types.CustomFieldStringValue{
+						CustomFieldValue: types.CustomFieldValue{Key: 101},
+						Value:            "Production",
+					},
+					&types.CustomFieldStringValue{
+						CustomFieldValue: types.CustomFieldValue{Key: 102},
+						Value:            "Engineering-90210",
+					},
+				},
+				Name: "vm-with-attrs",
+			},
+		}
+
+		rec := collector.NormalizeVM("vc-test-01", vm, snap)
+		if len(rec.CustomAttributes) != 2 {
+			t.Fatalf("expected 2 custom attributes, got %d", len(rec.CustomAttributes))
+		}
+		if rec.CustomAttributes[0].Name != "Environment" || rec.CustomAttributes[0].Value != "Production" {
+			t.Errorf("attr 0 mismatch: %+v", rec.CustomAttributes[0])
+		}
+		if rec.CustomAttributes[1].Name != "CostCenter" || rec.CustomAttributes[1].Value != "Engineering-90210" {
+			t.Errorf("attr 1 mismatch: %+v", rec.CustomAttributes[1])
+		}
+	})
+
+	t.Run("unset empty values are skipped", func(t *testing.T) {
+		vm := mo.VirtualMachine{
+			ManagedEntity: mo.ManagedEntity{
+				ExtensibleManagedObject: mo.ExtensibleManagedObject{
+					Self: types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-302"},
+				},
+				CustomValue: []types.BaseCustomFieldValue{
+					&types.CustomFieldStringValue{
+						CustomFieldValue: types.CustomFieldValue{Key: 101},
+						Value:            "Staging",
+					},
+					&types.CustomFieldStringValue{
+						CustomFieldValue: types.CustomFieldValue{Key: 102},
+						Value:            "", // Unset in vSphere
+					},
+				},
+				Name: "vm-unset-attr",
+			},
+		}
+
+		rec := collector.NormalizeVM("vc-test-01", vm, snap)
+		if len(rec.CustomAttributes) != 1 {
+			t.Fatalf("expected 1 custom attribute (empty value omitted), got %d", len(rec.CustomAttributes))
+		}
+		if rec.CustomAttributes[0].Name != "Environment" || rec.CustomAttributes[0].Value != "Staging" {
+			t.Errorf("expected Environment=Staging, got %+v", rec.CustomAttributes[0])
+		}
+	})
+
+	t.Run("unknown key not in CustomFieldsByKey is ignored", func(t *testing.T) {
+		vm := mo.VirtualMachine{
+			ManagedEntity: mo.ManagedEntity{
+				ExtensibleManagedObject: mo.ExtensibleManagedObject{
+					Self: types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-303"},
+				},
+				CustomValue: []types.BaseCustomFieldValue{
+					&types.CustomFieldStringValue{
+						CustomFieldValue: types.CustomFieldValue{Key: 99999}, // Unknown key
+						Value:            "orphaned-attr-value",
+					},
+					&types.CustomFieldStringValue{
+						CustomFieldValue: types.CustomFieldValue{Key: 103},
+						Value:            "devops-team",
+					},
+				},
+				Name: "vm-unknown-attr-key",
+			},
+		}
+
+		rec := collector.NormalizeVM("vc-test-01", vm, snap)
+		if len(rec.CustomAttributes) != 1 {
+			t.Fatalf("expected 1 custom attribute, got %d", len(rec.CustomAttributes))
+		}
+		if rec.CustomAttributes[0].Name != "Owner" || rec.CustomAttributes[0].Value != "devops-team" {
+			t.Errorf("expected Owner=devops-team, got %+v", rec.CustomAttributes[0])
+		}
+	})
+
+	t.Run("vm with no custom values returns empty slice", func(t *testing.T) {
+		vm := mo.VirtualMachine{
+			ManagedEntity: mo.ManagedEntity{
+				ExtensibleManagedObject: mo.ExtensibleManagedObject{
+					Self: types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-304"},
+				},
+				CustomValue: nil,
+				Name:        "vm-no-attrs",
+			},
+		}
+
+		rec := collector.NormalizeVM("vc-test-01", vm, snap)
+		if len(rec.CustomAttributes) != 0 {
+			t.Errorf("expected 0 custom attributes, got %d", len(rec.CustomAttributes))
+		}
+	})
+}
