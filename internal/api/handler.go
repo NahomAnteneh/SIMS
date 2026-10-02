@@ -229,6 +229,19 @@ type VMDetailResponse struct {
 	VMListItem
 	Datastores        []DatastoreAttachment `json:"datastores"`
 	NetworkInterfaces []NICAttachment       `json:"network_interfaces"`
+	Tags              []TagItem             `json:"tags"`
+	CustomAttributes  []CustomAttributeItem `json:"custom_attributes"`
+}
+
+type TagItem struct {
+	TagID        string `json:"tag_id"`
+	CategoryName string `json:"category_name"`
+	TagName      string `json:"tag_name"`
+}
+
+type CustomAttributeItem struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type DatastoreAttachment struct {
@@ -316,10 +329,45 @@ func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Retrieve attached tags
+	tags, err := h.queries.ListTagsForVM(ctx, pgID)
+	if err != nil {
+		h.logger.Error("failed to list tags for VM", slog.String("id", idStr), slog.String("error", err.Error()))
+		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "failed to retrieve attached tags")
+		return
+	}
+
+	tagItems := make([]TagItem, len(tags))
+	for i, t := range tags {
+		tagItems[i] = TagItem{
+			TagID:        t.TagID,
+			CategoryName: t.CategoryName,
+			TagName:      t.TagName,
+		}
+	}
+
+	// Retrieve attached custom attributes
+	attrs, err := h.queries.ListCustomAttributesForVM(ctx, pgID)
+	if err != nil {
+		h.logger.Error("failed to list custom attributes for VM", slog.String("id", idStr), slog.String("error", err.Error()))
+		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "failed to retrieve custom attributes")
+		return
+	}
+
+	attrItems := make([]CustomAttributeItem, len(attrs))
+	for i, a := range attrs {
+		attrItems[i] = CustomAttributeItem{
+			Name:  a.Name,
+			Value: a.Value,
+		}
+	}
+
 	detail := VMDetailResponse{
 		VMListItem:        mapDBVMToListItem(vm),
 		Datastores:        dsAttachments,
 		NetworkInterfaces: nicAttachments,
+		Tags:              tagItems,
+		CustomAttributes:  attrItems,
 	}
 
 	h.writeJSON(w, http.StatusOK, detail)
