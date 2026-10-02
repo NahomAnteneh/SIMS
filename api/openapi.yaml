@@ -372,6 +372,36 @@ components:
           format: uuid
           example: "03000000-0000-0000-0000-000000000001"
 
+    VMTag:
+      type: object
+      required:
+        - tag_id
+        - category_name
+        - tag_name
+      properties:
+        tag_id:
+          type: string
+          example: "urn:vmomi:InventoryServiceTag:00000000-0000-0000-0000-000000000001:GLOBAL"
+        category_name:
+          type: string
+          example: "Environment"
+        tag_name:
+          type: string
+          example: "Production"
+
+    VMCustomAttribute:
+      type: object
+      required:
+        - name
+        - value
+      properties:
+        name:
+          type: string
+          example: "CostCenter"
+        value:
+          type: string
+          example: "CC-90210"
+
     VMDetailResponse:
       allOf:
         - $ref: "#/components/schemas/VMListItem"
@@ -379,6 +409,8 @@ components:
           required:
             - datastores
             - network_interfaces
+            - tags
+            - custom_attributes
           properties:
             datastores:
               type: array
@@ -388,3 +420,11 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/NICAttachment"
+            tags:
+              type: array
+              items:
+                $ref: "#/components/schemas/VMTag"
+            custom_attributes:
+              type: array
+              items:
+                $ref: "#/components/schemas/VMCustomAttribute"
