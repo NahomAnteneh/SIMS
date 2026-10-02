@@ -1,0 +1,111 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Build, Test & Security Verification
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18.6-alpine@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66
+        env:
+          POSTGRES_DB: sims
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sims"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go toolchain
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Setup Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install pinned development tools
+        run: make tools
+
+      - name: Bootstrap PostgreSQL roles
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d sims -f db/bootstrap_roles.sql
+
+      # 1. format
+      - name: Stage 1 — Format Verification
+        run: |
+          make format
+          git diff --exit-code
+
+      # 2. lint
+      - name: Stage 2 — Linting (golangci-lint)
+        run: make lint
+
+      # 3. unit tests
+      - name: Stage 3 — Unit Tests
+        run: make test-unit
+
+      # 4. race tests
+      - name: Stage 4 — Race Detection Tests
+        run: make test-race
+
+      # 5. sqlc verify/generate
+      - name: Stage 5 — sqlc Code Generation Verification
+        run: make sqlc-verify
+
+      # 6. migration test
+      - name: Stage 6 — Database Migration Verification
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+        run: make test-migration
+
+      # 7. PostgreSQL integration tests
+      - name: Stage 7 — PostgreSQL Role Privileges Integration Tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+        run: make test-db-integration
+
+      # 8. vcsim integration tests
+      - name: Stage 8 — vcsim Simulator Integration Tests
+        run: make test-vcsim-integration
+
+      # 9. govulncheck
+      - name: Stage 9 — Go Vulnerability Scanning (govulncheck)
+        run: make vulncheck
+
+      # 10. Frontend build
+      - name: Stage 10 — Frontend Build (Next.js)
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      # 11. container build
+      - name: Stage 11 — Multi-Stage Container Image Build
+        run: make container-build

@@ -107,7 +107,7 @@ func main() {
 
 func probeTLS(host string, insecure bool) ProbeResult {
 	conf := &tls.Config{
-		InsecureSkipVerify: insecure,
+		InsecureSkipVerify: insecure, // #nosec G402 -- intentionally configurable for lab/vcsim environments
 	}
 	conn, err := tls.Dial("tcp", host, conf)
 	if err != nil {
