@@ -113,6 +113,7 @@ All requested technology versions were verified in upstream registries. No silen
 | **Grafana** | Stable | `13.0.10` | Verified on Docker Hub (`grafana/grafana:13.0.10`) |
 | **vcsim** | `0.56.0` | `v0.56.0` | Verified on Docker Hub (`vmware/vcsim:v0.56.0`) |
 | **goose** | Recommended | `v3.28.0` | Selected migration tool; verified on Go module proxy |
+| **golangci-lint** | Pinned | `v2.14.0` | Verified on Go module proxy (`github.com/golangci/golangci-lint/v2`) |
 | **govulncheck**| Stable | `v1.8.0` | Verified on Go module proxy |
 
 ---

@@ -25,7 +25,7 @@ tools: ## Ensure required pinned CLI tools are installed in bin/
 	@mkdir -p $(BIN_DIR)
 	@which $(SQLC) >/dev/null 2>&1 || GOBIN=$(BIN_DIR) $(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 	@which $(GOOSE) >/dev/null 2>&1 || GOBIN=$(BIN_DIR) $(GO) install github.com/pressly/goose/v3/cmd/goose@v3.28.0
-	@which $(GOLANGCI_LINT) >/dev/null 2>&1 || GOBIN=$(BIN_DIR) $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+	@which $(GOLANGCI_LINT) >/dev/null 2>&1 || GOBIN=$(BIN_DIR) $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 	@which $(GOVULNCHECK) >/dev/null 2>&1 || GOBIN=$(BIN_DIR) $(GO) install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
 format: ## Format all Go source files and check formatting
