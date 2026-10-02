@@ -27,6 +27,8 @@ type VMRecord struct {
 	DatastoreIDs      []string
 	DatastoreMoRefs   []string
 	NetworkInterfaces []NetworkInterfaceRecord
+	Tags              []TagRecord
+	CustomAttributes  []CustomAttributeRecord
 	DeletedAt         *time.Time
 	UpdatedAt         time.Time
 }
@@ -41,4 +43,17 @@ type NetworkInterfaceRecord struct {
 	NetworkMoRef   string
 	PortgroupMoRef string
 	VLANSpec       string
+}
+
+// TagRecord represents a normalized vSphere tag attached to a VM.
+type TagRecord struct {
+	TagID        string
+	CategoryName string
+	TagName      string
+}
+
+// CustomAttributeRecord represents a normalized vSphere custom attribute (field name and value) on a VM.
+type CustomAttributeRecord struct {
+	Name  string
+	Value string
 }

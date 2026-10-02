@@ -27,6 +27,8 @@ All migrations are versioned via Goose (`db/migrations/`), and type-safe query i
 | `virtual_machines` | Normalized virtual machine inventory records | `id UUID` | `UNIQUE(instance_uuid) WHERE deleted_at IS NULL`<br>`UNIQUE(vcenter_id, moref) WHERE deleted_at IS NULL` |
 | `vm_datastores` | VM storage attachments | `(vm_id, datastore_id)` | Foreign keys cascade on delete |
 | `vm_network_interfaces` | Virtual NICs, MACs, IP assignments, VLANs | `id UUID` | FK to `virtual_machines(id)` |
+| `vm_tags` | Attached vSphere tags and categories | `id UUID` | `UNIQUE(vm_id, tag_id)`, FK to `virtual_machines(id)` |
+| `vm_custom_attributes` | VM custom attribute key/value pairs | `id UUID` | `UNIQUE(vm_id, name)`, FK to `virtual_machines(id)` |
 | `inventory_events` | Immutable vCenter event log | `id BIGSERIAL` | `UNIQUE(vcenter_id, event_key)` |
 
 ---
@@ -68,6 +70,16 @@ Every database index in SIMS directly services a documented query access pattern
   - *Pattern:* Subtree queries (`WHERE path <@ $parent_path`).
 - **`idx_vm_datastores_datastore_id`** (`datastore_id` B-tree):
   - *Pattern:* Finding all VMs stored on a datastore.
+
+### 3.4 Tags and Custom Attributes
+- **`idx_vm_tags_vm_id`** (`vm_id` B-tree):
+  - *Pattern:* Seeks all tags for a single VM during detail lookup (`WHERE vm_id = $1`).
+- **`idx_vm_tags_category_tag_vm`** (`(category_name, tag_name, vm_id)` B-tree):
+  - *Pattern:* Index-only search for VMs by category and tag (`WHERE category_name = $1 AND tag_name = $2`).
+- **`idx_vm_custom_attrs_vm_id`** (`vm_id` B-tree):
+  - *Pattern:* Seeks all custom attributes for a single VM during detail lookup (`WHERE vm_id = $1`).
+- **`idx_vm_custom_attrs_name_value_vm`** (`(name, value, vm_id)` B-tree):
+  - *Pattern:* Index-only search for VMs by attribute name and value (`WHERE name = $1 AND value = $2`).
 
 ---
 

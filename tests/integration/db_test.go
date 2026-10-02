@@ -252,6 +252,8 @@ func TestAllApplicationTablesRolePrivileges(t *testing.T) {
 		"virtual_machines",
 		"vm_datastores",
 		"vm_network_interfaces",
+		"vm_tags",
+		"vm_custom_attributes",
 		"inventory_events",
 	}
 
