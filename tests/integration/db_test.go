@@ -231,3 +231,93 @@ func TestRolePrivileges(t *testing.T) {
 		}
 	})
 }
+
+func TestAllApplicationTablesRolePrivileges(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	allTables := []string{
+		"vcenters",
+		"collector_targets",
+		"collector_leases",
+		"collector_state",
+		"datacenters",
+		"inventory_folders",
+		"clusters",
+		"hosts",
+		"datastores",
+		"distributed_switches",
+		"portgroups",
+		"networks",
+		"virtual_machines",
+		"vm_datastores",
+		"vm_network_interfaces",
+		"inventory_events",
+	}
+
+	rwConnStr := getConnString("collector_rw", "collector_rw_pass")
+	rwDB, err := sql.Open("pgx", rwConnStr)
+	if err != nil {
+		t.Fatalf("failed to connect as collector_rw: %v", err)
+	}
+	defer rwDB.Close()
+
+	roConnStr := getConnString("query_ro", "query_ro_pass")
+	roDB, err := sql.Open("pgx", roConnStr)
+	if err != nil {
+		t.Fatalf("failed to connect as query_ro: %v", err)
+	}
+	defer roDB.Close()
+
+	for _, tbl := range allTables {
+		tbl := tbl
+		t.Run(tbl+" permissions", func(t *testing.T) {
+			// collector_rw: SELECT allowed
+			var rwCount int
+			err := rwDB.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&rwCount)
+			if err != nil {
+				t.Errorf("collector_rw failed to SELECT from %s: %v", tbl, err)
+			}
+
+			// query_ro: SELECT allowed
+			var roCount int
+			err = roDB.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&roCount)
+			if err != nil {
+				t.Errorf("query_ro failed to SELECT from %s: %v", tbl, err)
+			}
+
+			// query_ro: DELETE forbidden
+			_, err = roDB.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE 1=0", tbl))
+			if err == nil {
+				t.Errorf("query_ro MUST NOT be able to DELETE from %s", tbl)
+			} else if !strings.Contains(err.Error(), "permission denied") {
+				t.Errorf("expected permission denied for query_ro DELETE on %s, got: %v", tbl, err)
+			}
+
+			// query_ro: UPDATE forbidden
+			var colName string
+			err = roDB.QueryRowContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_name = $1 LIMIT 1", tbl).Scan(&colName)
+			if err != nil {
+				t.Fatalf("failed to get column name for %s: %v", tbl, err)
+			}
+			_, err = roDB.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = %s WHERE 1=0", tbl, colName, colName))
+			if err == nil {
+				t.Errorf("query_ro MUST NOT be able to UPDATE %s", tbl)
+			} else if !strings.Contains(err.Error(), "permission denied") {
+				t.Errorf("expected permission denied for query_ro UPDATE on %s, got: %v", tbl, err)
+			}
+
+			// query_ro: DROP TABLE forbidden (DDL)
+			_, err = roDB.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", tbl))
+			if err == nil {
+				t.Errorf("query_ro MUST NOT be able to DROP TABLE %s", tbl)
+			}
+
+			// collector_rw: DROP TABLE forbidden (DDL)
+			_, err = rwDB.ExecContext(ctx, fmt.Sprintf("DROP TABLE %s", tbl))
+			if err == nil {
+				t.Errorf("collector_rw MUST NOT be able to DROP TABLE %s", tbl)
+			}
+		})
+	}
+}

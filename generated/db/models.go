@@ -3,3 +3,195 @@
 //   sqlc v1.31.1
 
 package db
+
+import (
+	"net/netip"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type Cluster struct {
+	ID           pgtype.UUID
+	VcenterID    pgtype.UUID
+	DatacenterID pgtype.UUID
+	Moref        string
+	Name         string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type CollectorLease struct {
+	ID         pgtype.UUID
+	TargetID   pgtype.UUID
+	HolderID   string
+	LeaseUntil pgtype.Timestamptz
+	Version    int64
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type CollectorState struct {
+	ID           pgtype.UUID
+	TargetID     pgtype.UUID
+	Status       string
+	LastSyncAt   pgtype.Timestamptz
+	SyncToken    pgtype.Text
+	ErrorMessage pgtype.Text
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type CollectorTarget struct {
+	ID        pgtype.UUID
+	VcenterID pgtype.UUID
+	Enabled   bool
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Datacenter struct {
+	ID          pgtype.UUID
+	VcenterID   pgtype.UUID
+	Moref       string
+	Name        string
+	ParentMoref pgtype.Text
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+type Datastore struct {
+	ID            pgtype.UUID
+	VcenterID     pgtype.UUID
+	DatacenterID  pgtype.UUID
+	Moref         string
+	Name          string
+	Type          string
+	CapacityBytes int64
+	FreeBytes     int64
+	Accessible    bool
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
+type DistributedSwitch struct {
+	ID           pgtype.UUID
+	VcenterID    pgtype.UUID
+	DatacenterID pgtype.UUID
+	Moref        string
+	Name         string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type Host struct {
+	ID              pgtype.UUID
+	VcenterID       pgtype.UUID
+	ClusterID       pgtype.UUID
+	DatacenterID    pgtype.UUID
+	Moref           string
+	Name            string
+	ConnectionState string
+	PowerState      string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type InventoryEvent struct {
+	ID             int64
+	VcenterID      pgtype.UUID
+	EventKey       int32
+	ChainID        int32
+	EventType      string
+	VmMoref        pgtype.Text
+	VmInstanceUuid pgtype.Text
+	Message        string
+	CreatedTime    pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+}
+
+type InventoryFolder struct {
+	ID         pgtype.UUID
+	VcenterID  pgtype.UUID
+	Moref      string
+	Name       string
+	FolderType string
+	ParentID   pgtype.UUID
+	Path       string
+	CreatedAt  pgtype.Timestamptz
+	UpdatedAt  pgtype.Timestamptz
+}
+
+type Network struct {
+	ID           pgtype.UUID
+	VcenterID    pgtype.UUID
+	DatacenterID pgtype.UUID
+	PortgroupID  pgtype.UUID
+	Moref        string
+	Name         string
+	VlanIds      pgtype.Multirange[pgtype.Range[pgtype.Int4]]
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type Portgroup struct {
+	ID        pgtype.UUID
+	VcenterID pgtype.UUID
+	SwitchID  pgtype.UUID
+	Moref     string
+	Name      string
+	VlanIds   pgtype.Multirange[pgtype.Range[pgtype.Int4]]
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type Vcenter struct {
+	ID           pgtype.UUID
+	Name         string
+	ApiUrl       string
+	InstanceUuid pgtype.Text
+	Version      string
+	Build        string
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type VirtualMachine struct {
+	ID              pgtype.UUID
+	VcenterID       pgtype.UUID
+	Moref           string
+	InstanceUuid    string
+	BiosUuid        pgtype.Text
+	Name            string
+	PowerState      string
+	ConnectionState string
+	CpuCores        int32
+	MemoryMb        int64
+	FolderID        pgtype.UUID
+	FolderPath      pgtype.Text
+	HostID          pgtype.UUID
+	ClusterID       pgtype.UUID
+	DatacenterID    pgtype.UUID
+	GuestOs         string
+	GuestHostName   string
+	GuestIpAddress  *netip.Addr
+	Annotation      string
+	DeletedAt       pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type VmDatastore struct {
+	VmID        pgtype.UUID
+	DatastoreID pgtype.UUID
+}
+
+type VmNetworkInterface struct {
+	ID          pgtype.UUID
+	VmID        pgtype.UUID
+	DeviceKey   int32
+	MacAddress  string
+	IpAddress   *netip.Addr
+	NetworkID   pgtype.UUID
+	PortgroupID pgtype.UUID
+	VlanIds     pgtype.Multirange[pgtype.Range[pgtype.Int4]]
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
