@@ -1,12 +1,33 @@
 package collector
 
 import (
+	"net/netip"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
 )
+
+// cleanIP sanitizes IP strings by stripping IPv6 zone indexes (%eth0, etc.)
+// and validating address syntax so PostgreSQL inet does not reject it.
+func cleanIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if parsed, err := netip.ParseAddr(raw); err == nil {
+		return parsed.WithZone("").String()
+	}
+	if idx := strings.Index(raw, "%"); idx != -1 {
+		raw = raw[:idx]
+	}
+	if parsed, err := netip.ParseAddr(raw); err == nil {
+		return parsed.String()
+	}
+	return ""
+}
 
 // NormalizeVM maps a vSphere mo.VirtualMachine DTO into a normalized domain.VMRecord,
 // resolving topology references against the provided immutable TopologySnapshot.
@@ -29,6 +50,12 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 		instanceUUID = vm.Summary.Config.InstanceUuid
 	} else if vm.Config != nil && vm.Config.InstanceUuid != "" {
 		instanceUUID = vm.Config.InstanceUuid
+	}
+	if strings.TrimSpace(instanceUUID) == "" {
+		// Real vCenters may have VMs/templates with empty instance UUID.
+		// Generate deterministic fallback UUID from (vcenterID, moref) to satisfy
+		// the active unique constraint and ensure idempotent re-sync.
+		instanceUUID = uuid.NewSHA1(uuid.NameSpaceOID, []byte(vcenterID+":"+moref)).String()
 	}
 
 	if vm.Summary.Config.Uuid != "" {
@@ -71,7 +98,7 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 			guestHostName = vm.Guest.HostName
 		}
 		if vm.Guest.IpAddress != "" {
-			guestIP = vm.Guest.IpAddress
+			guestIP = cleanIP(vm.Guest.IpAddress)
 		}
 	}
 	if guestOS == "" && vm.Summary.Config.GuestFullName != "" {
@@ -160,7 +187,7 @@ func extractNetworkInterfaces(vm mo.VirtualMachine, snap *TopologySnapshot) []do
 					nics = append(nics, domain.NetworkInterfaceRecord{
 						DeviceKey:    gNet.DeviceConfigId,
 						MacAddress:   mac,
-						IPAddress:    strings.TrimSpace(ip),
+						IPAddress:    cleanIP(ip),
 						NetworkID:    netID,
 						PortgroupID:  pgID,
 						NetworkMoRef: netMoRef,

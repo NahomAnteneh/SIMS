@@ -208,3 +208,128 @@ func TestStreamFlusher(t *testing.T) {
 		t.Errorf("expected 5 VMs flushed by timer, got %d", count)
 	}
 }
+
+func TestBulkPersistence_EmptyUUIDAndIPv6ZoneFallback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	connStr := getConnString("collector_rw", "collector_rw_pass")
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatalf("failed to connect pool: %v", err)
+	}
+	defer pool.Close()
+
+	var vcenterID string
+	err = pool.QueryRow(ctx, `
+		INSERT INTO vcenters (name, api_url, instance_uuid)
+		VALUES ('vc-real-edge-test', 'https://vc-real-edge.local/sdk', 'vc-real-edge-uuid-01')
+		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		RETURNING id::text
+	`).Scan(&vcenterID)
+	if err != nil {
+		t.Fatalf("failed to insert test vcenter: %v", err)
+	}
+	defer func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM vcenters WHERE id = $1::uuid", vcenterID)
+	}()
+
+	persister := persistence.NewBulkPersister(pool, persistence.WriterConfig{
+		FlushInterval: 250 * time.Millisecond,
+		FlushSize:     500,
+	}, nil)
+
+	// Test case: 3 VMs with empty InstanceUUID (which real vCenter templates often have)
+	// and IPv6 addresses with zone indexes (e.g., %eth0)
+	edgeRecords := []domain.VMRecord{
+		{
+			VCenterID:      vcenterID,
+			MoRef:          "vm-edge-1",
+			InstanceUUID:   "", // Empty UUID!
+			Name:           "template-vm-1",
+			PowerState:     "poweredOff",
+			GuestIPAddress: "fe80::1ff:fe00:1%eth0", // IPv6 with zone index
+			NetworkInterfaces: []domain.NetworkInterfaceRecord{
+				{
+					DeviceKey:  4000,
+					MacAddress: "00:50:56:01:02:03",
+					IPAddress:  "fe80::1ff:fe00:1%eth0",
+				},
+			},
+		},
+		{
+			VCenterID:      vcenterID,
+			MoRef:          "vm-edge-2",
+			InstanceUUID:   "", // Another VM with empty UUID!
+			Name:           "template-vm-2",
+			PowerState:     "poweredOff",
+			GuestIPAddress: "fe80::2ff:fe00:2%12",
+			NetworkInterfaces: []domain.NetworkInterfaceRecord{
+				{
+					DeviceKey:  4000,
+					MacAddress: "00:50:56:01:02:04",
+					IPAddress:  "fe80::2ff:fe00:2%12",
+				},
+			},
+		},
+		{
+			VCenterID:      vcenterID,
+			MoRef:          "vm-edge-3",
+			InstanceUUID:   "", // Third VM with empty UUID!
+			Name:           "template-vm-3",
+			PowerState:     "poweredOff",
+		},
+	}
+
+	count, err := persister.PersistVMBatch(ctx, edgeRecords)
+	if err != nil {
+		t.Fatalf("PersistVMBatch failed for edge records with empty UUIDs and IPv6 zone indexes: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 persisted records, got %d", count)
+	}
+
+	// Verify each VM received a unique, non-empty instance_uuid and valid inet
+	rows, err := pool.Query(ctx, `
+		SELECT moref, instance_uuid, host(guest_ip_address) 
+		FROM virtual_machines 
+		WHERE vcenter_id = $1::uuid 
+		ORDER BY moref
+	`, vcenterID)
+	if err != nil {
+		t.Fatalf("failed to query virtual_machines: %v", err)
+	}
+	defer rows.Close()
+
+	seenUUIDs := make(map[string]bool)
+	var rowCount int
+	for rows.Next() {
+		var moref, instUUID string
+		var guestIP *string
+		if err := rows.Scan(&moref, &instUUID, &guestIP); err != nil {
+			t.Fatalf("failed to scan row: %v", err)
+		}
+		rowCount++
+		if instUUID == "" {
+			t.Errorf("VM %s has empty instance_uuid", moref)
+		}
+		if seenUUIDs[instUUID] {
+			t.Errorf("VM %s duplicate instance_uuid %s", moref, instUUID)
+		}
+		seenUUIDs[instUUID] = true
+
+		if moref == "vm-edge-1" {
+			if guestIP == nil {
+				t.Fatalf("expected non-nil guestIP")
+			}
+			t.Logf("actual guestIP is: %s", *guestIP)
+			if *guestIP != "fe80::1ff:fe00:1" {
+				t.Errorf("expected clean IPv6 without zone index 'fe80::1ff:fe00:1', got %s", *guestIP)
+			}
+		}
+	}
+	if rowCount != 3 {
+		t.Errorf("expected 3 rows in database, got %d", rowCount)
+	}
+}
+

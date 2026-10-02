@@ -5,7 +5,7 @@ import (
 )
 
 // CompactBatch collapses multiple updates to the same VM within a single batch
-// into one final record, keyed by instance_uuid (or vcenter_id:moref if instance_uuid is empty),
+// into one final record, keyed by instance_uuid or vcenter_id:moref,
 // applying deterministic field-merge rules.
 func CompactBatch(records []domain.VMRecord) []domain.VMRecord {
 	if len(records) <= 1 {
@@ -13,18 +13,34 @@ func CompactBatch(records []domain.VMRecord) []domain.VMRecord {
 	}
 
 	keyToIndex := make(map[string]int)
+	morefToIndex := make(map[string]int)
 	compacted := make([]domain.VMRecord, 0, len(records))
 
 	for _, incoming := range records {
-		key := incoming.InstanceUUID
-		if key == "" {
-			key = incoming.VCenterID + ":" + incoming.MoRef
+		uuidKey := incoming.InstanceUUID
+		morefKey := incoming.VCenterID + ":" + incoming.MoRef
+
+		idx := -1
+		if uuidKey != "" {
+			if i, ok := keyToIndex[uuidKey]; ok {
+				idx = i
+			}
+		}
+		if idx == -1 && incoming.MoRef != "" {
+			if i, ok := morefToIndex[morefKey]; ok {
+				idx = i
+			}
 		}
 
-		idx, exists := keyToIndex[key]
-		if !exists {
-			keyToIndex[key] = len(compacted)
+		if idx == -1 {
+			idx = len(compacted)
 			compacted = append(compacted, incoming)
+			if uuidKey != "" {
+				keyToIndex[uuidKey] = idx
+			}
+			if incoming.MoRef != "" {
+				morefToIndex[morefKey] = idx
+			}
 			continue
 		}
 
@@ -32,6 +48,12 @@ func CompactBatch(records []domain.VMRecord) []domain.VMRecord {
 		existing := compacted[idx]
 		merged := mergeRecords(existing, incoming)
 		compacted[idx] = merged
+		if merged.InstanceUUID != "" {
+			keyToIndex[merged.InstanceUUID] = idx
+		}
+		if merged.MoRef != "" {
+			morefToIndex[merged.VCenterID+":"+merged.MoRef] = idx
+		}
 	}
 
 	return compacted

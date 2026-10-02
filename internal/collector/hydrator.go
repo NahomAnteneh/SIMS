@@ -161,6 +161,9 @@ func sanitizeLtreeLabel(s string) string {
 	if res == "" {
 		return "folder"
 	}
+	if len(res) > 250 {
+		res = res[:250]
+	}
 	return res
 }
 
