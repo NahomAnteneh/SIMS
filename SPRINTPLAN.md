@@ -21,7 +21,7 @@ This revision keeps the original sprint structure and updates it with what was d
 | vSphere tags and custom attributes added | New data model and REST tag fetcher (delivered); synchronization added to Sprints 2 and 4; filters added to Sprint 3 |
 | Frontend moved to another team | All UI stories removed; replaced by "complete API" stories and an API contract process |
 | vCenter registration API added | Admin endpoints, connection validation, credential handling and audit log (Sprint 3), wired to leases and assignment (Sprint 4) |
-| vSphere 7.x and 8.x supported | Version detection, a support policy and a per-version test matrix added |
+| vSphere version policy (7.0+) | Support policy for 7.0 and higher without hard ceiling (7.x, 8.x, 9.x), capability flags, and per-version test matrix |
 | Verification discipline | Every claim backed by a command that was actually run; evidence kept in sprint reports |
 
 Markers used in this document:
@@ -59,7 +59,7 @@ distributed collector fleet
 vSphere tags (REST) and custom attributes (SOAP)
 API-first delivery (frontend built by another team)
 vCenter registration API with write-only, encrypted credentials
-vSphere 7.x – 8.x support with per-version capability detection
+vSphere 7.0 and higher (7.x, 8.x, 9.x) support with per-version capability detection
 ```
 
 For that reason, the recommended delivery sequence is:
@@ -91,7 +91,7 @@ The implementation should pin versions rather than floating on `latest`.
 | goose            | 3.28.0 (migrations; ADR-003) |
 | golangci-lint    | 2.14.0 |
 | govulncheck      | 1.8.0 |
-| vSphere (managed) | 7.0.x – 8.x (see 2.1) |
+| vSphere (managed) | 7.0 and higher (7.x, 8.x, 9.x; see 2.1) |
 | Frontend (Next.js / TypeScript) | Owned by the frontend team; not pinned or maintained by this plan |
 | OpenTelemetry Go | current stable                                             |
 | Prometheus       | current stable                                             |
@@ -112,38 +112,40 @@ Versions in this table were pinned and checked against upstream registries durin
 
 ## 2.1 vSphere version support policy [Added]
 
-The platform must work with vCenter Server **7.0.x through 8.x**, including a mixed fleet where one deployment manages vCenters of different versions.
+The platform supports VMware vCenter Server **7.0 and higher** (including 7.x, 8.x, 9.x, and future releases), with **no hard-coded ceiling**. It is designed to operate seamlessly across mixed fleets spanning multiple major versions.
 
 | Detected version | Policy |
 | ---------------- | ------ |
-| Below 7.0 | Rejected at registration with a typed error (`unsupported_version`) |
-| 7.0.x – 8.x | Supported; covered by the version test matrix below |
-| Newer than the highest tested release | Accepted with `compatibility = untested` and a warning; never silently treated as supported |
+| Below 7.0 | Rejected at registration / connect with a typed error (`unsupported_version`) |
+| 7.0 and higher | Accepted. `compatibility` = `certified` only when that major.minor (and patch level) has a real-vCenter column in `docs/vsphere-capability-matrix.md`; otherwise `untested` with a warning. A 9.x vCenter must never be rejected, and must not be reported as `untested` once its matrix column exists. |
 
 Rules:
 
 ```text
-version is DETECTED at connect time, never typed in by hand
-    ServiceContent.About: product version, API version, build, API type
-version is stored on the vcenters row and exposed by the API
-behavior differences are handled by capability flags, not by scattered version checks
-    e.g. tagging REST path style, PropertyCollector behavior, event types
-the SOAP (vim25) client negotiates the API version; the plan does not hardcode one
-the tagging REST endpoints must be verified on BOTH 7.x and 8.x before relying on them
-failed or unknown capability detection degrades that feature, not the whole vCenter
+version is DETECTED at connect time from ServiceContent.About, never typed in by hand:
+    product version, API version, build, API type, product line ID
+record major.minor (low cardinality) in logs, a metric label (sims_vcenter_info), and collector_state
+version and compatibility status are stored on the vcenters row and exposed by the API (S3.13)
+behavior differences are handled by capability flags, not by scattered version checks or ceiling guards
+    e.g. tagging REST endpoint style (/rest vs /api), PropertyCollector behavior, event types
+the SOAP (vim25) client negotiates the API version; the client library does not pin a version a 9.x vCenter would reject
+the tagging REST endpoints must be verified across all supported majors (7.x, 8.x, 9.x) before relying on them
+failed or unknown capability detection degrades that feature gracefully (e.g. ErrTaggingUnavailable), not the whole vCenter
 the platform only reads from vCenter; it never changes vCenter state
 ```
 
 Test matrix:
 
 ```text
-vcsim                  every pull request (fast, not version-faithful)
-real vCenter 7.0.x     nightly and before each release
-real vCenter 8.x       nightly and before each release
-mixed 7.x + 8.x fleet  Sprint 4 scale test and cross-vCenter migration test
+vcsim                    every pull request (fast, in-process / container, not version-faithful)
+real vCenter 7.0.x       nightly and before each release
+real vCenter 8.0.x (U3)  nightly and before each release
+real vCenter 9.0.x       nightly and before each release
+real vCenter 9.1.x       nightly and before each release (using whichever real vCenters the team has; record which)
+mixed fleet (7.x/8.x/9.x) Sprint 4 scale test and cross-vCenter migration test
 ```
 
-The exact patch levels covered are recorded in `docs/vsphere-capability-matrix.md`, one column per tested version.
+The exact patch levels covered and behavior differences are recorded in `docs/vsphere-capability-matrix.md` (one column per tested version) and documented in `docs/supported-versions.md`.
 
 ---
 
@@ -605,7 +607,7 @@ Output:
 docs/vsphere-capability-matrix.md
 ```
 
-[Changed] Run the spike once per supported vCenter major version (7.x and 8.x). The matrix has a vcsim column plus one column per tested real version; differences between versions become capability flags (section 2.1).
+[Changed] Run the spike once per supported vCenter major version across available majors (7.x, 8.x and 9.x). The matrix has a vcsim column plus one column per tested real version; differences between versions become capability flags (section 2.1).
 
 [Delivered] The spike CLI (`cmd/vcenter-spike`) and the vcsim column exist. The real-vCenter columns are still pending (blocked on access). Finding: vcsim hangs on an unknown PropertyCollector version token instead of returning `InvalidCollectorVersion`, so only a real vCenter can show the true behavior.
 
@@ -693,7 +695,7 @@ Sprint 0 is complete when:
 **Status [Delivered]:** all criteria are met (CI is green on GitHub Actions) except two that need a person:
 
 ```text
-real-vCenter capability run on 7.x AND 8.x (the spike CLI exists; only the run is missing)
+real-vCenter capability run on 7.x, 8.x and 9.x (the spike CLI exists; only the run is missing)
 approval of the ADRs (all are Proposed)
 ```
 
@@ -1271,7 +1273,7 @@ sims_custom_attributes_persisted_total
 tags are NOT streamed: a tag attach/detach does not arrive through PropertyCollector
     → S2.14 adds tag synchronization; S4.12 adds tag reconciliation
 filtering by tag or attribute is not in the API yet → S3.3
-tagging on real vCenter 7.x and 8.x is unverified (vcsim only) → capability matrix
+tagging on real vCenter (7.x, 8.x, 9.x) is unverified (vcsim only) → capability matrix
 ADR-016 (Proposed) records the REST/SOAP split and field ownership
 ```
 
@@ -1415,7 +1417,7 @@ worker does not restart process-wide
 recovery duration is measured
 ```
 
-[Changed] The recovery path must handle two signals: an explicit `InvalidCollectorVersion` fault, and a call that simply never returns (the behavior observed in vcsim). Both are tested, and the real-vCenter behavior is recorded for 7.x and 8.x.
+[Changed] The recovery path must handle two signals: an explicit `InvalidCollectorVersion` fault, and a call that simply never returns (the behavior observed in vcsim). Both are tested, and the real-vCenter behavior is recorded for supported versions (7.x, 8.x, 9.x).
 
 ---
 
@@ -1696,7 +1698,7 @@ a renamed definition must not rewrite every VM row more than once
 
 ```text
 tags are NOT delivered by WaitForUpdatesEx
-first VERIFY on real vCenter 7.x and 8.x whether a tag attach/detach produces an event or any other signal
+first VERIFY on real vCenter across all supported majors (7.x, 8.x and 9.x) whether a tag attach/detach produces an event or any other signal
     (record the result in the capability matrix)
 if a signal exists:   use it as a hint to re-fetch tags for the affected object only
 if no signal exists:  poll
@@ -1763,7 +1765,7 @@ force stream rollover
 restart collector
 ```
 
-The database must converge automatically. [Changed] Run the demo against at least one 7.x and one 8.x vCenter.
+The database must converge automatically. [Changed] Run the demo against at least one vCenter per available supported major (7.x, 8.x, 9.x).
 
 ---
 
@@ -2263,7 +2265,7 @@ a newly registered vCenter shows status PENDING_ASSIGNMENT until a worker owns i
 Acceptance:
 
 ```text
-a 7.x and an 8.x vCenter can be registered through the API, and their versions are detected correctly
+one vCenter per supported major (7.x, 8.x, 9.x) can be registered through the API, and their versions are detected correctly
 bad credentials, untrusted certificate, unreachable host and unsupported version each return the documented error code
 no secret appears in any response, log, trace, metric or audit record (tests scan the outputs)
 SSRF tests: loopback, link-local/metadata address, redirect and DNS-rebinding attempts are rejected
@@ -2320,7 +2322,7 @@ custom attribute
 
 The search must never call vCenter.
 
-[Added] Then an administrator registers a 7.x and an 8.x vCenter through `POST /v1/vcenters` (after `test-connection`), sees the detected versions and status, and the inventory appears in search. Only registration and test-connection call vCenter; the search path never does.
+[Added] Then an administrator registers vCenters spanning supported major versions (7.x, 8.x, 9.x) through `POST /v1/vcenters` (after `test-connection`), sees the detected versions and status, and the inventory appears in search. Only registration and test-connection call vCenter; the search path never does.
 
 ---
 
@@ -2539,7 +2541,7 @@ stable internal ID where policy permits
 
 No failed batch should result from a stale `(vcenter_id, moref)` unique constraint.
 
-[Added] Test the move in both directions between different vCenter versions (7.x ↔ 8.x). Tags and custom attributes belong to the VM: they are re-read from the destination vCenter after a move. Tag identifiers are not guaranteed to be the same across vCenters (verify), so `(category name, tag name)` is the user-visible identity.
+[Added] Test the move in both directions between different vCenter versions across supported majors (7.x, 8.x, 9.x). Tags and custom attributes belong to the VM: they are re-read from the destination vCenter after a move. Tag identifiers are not guaranteed to be the same across vCenters (verify), so `(category name, tag name)` is the user-visible identity.
 
 ---
 
@@ -2632,7 +2634,7 @@ Acceptance:
 ```text
 a tag attached or detached directly in vCenter converges within one interval
 a tag service outage followed by recovery converges without manual repair
-a mixed 7.x / 8.x fleet converges on both
+a mixed fleet spanning all supported majors (7.x, 8.x, 9.x) converges across all targets
 ```
 
 ---
@@ -2649,7 +2651,7 @@ Run:
 
 with realistic inventory sizes.
 
-[Changed] The fleet is a mix of vCenter 7.x and 8.x (real vCenter for at least one of each, vcsim for the rest), with tags and custom attributes at realistic densities.
+[Changed] The fleet is a mix of vCenter versions spanning all available majors (real vCenter for 7.x, 8.x, 9.x where available, vcsim for the rest), with tags and custom attributes at realistic densities.
 
 Measure:
 
@@ -2678,7 +2680,7 @@ xvMotion test
 reconciliation convergence test
 tag and attribute convergence test
 vCenter lifecycle test (register → collect → disable → resume → decommission)
-mixed 7.x / 8.x fleet test
+mixed-fleet test spanning all available majors (7.x, 8.x, 9.x)
 PostgreSQL failover test
 backup restore test
 10-target scale test
@@ -2993,7 +2995,7 @@ large event burst
 large VM churn
 tag service unavailable
 REST session expiry
-mixed 7.x / 8.x fleet
+mixed fleet (7.x / 8.x / 9.x)
 vCenter registered while the fleet is under load
 ```
 
@@ -3179,7 +3181,7 @@ the frontend team confirms their screens work against the release candidate
 ## Version certification
 
 ```text
-the full real-vCenter suite on 7.x, on 8.x and on a mixed fleet
+the full real-vCenter suite on 7.0.x, 8.0.x (U3), 9.0.x, 9.1.x and on a mixed fleet (recording which real environments are available)
 results recorded per version in docs/vsphere-capability-matrix.md
 every behavior difference is a documented capability flag, not an undocumented special case
 ```
@@ -3206,7 +3208,7 @@ Production release requires:
 [✓] rolling upgrade passed
 [✓] rollback tested
 [✓] API contract frozen as v1 and accepted by the frontend team
-[✓] vCenter 7.x and 8.x certified on real vCenter
+[✓] vCenter supported major versions (7.x, 8.x, 9.x) certified on real vCenter (recording available patch levels in capability matrix)
 [✓] vCenter registration security review passed (credentials, SSRF, audit)
 ```
 
@@ -3445,7 +3447,7 @@ web/ not modified
 For anything that talks to vCenter:
 
 ```text
-behavior on vCenter 7.x and 8.x
+behavior across supported vCenter versions (7.x, 8.x, 9.x)
 read-only guarantee (no write calls to vCenter)
 ```
 
@@ -3601,7 +3603,7 @@ There are four formal release gates.
 ```text
 all critical features work
 API contract complete and accepted by the frontend team
-vCenter registration works for supported 7.x and 8.x versions
+vCenter registration works for supported versions (7.0 and higher: 7.x, 8.x, 9.x)
 ```
 
 ## Gate 2 — Correctness
@@ -3658,7 +3660,7 @@ A release that passes functionality but fails correctness or operational gates d
 | vSphere resource leaks     | repeated worker lifecycle |
 | memory growth              | 72-hour soak              |
 | tag changes are not streamed | tag sync and reconciliation tests |
-| vCenter 7.x vs 8.x behavior differences | nightly real-vCenter runs on both |
+| vCenter 7.x / 8.x / 9.x behavior differences | nightly real-vCenter runs across available majors |
 | credential leakage through the registration API | secret-leak scan tests and review |
 | SSRF through vCenter registration | SSRF test suite |
 | API contract drift breaks the frontend | contract tests, changelog, mock server |
@@ -3739,7 +3741,7 @@ The product is ready for production only when a new environment can perform this
 
 ```text
 1. An administrator registers a vCenter through the API (test-connection first)
-2. The version is detected (7.x or 8.x) and compatibility is reported
+2. The version is detected (7.0 or higher: 7.x, 8.x, 9.x) and compatibility is reported (certified or untested)
 3. Collector acquires the target
 4. Authenticate
 5. Discover topology
@@ -3764,7 +3766,7 @@ The product is ready for production only when a new environment can perform this
 24. Verify service recovery
 25. Upgrade application
 26. Verify no inventory loss
-27. Repeat the core path against a vCenter of the other major version (7.x ↔ 8.x)
+27. Repeat the core path against vCenters across all available supported major versions (7.x, 8.x, 9.x)
 ```
 
 That entire path becomes the final release smoke test.
@@ -3857,7 +3859,7 @@ OIDC/RBAC
         +
 complete versioned REST API + OpenAPI contract
         +
-vCenter management API (vSphere 7.x – 8.x)
+vCenter management API (vSphere 7.0 and higher: 7.x, 8.x, 9.x)
         +
 OpenTelemetry
         +
