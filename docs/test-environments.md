@@ -10,7 +10,7 @@ This document defines the deployment tiers, execution models, and isolation boun
 | :--- | :--- | :--- | :--- | :--- |
 | **Execution Trigger** | Developer manual invocation | Every Pull Request & merge to `main` | Continuous deployment from `main` | Scheduled nightly cron / manual dispatch |
 | **Database** | PostgreSQL 18.6 container (`5433:5432`) | Service container `postgres:18.6-alpine` | Dedicated CloudNativePG 1.30.x cluster | Staging PostgreSQL instance |
-| **vSphere Target** | `vmware/vcsim` container (`8989:8989`) | In-process Go `simulator.VPX()` | Clustered `vcsim` or Lab vCenter | Real VMware vSphere (7.0u3 / 8.0+) |
+| **vSphere Target** | `vmware/vcsim` container (`8989:8989`) | In-process Go `simulator.VPX()` | Clustered `vcsim` or Lab vCenter | Real VMware vSphere (7.0.x, 8.0.x U3, 9.0.x, 9.1.x) |
 | **Telemetry** | Prometheus + Grafana containers | Telemetry endpoint validation tests | Prometheus + Grafana + OpenTelemetry Collector | Production-mirror observability stack |
 | **Secret Management** | Local env vars / `.env.example` | GitHub Actions encrypted repository secrets | Kubernetes Secrets / HashiCorp Vault | Cloud Secret Manager / Vault |
 | **Network Isolation**| Local Docker bridge network | Ephemeral container network | Dedicated VPC / Kubernetes namespace | Dedicated management VLAN with firewall rules |
