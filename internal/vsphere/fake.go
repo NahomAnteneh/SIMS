@@ -212,14 +212,15 @@ type FakePropertyCollector struct {
 
 	Ref types.ManagedObjectReference
 
-	injectedFault  error
-	waitDelay      time.Duration
-	truncatedFlag  *bool
-	updatesQueue   []*types.UpdateSet
-	currentVersion string
-	createdFilters []*FakePropertyFilter
-	canceledWaits  int
-	destroyedCount int
+	injectedFault       error
+	waitDelay           time.Duration
+	truncatedFlag       *bool
+	updatesQueue        []*types.UpdateSet
+	currentVersion      string
+	createdFilters      []*FakePropertyFilter
+	canceledWaits       int
+	destroyedCount      int
+	waitForUpdatesCount int
 }
 
 func NewFakePropertyCollector() *FakePropertyCollector {
@@ -284,6 +285,7 @@ func (f *FakePropertyCollector) CreateFilter(ctx context.Context, spec types.Pro
 
 func (f *FakePropertyCollector) WaitForUpdatesEx(ctx context.Context, version string, options *types.WaitOptions) (*types.UpdateSet, error) {
 	f.mu.Lock()
+	f.waitForUpdatesCount++
 	faultErr := f.injectedFault
 	delay := f.waitDelay
 	truncated := f.truncatedFlag
@@ -352,6 +354,12 @@ func (f *FakePropertyCollector) CanceledWaits() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.canceledWaits
+}
+
+func (f *FakePropertyCollector) WaitForUpdatesCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.waitForUpdatesCount
 }
 
 // FakeEventCollector implements EventCollector with event queues and gap injection.

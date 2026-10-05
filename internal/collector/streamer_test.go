@@ -362,3 +362,63 @@ func TestPropertyStreamer_CleanupRegistryIntegration(t *testing.T) {
 		t.Error("expected property filter to be destroyed during CleanupRegistry teardown")
 	}
 }
+
+func TestPropertyStreamer_QueueBackpressureProactivelyResyncs(t *testing.T) {
+	fakePC := vsphere.NewFakePropertyCollector()
+	metrics := telemetry.NewMetrics("test", "0.1.0")
+
+	// Pre-enqueue one update so WaitForUpdatesEx returns immediately
+	fakePC.EnqueueUpdate(&types.UpdateSet{
+		Version: "ver-bp-1",
+		FilterSet: []types.PropertyFilterUpdate{
+			{
+				Filter: types.ManagedObjectReference{Type: "PropertyFilter", Value: "filter-1"},
+				ObjectSet: []types.ObjectUpdate{
+					{Kind: types.ObjectUpdateKindModify, Obj: types.ManagedObjectReference{Value: "vm-1"}},
+				},
+			},
+		},
+	})
+
+	// Bounded queue with capacity 1, pre-filled
+	queue := collector.NewBoundedQueue[types.ObjectUpdate]("vc-bp-stream", 1, metrics)
+	_ = queue.Push(context.Background(), types.ObjectUpdate{Kind: types.ObjectUpdateKindModify, Obj: types.ManagedObjectReference{Value: "vm-existing"}})
+
+	cfg := collector.StreamerConfig{
+		VCenterID:              "vc-bp-stream",
+		MaxWaitSeconds:         1,
+		CallDeadline:           1 * time.Second,
+		MaxStreamBlockDuration: 50 * time.Millisecond, // Proactive backpressure limit
+	}
+
+	streamer := collector.NewPropertyStreamer(fakePC, types.PropertyFilterSpec{}, cfg, metrics, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Handler attempts to push into full bounded queue with MaxStreamBlockDuration
+	err := streamer.Run(ctx, func(handlerCtx context.Context, updates []types.ObjectUpdate) error {
+		pushCtx, cancelPush := context.WithTimeout(handlerCtx, cfg.MaxStreamBlockDuration)
+		defer cancelPush()
+
+		pushErr := queue.PushAll(pushCtx, updates)
+		if pushErr != nil {
+			if errors.Is(pushErr, context.DeadlineExceeded) {
+				return collector.ErrStreamHung
+			}
+			return pushErr
+		}
+		return nil
+	})
+
+	if err == nil {
+		t.Fatal("expected streamer.Run to abort on backpressure block timeout, got nil")
+	}
+	if !errors.Is(err, collector.ErrStreamHung) {
+		t.Fatalf("expected ErrStreamHung, got: %v", err)
+	}
+
+	// Broadcom invariant: while blocked, streamer did not loop back to call WaitForUpdatesEx again
+	if fakePC.WaitForUpdatesCount() != 1 {
+		t.Errorf("expected exactly 1 WaitForUpdatesEx call, got %d", fakePC.WaitForUpdatesCount())
+	}
+}
