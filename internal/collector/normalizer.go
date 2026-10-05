@@ -122,6 +122,9 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 		clusterID = snap.ClusterIDByMoRef[vm.Runtime.Host.Value]
 		datacenterID = snap.DatacenterIDByMoRef[vm.Runtime.Host.Value]
 	}
+	if datacenterID == "" && vm.Parent != nil && snap != nil {
+		datacenterID = snap.DatacenterIDByMoRef[vm.Parent.Value]
+	}
 
 	// Datastores
 	var dsMoRefs []string

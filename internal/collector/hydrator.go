@@ -65,6 +65,7 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 	kinds := []string{
 		"Datacenter",
 		"Folder",
+		"ComputeResource",
 		"ClusterComputeResource",
 		"HostSystem",
 		"Datastore",
@@ -106,6 +107,8 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 		snap.ByMoRef[ref.Value] = node
 
 		switch ref.Type {
+		case "Datacenter":
+			snap.Datacenters[ref.Value] = node
 		case "Datastore":
 			snap.Datastores[ref.Value] = node
 		case "Network":
@@ -118,6 +121,77 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 			snap.Hosts[ref.Value] = node
 		case "ClusterComputeResource":
 			snap.Clusters[ref.Value] = node
+		}
+	}
+
+	// Extract VLAN specifications from DistributedVirtualPortgroup
+	var dvpgs []mo.DistributedVirtualPortgroup
+	if err := cv.Retrieve(ctx, []string{"DistributedVirtualPortgroup"}, []string{"config.defaultPortConfig"}, &dvpgs); err == nil {
+		for _, dvpg := range dvpgs {
+			mRef := dvpg.Reference().Value
+			var vlanSpec string
+			if setting, ok := dvpg.Config.DefaultPortConfig.(*types.VMwareDVSPortSetting); ok && setting != nil && setting.Vlan != nil {
+				switch vs := setting.Vlan.(type) {
+				case *types.VmwareDistributedVirtualSwitchVlanIdSpec:
+					if vs.VlanId > 0 && vs.VlanId <= 4094 {
+						vlanSpec = fmt.Sprintf("%d", vs.VlanId)
+					}
+				case *types.VmwareDistributedVirtualSwitchPvlanSpec:
+					if vs.PvlanId > 0 && vs.PvlanId <= 4094 {
+						vlanSpec = fmt.Sprintf("%d", vs.PvlanId)
+					}
+				case *types.VmwareDistributedVirtualSwitchTrunkVlanSpec:
+					var parts []string
+					for _, r := range vs.VlanId {
+						if r.Start == r.End {
+							parts = append(parts, fmt.Sprintf("%d", r.Start))
+						} else {
+							parts = append(parts, fmt.Sprintf("%d-%d", r.Start, r.End))
+						}
+					}
+					vlanSpec = strings.Join(parts, ", ")
+				}
+			}
+			if vlanSpec != "" {
+				if pgNode, ok := snap.Portgroups[mRef]; ok {
+					pgNode.VLANSpec = vlanSpec
+					snap.Portgroups[mRef] = pgNode
+					snap.ByMoRef[mRef] = pgNode
+				}
+			}
+		}
+	}
+
+	// Extract standard switch portgroup VLANs from HostSystem network configs
+	var hostSystems []mo.HostSystem
+	if err := cv.Retrieve(ctx, []string{"HostSystem"}, []string{"config.network"}, &hostSystems); err == nil {
+		for _, hs := range hostSystems {
+			if hs.Config != nil && hs.Config.Network != nil {
+				for _, pg := range hs.Config.Network.Portgroup {
+					vlanSpec := ""
+					if pg.Spec.VlanId == 4095 {
+						vlanSpec = "1-4094"
+					} else if pg.Spec.VlanId > 0 && pg.Spec.VlanId <= 4094 {
+						vlanSpec = fmt.Sprintf("%d", pg.Spec.VlanId)
+					}
+					if vlanSpec != "" {
+						for mRef, netNode := range snap.Networks {
+							if netNode.Name == pg.Spec.Name && netNode.VLANSpec == "" {
+								netNode.VLANSpec = vlanSpec
+								snap.Networks[mRef] = netNode
+								snap.ByMoRef[mRef] = netNode
+							}
+						}
+						for mRef, pgNode := range snap.Portgroups {
+							if pgNode.Name == pg.Spec.Name && pgNode.VLANSpec == "" {
+								pgNode.VLANSpec = vlanSpec
+								snap.Portgroups[mRef] = pgNode
+								snap.ByMoRef[mRef] = pgNode
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
