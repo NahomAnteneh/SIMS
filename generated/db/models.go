@@ -178,6 +178,7 @@ type VirtualMachine struct {
 	UpdatedAt       pgtype.Timestamptz
 	CreatedBy       string
 	LastSeenAt      pgtype.Timestamptz
+	FirstSeenAt     pgtype.Timestamptz
 }
 
 type VmCustomAttribute struct {
