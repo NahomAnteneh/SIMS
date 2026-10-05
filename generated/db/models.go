@@ -30,16 +30,18 @@ type CollectorLease struct {
 }
 
 type CollectorState struct {
-	ID            pgtype.UUID
-	TargetID      pgtype.UUID
-	Status        string
-	LastSyncAt    pgtype.Timestamptz
-	SyncToken     pgtype.Text
-	ErrorMessage  pgtype.Text
-	UpdatedAt     pgtype.Timestamptz
-	VcenterID     pgtype.UUID
-	LastEventKey  pgtype.Int8
-	LastEventTime pgtype.Timestamptz
+	ID               pgtype.UUID
+	TargetID         pgtype.UUID
+	Status           string
+	LastSyncAt       pgtype.Timestamptz
+	SyncToken        pgtype.Text
+	ErrorMessage     pgtype.Text
+	UpdatedAt        pgtype.Timestamptz
+	VcenterID        pgtype.UUID
+	LastEventKey     pgtype.Int8
+	LastEventTime    pgtype.Timestamptz
+	TagsLastSyncedAt pgtype.Timestamptz
+	TagsState        string
 }
 
 type CollectorTarget struct {
