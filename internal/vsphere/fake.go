@@ -64,6 +64,7 @@ type FakeSession struct {
 	loginErr         error
 	currentTimeErr   error
 	currentTimeDelay time.Duration
+	currentTimeCalls int
 	about            *types.AboutInfo
 	connected        bool
 	loggedIn         bool
@@ -135,6 +136,7 @@ func (s *FakeSession) Login(ctx context.Context) error {
 
 func (s *FakeSession) CurrentTime(ctx context.Context) (time.Time, error) {
 	s.mu.Lock()
+	s.currentTimeCalls++
 	err := s.currentTimeErr
 	delay := s.currentTimeDelay
 	t := s.currentTime
@@ -152,6 +154,12 @@ func (s *FakeSession) CurrentTime(ctx context.Context) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return t, nil
+}
+
+func (s *FakeSession) CurrentTimeCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.currentTimeCalls
 }
 
 func (s *FakeSession) Logout(ctx context.Context) error {

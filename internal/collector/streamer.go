@@ -33,9 +33,10 @@ var (
 // StreamerConfig defines operational parameters for PropertyCollector streaming.
 type StreamerConfig struct {
 	VCenterID              string
-	MaxWaitSeconds         int32         // Default: 60s
+	MaxWaitSeconds         int32         // Default: 60s (server-side wait interval)
 	MaxObjects             int32         // Default: 500
-	MaxStreamBlockDuration time.Duration // Default: 5m (proactive hang detection)
+	CallDeadline           time.Duration // Default: 90s (per-call deadline for hang detection: MaxWaitSeconds + 30s)
+	MaxStreamBlockDuration time.Duration // Default: 5m (how long backpressure may pause the stream before proactive RESYNCING)
 }
 
 // DefaultStreamerConfig returns a verified production-safe default configuration.
@@ -44,6 +45,7 @@ func DefaultStreamerConfig(vcenterID string) StreamerConfig {
 		VCenterID:              vcenterID,
 		MaxWaitSeconds:         60,
 		MaxObjects:             500,
+		CallDeadline:           90 * time.Second,
 		MaxStreamBlockDuration: 5 * time.Minute,
 	}
 }
@@ -81,6 +83,9 @@ func NewPropertyStreamer(
 	}
 	if cfg.MaxObjects <= 0 {
 		cfg.MaxObjects = 500
+	}
+	if cfg.CallDeadline <= 0 {
+		cfg.CallDeadline = time.Duration(cfg.MaxWaitSeconds)*time.Second + 30*time.Second
 	}
 	if cfg.MaxStreamBlockDuration <= 0 {
 		cfg.MaxStreamBlockDuration = 5 * time.Minute
@@ -206,11 +211,11 @@ func (s *PropertyStreamer) Run(ctx context.Context, handler UpdateHandler) error
 
 		start := time.Now()
 
-		// Wrap with proactive stream block duration (hang detection)
+		// Wrap with per-call deadline (hang detection)
 		waitCtx := ctx
 		var cancelWait context.CancelFunc
-		if s.cfg.MaxStreamBlockDuration > 0 {
-			waitCtx, cancelWait = context.WithTimeout(ctx, s.cfg.MaxStreamBlockDuration)
+		if s.cfg.CallDeadline > 0 {
+			waitCtx, cancelWait = context.WithTimeout(ctx, s.cfg.CallDeadline)
 		}
 
 		updateSet, err := s.pc.WaitForUpdatesEx(waitCtx, curVersion, waitOpt)
@@ -223,15 +228,15 @@ func (s *PropertyStreamer) Run(ctx context.Context, handler UpdateHandler) error
 				return ctx.Err()
 			}
 			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-				// Proactive hang detection fired
-				s.logger.Warn("PropertyCollector stream blocked beyond maximum threshold; triggering recovery",
-					slog.Duration("block_duration", s.cfg.MaxStreamBlockDuration),
+				// Proactive hang detection fired on per-call deadline
+				s.logger.Warn("PropertyCollector WaitForUpdatesEx hung beyond call deadline; triggering recovery",
+					slog.Duration("call_deadline", s.cfg.CallDeadline),
 					slog.String("vcenter_id", s.cfg.VCenterID),
 				)
 				if cancelErr := s.pc.CancelWaitForUpdates(context.Background()); cancelErr != nil {
 					s.logger.Debug("failed to cancel wait for updates", slog.String("error", cancelErr.Error()))
 				}
-				return fmt.Errorf("%w: call exceeded %v", ErrStreamHung, s.cfg.MaxStreamBlockDuration)
+				return fmt.Errorf("%w: call exceeded %v", ErrStreamHung, s.cfg.CallDeadline)
 			}
 			if IsInvalidCollectorVersion(err) {
 				s.logger.Warn("PropertyCollector returned InvalidCollectorVersion; triggering re-sync",
