@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/infrastructure/sims/internal/collector"
+	"github.com/infrastructure/sims/internal/vlan"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -174,7 +175,9 @@ func (p *BulkPersister) ApplyVMIncrementalUpdate(ctx context.Context, vcenterID,
 			}
 			var vlanParam any = nil
 			if nic.VLANSpec != "" {
-				vlanParam = nic.VLANSpec
+				if norm, normErr := vlan.NormalizeSpec(nic.VLANSpec); normErr == nil {
+					vlanParam = norm
+				}
 			}
 
 			_, err := tx.Exec(ctx, `
