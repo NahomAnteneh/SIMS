@@ -340,6 +340,12 @@ func (f *FakePropertyCollector) CreatedFilters() []*FakePropertyFilter {
 	return res
 }
 
+func (f *FakePropertyCollector) CanceledWaits() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.canceledWaits
+}
+
 // FakeEventCollector implements EventCollector with event queues and gap injection.
 type FakeEventCollector struct {
 	mu sync.Mutex
