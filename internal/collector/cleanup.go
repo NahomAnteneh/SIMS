@@ -220,6 +220,13 @@ func (r *CleanupRegistry) CountByKind(kind ResourceKind) int {
 	return c
 }
 
+// IsTornDown reports whether Teardown has been executed.
+func (r *CleanupRegistry) IsTornDown() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.tornDown
+}
+
 // Teardown executes registered cleanup actions in strict 8-stage order (Stage 1 through Stage 8).
 // It is idempotent and safe to call multiple times. Errors during individual steps are logged
 // and accumulated without stopping subsequent steps.
