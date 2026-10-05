@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,7 +28,23 @@ var (
 	ErrNotConnected          = errors.New("vsphere client not connected")
 	ErrCertificateValidation = errors.New("vsphere certificate validation failed")
 	ErrSessionExpired        = errors.New("vsphere session expired")
+	ErrUnsupportedVersion    = errors.New("unsupported_version")
 )
+
+// UnsupportedVersionError represents an endpoint version that is strictly below 7.0.
+type UnsupportedVersionError struct {
+	Version    string
+	ApiVersion string
+	Product    string
+}
+
+func (e *UnsupportedVersionError) Error() string {
+	return fmt.Sprintf("unsupported_version: %s (vSphere 7.0 and above required)", e.Version)
+}
+
+func (e *UnsupportedVersionError) Is(target error) bool {
+	return target == ErrUnsupportedVersion
+}
 
 // SessionConfig configures vSphere connection and security parameters.
 type SessionConfig struct {
@@ -107,6 +125,19 @@ func (sm *SessionManager) connectLocked(ctx context.Context) error {
 	vimClient, err := vim25.NewClient(timeoutCtx, soapClient)
 	if err != nil {
 		return sm.classifyError(err)
+	}
+
+	about := vimClient.ServiceContent.About
+	major, err := parseMajorVersion(about.Version, about.ApiVersion)
+	if err != nil {
+		return fmt.Errorf("failed to parse vcenter version: %w", err)
+	}
+	if major < 7 {
+		return &UnsupportedVersionError{
+			Version:    about.Version,
+			ApiVersion: about.ApiVersion,
+			Product:    about.FullName,
+		}
 	}
 
 	sm.client = &govmomi.Client{
@@ -257,4 +288,32 @@ func (sm *SessionManager) classifyError(err error) error {
 	}
 
 	return err
+}
+
+// About returns the vCenter AboutInfo metadata retrieved at connection time,
+// or nil if the client is not connected.
+func (sm *SessionManager) About() *types.AboutInfo {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if sm.client == nil {
+		return nil
+	}
+	return &sm.client.ServiceContent.About
+}
+
+// parseMajorVersion extracts the leading integer major version from a version or apiVersion string.
+func parseMajorVersion(version, apiVersion string) (int, error) {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		v = strings.TrimSpace(apiVersion)
+	}
+	if v == "" {
+		return 0, fmt.Errorf("version and apiVersion are both empty")
+	}
+	parts := strings.Split(v, ".")
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, fmt.Errorf("invalid major version %q in %q: %w", parts[0], v, err)
+	}
+	return major, nil
 }

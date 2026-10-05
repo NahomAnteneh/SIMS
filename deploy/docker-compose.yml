@@ -18,11 +18,12 @@ services:
       retries: 10
 
   vcsim:
-    image: vmware/vcsim:v0.56.0@sha256:a58d77fdb0b52dd7c8ded660890542c3a82518ae3911fe65920428b041a99db2
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.vcsim
     container_name: sims-vcsim
     ports:
       - "8989:8989"
-    command: ["-l", ":8989"]
 
   prometheus:
     image: prom/prometheus:v3.13.4@sha256:2b23972d85f7f1350cde18fb61239d6fc8669a5b8fe162ab569373d3ad3463d2

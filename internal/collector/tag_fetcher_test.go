@@ -9,6 +9,7 @@ import (
 
 	"github.com/infrastructure/sims/internal/collector"
 	"github.com/infrastructure/sims/internal/telemetry"
+	"github.com/infrastructure/sims/internal/vsphere"
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/vapi/rest"
@@ -26,6 +27,7 @@ func TestRestTagFetcher_LiveVAPISimulator(t *testing.T) {
 	defer cancel()
 
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	defer model.Remove()
 	if err := model.Create(); err != nil {
 		t.Fatalf("failed to create VPX model: %v", err)

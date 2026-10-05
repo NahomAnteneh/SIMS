@@ -44,6 +44,7 @@ func TestGate_5000VMHydration(t *testing.T) {
 	t.Log("Initializing in-process vcsim with 5,000 VMs...")
 	simStart := time.Now()
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	model.Autostart = false // Disable power-on simulation tasks for instant model creation
 	model.Datacenter = 1
 	model.Cluster = 1

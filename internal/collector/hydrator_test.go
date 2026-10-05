@@ -19,6 +19,7 @@ func TestHydrateInventoryAndContainerViewLifecycle(t *testing.T) {
 	defer cancel()
 
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	defer model.Remove()
 	if err := model.Create(); err != nil {
 		t.Fatalf("failed to create vcsim model: %v", err)
@@ -152,6 +153,7 @@ func TestHydrateInventory_TagFetcherDegradationAndEnrichment(t *testing.T) {
 	defer cancel()
 
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	defer model.Remove()
 	if err := model.Create(); err != nil {
 		t.Fatalf("failed to create vcsim model: %v", err)
@@ -249,6 +251,7 @@ func TestHydrateInventoryAndTopology_CustomFields(t *testing.T) {
 	defer cancel()
 
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	defer model.Remove()
 	if err := model.Create(); err != nil {
 		t.Fatalf("failed to create vcsim model: %v", err)

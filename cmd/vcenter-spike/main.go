@@ -375,8 +375,12 @@ func probeSessionLifetime(ctx context.Context, c *govmomi.Client) ProbeResult {
 func probeInvalidCollectorVersion(ctx context.Context, c *govmomi.Client) ProbeResult {
 	pc := property.DefaultCollector(c.Client)
 
+	// Bound WaitForUpdates with short context so vcsim hang doesn't block the spike
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
 	// Pass an intentionally bogus version to verify server response
-	_, err := pc.WaitForUpdates(ctx, "INVALID_VERSION_STAMP_99999")
+	_, err := pc.WaitForUpdates(probeCtx, "INVALID_VERSION_STAMP_99999")
 	if err == nil {
 		return ProbeResult{
 			Name:     "InvalidCollectorVersion Behavior",
@@ -386,10 +390,12 @@ func probeInvalidCollectorVersion(ctx context.Context, c *govmomi.Client) ProbeR
 	}
 
 	isTypedFault := fault.Is(err, &types.InvalidCollectorVersion{})
-	soapFault := soap.ToSoapFault(err)
 	var vimFaultName string
-	if soapFault != nil && soapFault.VimFault() != nil {
-		vimFaultName = fmt.Sprintf("%T", soapFault.VimFault())
+	if soap.IsSoapFault(err) {
+		soapFault := soap.ToSoapFault(err)
+		if soapFault != nil && soapFault.VimFault() != nil {
+			vimFaultName = fmt.Sprintf("%T", soapFault.VimFault())
+		}
 	}
 
 	if isTypedFault {
@@ -412,7 +418,7 @@ func probeInvalidCollectorVersion(ctx context.Context, c *govmomi.Client) ProbeR
 	return ProbeResult{
 		Name:     "InvalidCollectorVersion Behavior",
 		Status:   "WARN",
-		Evidence: fmt.Sprintf("Bogus version returned non-fault error (e.g. timeout or connection drop): %v", errStr),
+		Evidence: fmt.Sprintf("Bogus version returned non-fault error (e.g. vcsim blocked until timeout): %v", errStr),
 	}
 }
 
