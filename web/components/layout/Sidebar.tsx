@@ -1,70 +1,67 @@
-import { 
-  LayoutGrid, Activity, Bell, Package, Layers, Grid, 
-  ShoppingCart, Receipt, SlidersHorizontal, ArrowLeftRight, RotateCcw,
-  Users, Warehouse, BarChart3, TrendingUp, RefreshCcw, 
-  PieChart, Settings, Users2, Puzzle, ChevronDown
-} from 'lucide-react';
-import Link from 'next/link';
+"use client";
 
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { 
+  LayoutGrid, Waypoints, Bell, 
+  Building2, Server, HardDrive, Network, 
+  Monitor, Component, Copy, 
+  Activity, TrendingUp, BarChart3, 
+  Database, Shield, Settings, Warehouse, ChevronDown
+} from 'lucide-react';
+
+// Notice we removed the static 'active: boolean' property from these items
 const menuGroups = [
   {
-    title: "OVERVIEW",
+    title: "GLOBAL OBSERVABILITY",
     items: [
-      { name: "Dashboard", icon: LayoutGrid, active: false },
-      { name: "Activity", icon: Activity, active: false },
-      { name: "Notifications", icon: Bell, active: false, badge: 6 },
+      { name: "Overview Dashboard", icon: LayoutGrid, href: "/dashboard" },
+      { name: "Topology View", icon: Waypoints, href: "/topology" },
+      { name: "Alerts & Events", icon: Bell, href: "/alerts", badge: 3 },
     ]
   },
   {
-    title: "INVENTORY",
+    title: "INFRASTRUCTURE",
     items: [
-      { name: "Products", icon: Package, active: false },
-      { name: "Categories", icon: Layers, active: false },
-      { name: "Stock Matrix", icon: Grid, active: false },
+      { name: "Datacenters", icon: Building2, href: "/infrastructure/datacenters" },
+      { name: "Clusters & Hosts", icon: Server, href: "/infrastructure/clusters" },
+      { name: "Storage", icon: HardDrive, href: "/infrastructure/storage" },
+      { name: "Networking", icon: Network, href: "/infrastructure/networking" },
     ]
   },
   {
-    title: "OPERATIONS",
+    title: "COMPUTE & WORKLOADS",
     items: [
-      { name: "Sales Orders", icon: ShoppingCart, active: false },
-      { name: "Purchase Orders", icon: Receipt, active: false },
-      { name: "Adjustments", icon: SlidersHorizontal, active: false },
-      { name: "Transfers", icon: ArrowLeftRight, active: false },
-      { name: "Cycle Counts", icon: RotateCcw, active: false },
+      { name: "Virtual Machines", icon: Monitor, href: "/compute/vms" },
+      { name: "Applications & Services", icon: Component, href: "/compute/applications" },
+      { name: "Templates", icon: Copy, href: "/compute/templates" },
     ]
   },
   {
-    title: "PARTNERS",
+    title: "OPERATIONS & ANALYTICS",
     items: [
-      { name: "Suppliers", icon: Users, active: false },
-      { name: "Warehouses", icon: Warehouse, active: false },
+      { name: "Task Console", icon: Activity, href: "/operations/tasks" },
+      { name: "Capacity Planning", icon: TrendingUp, href: "/operations/capacity" },
+      { name: "Reports", icon: BarChart3, href: "/operations/reports" },
     ]
   },
   {
-    title: "ANALYTICS",
+    title: "ADMINISTRATION",
     items: [
-      { name: "Reports", icon: BarChart3, active: true },
-      { name: "Stock Value", icon: TrendingUp, active: false },
-      { name: "Turnover", icon: RefreshCcw, active: false },
-      { name: "Suppliers", icon: Users2, active: false },
-      { name: "ABC Analysis", icon: PieChart, active: false },
-    ]
-  },
-  {
-    title: "SYSTEM",
-    items: [
-      { name: "Settings", icon: Settings, active: false },
-      { name: "Team", icon: Users2, active: false },
-      { name: "Integrations", icon: Puzzle, active: false },
+      { name: "Data Sources", icon: Database, href: "/admin/data-sources" },
+      { name: "Access Control", icon: Shield, href: "/admin/access" },
+      { name: "Settings", icon: Settings, href: "/admin/settings" },
     ]
   }
 ];
 
 export const Sidebar = () => {
+  const pathname = usePathname(); // Get the current active URL path
+
   return (
-    <aside className="w-64 border-r border-zinc-900 bg-[#0a0a0a] flex flex-col h-full">
+    <aside className="w-64 border-r border-zinc-900 bg-[#0a0a0a] flex flex-col h-full shrink-0">
       {/* Logo */}
-      <div className="h-14 flex items-center px-4 gap-3">
+      <div className="h-14 flex items-center px-4 gap-3 shrink-0">
         <div className="h-6 w-6 rounded bg-yellow-600 flex items-center justify-center">
           <Warehouse className="h-4 w-4 text-black" />
         </div>
@@ -84,16 +81,21 @@ export const Sidebar = () => {
             <ul className="space-y-0.5">
               {group.items.map((item, itemIdx) => {
                 const Icon = item.icon;
+                
+                // Check if the current pathname matches the item's href
+                // Use startsWith if you want parent menus to stay active when on child pages
+                const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+
                 return (
                   <li key={itemIdx}>
                     <Link 
-                      href="#" 
+                      href={item.href} 
                       className={`flex items-center gap-3 px-4 py-2 text-sm relative group
-                        ${item.active 
+                        ${isActive 
                           ? 'text-zinc-100 bg-zinc-900/50' 
                           : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/30'}`}
                     >
-                      {item.active && (
+                      {isActive && (
                         <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-yellow-600" />
                       )}
                       <Icon className="h-4 w-4" />
@@ -113,7 +115,7 @@ export const Sidebar = () => {
       </nav>
 
       {/* User Profile */}
-      <div className="p-4 border-t border-zinc-900 flex items-center justify-between cursor-pointer hover:bg-zinc-900/50">
+      <div className="p-4 border-t border-zinc-900 flex items-center justify-between cursor-pointer hover:bg-zinc-900/50 shrink-0">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-full bg-pink-700 flex items-center justify-center text-xs font-medium">
             SC
