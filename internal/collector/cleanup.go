@@ -69,14 +69,27 @@ type registeredItem struct {
 
 // CleanupRegistry tracks server-side objects and client resources, guaranteeing
 // idempotent teardown in strict reverse creation order:
-// 1. Stop producer
-// 2. Wait for in-flight processing to drain
-// 3. Destroy EventHistoryCollector
-// 4. Destroy PropertyFilter
+// 1. Stop producer (event stream and property stream loops)
+// 2. Wait for in-flight processing to drain (with bounded timeout)
+// 3. Destroy EventHistoryCollector (avoids server-side leak)
+// 4. Destroy PropertyFilter (avoids server-side leak)
 // 5. Destroy ContainerView
 // 6. Logout REST session
 // 7. Logout SOAP session
 // 8. Close HTTP transport / client
+//
+// Ordering Rationale & Prompt Alignment:
+// SPRINTPLAN S2.7 specifies "1. Stop producer (event stream / property stream), 2. Wait for
+// in-flight processing to drain (with timeout)...". Stage 1 halts active vSphere polling loops,
+// and Stage 2 flushes in-flight queue buffers to database persistence before server-side
+// filters and sessions are severed.
+//
+// Deadlock Prevention:
+// The drain phase (Stage 2) cannot deadlock against a blocked producer because Stage 1
+// terminates or signals cancellation to producer goroutines first. Furthermore, each teardown
+// stage executes under an enforced per-step deadline (stepTimeout, default 5s) via
+// context.WithTimeout. If in-flight processing is unresponsive or blocked on an external
+// dependency, the step aborts cleanly on timeout and proceeds to server-side object destruction.
 type CleanupRegistry struct {
 	logger      *slog.Logger
 	stepTimeout time.Duration

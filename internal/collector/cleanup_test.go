@@ -249,3 +249,117 @@ func TestCleanupRegistry_PanicRecovery(t *testing.T) {
 		panic("simulated critical fault")
 	}()
 }
+
+func TestCleanupRegistry_ContextCancellation(t *testing.T) {
+	reg := collector.NewCleanupRegistry(nil, 500*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel before teardown begins
+
+	step1Executed := false
+	step2Executed := false
+
+	reg.RegisterProducer("producer", func() {
+		step1Executed = true
+	})
+	reg.Register(collector.ResourceKindSOAP, "soap", func(c context.Context) error {
+		step2Executed = true
+		return c.Err()
+	})
+
+	err := reg.Teardown(ctx)
+	if err == nil {
+		t.Fatal("expected error on canceled context, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled in accumulated errors, got: %v", err)
+	}
+	if !step1Executed || !step2Executed {
+		t.Errorf("all steps should still be attempted despite context cancellation: step1=%v, step2=%v", step1Executed, step2Executed)
+	}
+}
+
+func TestCleanupRegistry_NetworkFailure(t *testing.T) {
+	reg := collector.NewCleanupRegistry(nil, 500*time.Millisecond)
+
+	subsequentStepExecuted := false
+
+	// Step 3 fails with network failure
+	reg.Register(collector.ResourceKindEvent, "event-network-fail", func(ctx context.Context) error {
+		return vsphere.ErrFakeDisconnect
+	})
+
+	// Step 7 executes despite network failure in step 3
+	reg.Register(collector.ResourceKindSOAP, "soap-session", func(ctx context.Context) error {
+		subsequentStepExecuted = true
+		return nil
+	})
+
+	err := reg.Teardown(context.Background())
+	if err == nil {
+		t.Fatal("expected teardown to return error, got nil")
+	}
+	if !errors.Is(err, vsphere.ErrFakeDisconnect) {
+		t.Errorf("expected error to wrap ErrFakeDisconnect, got: %v", err)
+	}
+	if !subsequentStepExecuted {
+		t.Error("subsequent step should execute despite network disconnect error")
+	}
+}
+
+func TestCleanupRegistry_AuthenticationFailure(t *testing.T) {
+	reg := collector.NewCleanupRegistry(nil, 500*time.Millisecond)
+
+	authFault := vsphere.NewNotAuthenticatedFault()
+	subsequentStepExecuted := false
+
+	// Step 4 fails with NotAuthenticated fault
+	reg.Register(collector.ResourceKindFilter, "filter-not-auth", func(ctx context.Context) error {
+		return authFault
+	})
+
+	// Step 8 executes despite auth failure in step 4
+	reg.RegisterClientClose(func() {
+		subsequentStepExecuted = true
+	})
+
+	err := reg.Teardown(context.Background())
+	if err == nil {
+		t.Fatal("expected teardown to return error, got nil")
+	}
+	if !errors.Is(err, authFault) {
+		t.Errorf("expected error to wrap NotAuthenticated fault, got: %v", err)
+	}
+	if !subsequentStepExecuted {
+		t.Error("subsequent step should execute despite authentication fault")
+	}
+}
+
+func TestCleanupRegistry_InvalidCollectorVersion(t *testing.T) {
+	reg := collector.NewCleanupRegistry(nil, 500*time.Millisecond)
+
+	icvFault := vsphere.NewInvalidCollectorVersionFault()
+	subsequentStepExecuted := false
+
+	// Step 4 fails with InvalidCollectorVersion fault (server terminated collector version early)
+	reg.Register(collector.ResourceKindFilter, "filter-stale-version", func(ctx context.Context) error {
+		return icvFault
+	})
+
+	// Step 7 executes despite InvalidCollectorVersion in step 4
+	reg.Register(collector.ResourceKindSOAP, "soap-session", func(ctx context.Context) error {
+		subsequentStepExecuted = true
+		return nil
+	})
+
+	err := reg.Teardown(context.Background())
+	if err == nil {
+		t.Fatal("expected teardown to return error, got nil")
+	}
+	if !errors.Is(err, icvFault) {
+		t.Errorf("expected error to wrap InvalidCollectorVersion fault, got: %v", err)
+	}
+	if !subsequentStepExecuted {
+		t.Error("subsequent step should execute despite InvalidCollectorVersion fault")
+	}
+}
