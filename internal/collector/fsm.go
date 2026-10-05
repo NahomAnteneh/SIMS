@@ -1,105 +1,170 @@
 package collector
 
 import (
-	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
+
+	"github.com/infrastructure/sims/internal/telemetry"
 )
 
-// State represents the lifecycle state of a vCenter collector worker.
-type State string
+// WorkerState represents the lifecycle state of a collector worker.
+type WorkerState string
 
 const (
-	StateInit              State = "INIT"
-	StateConnecting        State = "CONNECTING"
-	StateSessionActive     State = "SESSION_ACTIVE"
-	StateTopologyPreflight State = "TOPOLOGY_PREFLIGHT"
-	StateFullInventorySync State = "FULL_INVENTORY_SYNC"
-	StateDeltaStreaming    State = "DELTA_STREAMING"
-	StateResyncing         State = "RESYNCING"
-	StateDegraded          State = "DEGRADED"
-	StateStopping          State = "STOPPING"
+	WorkerStateInit              WorkerState = "INIT"
+	WorkerStateConnecting        WorkerState = "CONNECTING"
+	WorkerStateSessionActive     WorkerState = "SESSION_ACTIVE"
+	WorkerStateTopologyPreflight WorkerState = "TOPOLOGY_PREFLIGHT"
+	WorkerStateFullInventorySync WorkerState = "FULL_INVENTORY_SYNC"
+	WorkerStateDeltaStreaming    WorkerState = "DELTA_STREAMING"
+	WorkerStateResyncing         WorkerState = "RESYNCING"
+	WorkerStateDegraded          WorkerState = "DEGRADED"
+	WorkerStateStopping          WorkerState = "STOPPING"
+	WorkerStateStopped           WorkerState = "STOPPED"
 )
 
-var ErrIllegalTransition = errors.New("illegal worker state transition")
-
-// validTransitions defines the explicit state transition graph.
-var validTransitions = map[State]map[State]bool{
-	StateInit: {
-		StateConnecting: true,
-		StateStopping:   true,
-	},
-	StateConnecting: {
-		StateSessionActive: true,
-		StateDegraded:      true,
-		StateStopping:      true,
-	},
-	StateSessionActive: {
-		StateTopologyPreflight: true,
-		StateDegraded:          true,
-		StateStopping:          true,
-	},
-	StateTopologyPreflight: {
-		StateFullInventorySync: true,
-		StateDegraded:          true,
-		StateStopping:          true,
-	},
-	StateFullInventorySync: {
-		StateDeltaStreaming: true,
-		StateResyncing:      true,
-		StateDegraded:       true,
-		StateStopping:       true,
-	},
-	StateDeltaStreaming: {
-		StateResyncing: true,
-		StateDegraded:  true,
-		StateStopping:  true,
-	},
-	StateResyncing: {
-		StateFullInventorySync: true,
-		StateDeltaStreaming:    true,
-		StateDegraded:          true,
-		StateStopping:          true,
-	},
-	StateDegraded: {
-		StateConnecting: true,
-		StateStopping:   true,
-	},
-	StateStopping: {
-		// Terminal state, no outbound transitions allowed
-	},
+// ErrIllegalTransition is returned when an illegal state transition is attempted.
+type ErrIllegalTransition struct {
+	From WorkerState
+	To   WorkerState
 }
 
-// WorkerFSM enforces state transitions for a collector instance using a table-driven model.
+func (e ErrIllegalTransition) Error() string {
+	return fmt.Sprintf("illegal worker state transition from %s to %s", e.From, e.To)
+}
+
+// defaultValidTransitions defines the table-driven state machine transition rules.
+var defaultValidTransitions = map[WorkerState]map[WorkerState]bool{
+	WorkerStateInit: {
+		WorkerStateConnecting: true,
+		WorkerStateStopping:   true,
+	},
+	WorkerStateConnecting: {
+		WorkerStateSessionActive: true,
+		WorkerStateDegraded:      true,
+		WorkerStateStopping:      true,
+	},
+	WorkerStateSessionActive: {
+		WorkerStateTopologyPreflight: true,
+		WorkerStateDegraded:          true,
+		WorkerStateStopping:          true,
+	},
+	WorkerStateTopologyPreflight: {
+		WorkerStateFullInventorySync: true,
+		WorkerStateDegraded:          true,
+		WorkerStateStopping:          true,
+	},
+	WorkerStateFullInventorySync: {
+		WorkerStateDeltaStreaming: true,
+		WorkerStateResyncing:      true,
+		WorkerStateDegraded:       true,
+		WorkerStateStopping:       true,
+	},
+	WorkerStateDeltaStreaming: {
+		WorkerStateResyncing: true,
+		WorkerStateDegraded:  true,
+		WorkerStateStopping:  true,
+	},
+	WorkerStateResyncing: {
+		WorkerStateDeltaStreaming:    true,
+		WorkerStateFullInventorySync: true,
+		WorkerStateTopologyPreflight: true,
+		WorkerStateDegraded:          true,
+		WorkerStateStopping:          true,
+	},
+	WorkerStateDegraded: {
+		WorkerStateConnecting: true,
+		WorkerStateResyncing:  true,
+		WorkerStateStopping:   true,
+	},
+	WorkerStateStopping: {
+		WorkerStateStopped: true,
+	},
+	WorkerStateStopped: {},
+}
+
+// WorkerFSM manages the state and table-driven transitions of a collector worker.
 type WorkerFSM struct {
-	mu      sync.RWMutex
-	current State
+	mu          sync.RWMutex
+	state       WorkerState
+	vcenterID   string
+	metrics     *telemetry.Metrics
+	logger      *slog.Logger
+	transitions map[WorkerState]map[WorkerState]bool
 }
 
-// NewWorkerFSM initializes the worker in the INIT state.
-func NewWorkerFSM() *WorkerFSM {
-	return &WorkerFSM{
-		current: StateInit,
+// NewWorkerFSM initializes a new WorkerFSM in WorkerStateInit.
+func NewWorkerFSM(vcenterID string, metrics *telemetry.Metrics, logger *slog.Logger) *WorkerFSM {
+	if logger == nil {
+		logger = slog.Default()
 	}
-}
-
-// Current returns the current state safely under a read lock.
-func (fsm *WorkerFSM) Current() State {
-	fsm.mu.RLock()
-	defer fsm.mu.RUnlock()
-	return fsm.current
-}
-
-// Transition transitions the worker to the requested state if valid, or returns ErrIllegalTransition.
-func (fsm *WorkerFSM) Transition(to State) error {
-	fsm.mu.Lock()
-	defer fsm.mu.Unlock()
-
-	allowed, ok := validTransitions[fsm.current]
-	if !ok || !allowed[to] {
-		return fmt.Errorf("%w: from %s to %s", ErrIllegalTransition, fsm.current, to)
+	fsm := &WorkerFSM{
+		state:       WorkerStateInit,
+		vcenterID:   vcenterID,
+		metrics:     metrics,
+		logger:      logger,
+		transitions: defaultValidTransitions,
 	}
 
-	fsm.current = to
+	if metrics != nil {
+		metrics.CollectorState.WithLabelValues(vcenterID).Set(float64(workerStateCode(WorkerStateInit)))
+	}
+
+	return fsm
+}
+
+// Current returns the current state of the worker.
+func (f *WorkerFSM) Current() WorkerState {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.state
+}
+
+// Transition attempts to transition the worker to the target state.
+// Returns ErrIllegalTransition if the transition is not permitted by the state table.
+func (f *WorkerFSM) Transition(to WorkerState) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	from := f.state
+	if !f.transitions[from][to] {
+		return ErrIllegalTransition{From: from, To: to}
+	}
+
+	f.state = to
+
+	if f.metrics != nil {
+		f.metrics.CollectorStateTransitionsTotal.WithLabelValues(f.vcenterID, string(from), string(to)).Inc()
+		f.metrics.CollectorState.WithLabelValues(f.vcenterID).Set(float64(workerStateCode(to)))
+	}
+
+	f.logger.Info("worker state transition",
+		slog.String("vcenter_id", f.vcenterID),
+		slog.String("from_state", string(from)),
+		slog.String("to_state", string(to)),
+	)
+
 	return nil
+}
+
+// workerStateCode maps WorkerState to the numerical gauge code used in telemetry metrics.
+// 0=stopped, 1=connecting, 2=hydrating, 3=streaming, 4=resyncing, 5=reconnecting, 6=paused
+func workerStateCode(s WorkerState) int {
+	switch s {
+	case WorkerStateInit, WorkerStateStopped, WorkerStateStopping:
+		return 0
+	case WorkerStateConnecting:
+		return 1
+	case WorkerStateSessionActive, WorkerStateTopologyPreflight, WorkerStateFullInventorySync:
+		return 2
+	case WorkerStateDeltaStreaming:
+		return 3
+	case WorkerStateResyncing:
+		return 4
+	case WorkerStateDegraded:
+		return 5
+	default:
+		return 0
+	}
 }

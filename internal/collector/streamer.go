@@ -61,9 +61,10 @@ type PropertyStreamer struct {
 	logger   *slog.Logger
 	registry *CleanupRegistry
 
-	mu      sync.Mutex
-	running atomic.Bool
-	version string
+	mu       sync.Mutex
+	running  atomic.Bool
+	version  string
+	filterID int
 }
 
 // NewPropertyStreamer constructs a PropertyStreamer instance.
@@ -105,6 +106,10 @@ func (s *PropertyStreamer) InitFilter(ctx context.Context) error {
 
 	if s.filter != nil {
 		_ = s.filter.Destroy(ctx)
+		if s.registry != nil && s.filterID > 0 {
+			s.registry.Unregister(s.filterID)
+			s.filterID = 0
+		}
 		s.filter = nil
 	}
 
@@ -115,7 +120,7 @@ func (s *PropertyStreamer) InitFilter(ctx context.Context) error {
 
 	s.filter = filter
 	if s.registry != nil {
-		s.registry.RegisterPropertyFilter(filter)
+		s.filterID = s.registry.RegisterPropertyFilter(filter)
 	}
 	return nil
 }
@@ -127,6 +132,10 @@ func (s *PropertyStreamer) DestroyFilter(ctx context.Context) error {
 
 	if s.filter != nil {
 		err := s.filter.Destroy(ctx)
+		if s.registry != nil && s.filterID > 0 {
+			s.registry.Unregister(s.filterID)
+			s.filterID = 0
+		}
 		s.filter = nil
 		return err
 	}
@@ -288,13 +297,22 @@ func IsInvalidCollectorVersion(err error) bool {
 	if err == nil {
 		return false
 	}
-	if soapFault := soap.ToSoapFault(err); soapFault != nil {
-		switch soapFault.VimFault().(type) {
-		case *types.InvalidCollectorVersion, types.InvalidCollectorVersion:
-			return true
+	if soap.IsSoapFault(err) {
+		soapFault := soap.ToSoapFault(err)
+		if soapFault != nil {
+			switch soapFault.VimFault().(type) {
+			case *types.InvalidCollectorVersion, types.InvalidCollectorVersion:
+				return true
+			}
+			if strings.Contains(soapFault.String, "InvalidCollectorVersion") ||
+				strings.Contains(fmt.Sprintf("%v", soapFault.Detail), "InvalidCollectorVersion") {
+				return true
+			}
 		}
-		if strings.Contains(soapFault.String, "InvalidCollectorVersion") ||
-			strings.Contains(fmt.Sprintf("%v", soapFault.Detail), "InvalidCollectorVersion") {
+	}
+	if soap.IsVimFault(err) {
+		switch soap.ToVimFault(err).(type) {
+		case *types.InvalidCollectorVersion:
 			return true
 		}
 	}
