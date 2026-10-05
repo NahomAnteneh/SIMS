@@ -32,6 +32,14 @@ type Metrics struct {
 	TagsPersisted             *prometheus.CounterVec
 	CustomAttributesPersisted *prometheus.CounterVec
 
+	// Session Guardian & Collector Lifecycle Metrics (Sprint 2)
+	VCenterInfo                     *prometheus.GaugeVec
+	KeepaliveTotal                  *prometheus.CounterVec
+	KeepaliveErrorsTotal            *prometheus.CounterVec
+	SessionState                    *prometheus.GaugeVec
+	CollectorState                  *prometheus.GaugeVec
+	CollectorStateTransitionsTotal  *prometheus.CounterVec
+
 	serviceName string
 }
 
@@ -163,6 +171,54 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"vcenter_id"},
 	)
 
+	vcenterInfo := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_vcenter_info",
+			Help: "Information gauge reporting vCenter connection metadata with major.minor and API version.",
+		},
+		[]string{"vcenter_id", "major_minor", "api_version"},
+	)
+
+	keepaliveTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_keepalive_total",
+			Help: "Total count of proactive session keepalive probes executed.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	keepaliveErrorsTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_keepalive_errors_total",
+			Help: "Total count of failed proactive session keepalive probes.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	sessionState := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_collector_session_state",
+			Help: "Current state of vCenter session: 0=disconnected, 1=connected, 2=degraded.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	collectorState := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_collector_state",
+			Help: "Current state of collector worker: 0=stopped, 1=connecting, 2=hydrating, 3=streaming, 4=resyncing, 5=reconnecting, 6=paused.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	collectorStateTransitionsTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_state_transitions_total",
+			Help: "Total count of collector worker state machine transitions.",
+		},
+		[]string{"vcenter_id", "from_state", "to_state"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
@@ -177,26 +233,38 @@ func NewMetrics(serviceName, version string) *Metrics {
 	reg.MustRegister(tagFetchFailures)
 	reg.MustRegister(tagsPersisted)
 	reg.MustRegister(customAttributesPersisted)
+	reg.MustRegister(vcenterInfo)
+	reg.MustRegister(keepaliveTotal)
+	reg.MustRegister(keepaliveErrorsTotal)
+	reg.MustRegister(sessionState)
+	reg.MustRegister(collectorState)
+	reg.MustRegister(collectorStateTransitionsTotal)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
 	return &Metrics{
-		Registry:                  reg,
-		RequestsTotal:             requestsTotal,
-		RequestDuration:           requestDuration,
-		BuildInfo:                 buildInfo,
-		HydrationDuration:         hydrationDuration,
-		HydrationObjectsTotal:     hydrationObjectsTotal,
-		BatchSize:                 batchSize,
-		FlushDuration:             flushDuration,
-		CopyDuration:              copyDuration,
-		MergeDuration:             mergeDuration,
-		CompactionRatio:           compactionRatio,
-		TagFetchDuration:          tagFetchDuration,
-		TagFetchFailures:          tagFetchFailures,
-		TagsPersisted:             tagsPersisted,
-		CustomAttributesPersisted: customAttributesPersisted,
-		serviceName:               serviceName,
+		Registry:                       reg,
+		RequestsTotal:                  requestsTotal,
+		RequestDuration:                requestDuration,
+		BuildInfo:                      buildInfo,
+		HydrationDuration:              hydrationDuration,
+		HydrationObjectsTotal:          hydrationObjectsTotal,
+		BatchSize:                      batchSize,
+		FlushDuration:                  flushDuration,
+		CopyDuration:                   copyDuration,
+		MergeDuration:                  mergeDuration,
+		CompactionRatio:                compactionRatio,
+		TagFetchDuration:               tagFetchDuration,
+		TagFetchFailures:               tagFetchFailures,
+		TagsPersisted:                  tagsPersisted,
+		CustomAttributesPersisted:      customAttributesPersisted,
+		VCenterInfo:                    vcenterInfo,
+		KeepaliveTotal:                 keepaliveTotal,
+		KeepaliveErrorsTotal:           keepaliveErrorsTotal,
+		SessionState:                   sessionState,
+		CollectorState:                 collectorState,
+		CollectorStateTransitionsTotal: collectorStateTransitionsTotal,
+		serviceName:                    serviceName,
 	}
 }
 
