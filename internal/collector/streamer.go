@@ -341,6 +341,7 @@ func BuildVMPropertyFilterSpec(containerView types.ManagedObjectReference) types
 			"summary.runtime",
 			"summary.guest",
 			"summary.customValue",
+			"customValue",
 			"config.hardware.device",
 			"guest.net",
 			"parent",

@@ -3,12 +3,18 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/infrastructure/sims/internal/logging"
@@ -31,16 +37,22 @@ type ProbeResult struct {
 }
 
 func main() {
+	observeFlag := flag.Bool("observe", false, "Enable read-only observation mode to watch PropertyCollector and EventHistoryCollector live")
+	flag.Parse()
+	observeMode := *observeFlag || getEnvBool("OBSERVE_MODE", false)
+
 	rawURL := getEnv("VCENTER_URL", "https://localhost:8989/sdk")
 	username := getEnv("VCENTER_USER", "user")
 	password := getEnv("VCENTER_PASSWORD", "pass")
 	insecureTLS := getEnvBool("VCENTER_INSECURE", true)
 
 	safeURL := logging.RedactURL(rawURL)
-	fmt.Printf("===================================================================\n")
-	fmt.Printf(" vSphere Capability & Behavioral Matrix Spike CLI (Read-Only)      \n")
-	fmt.Printf(" Target: %s (User: %s)\n", safeURL, username)
-	fmt.Printf("===================================================================\n\n")
+	if !observeMode {
+		fmt.Printf("===================================================================\n")
+		fmt.Printf(" vSphere Capability & Behavioral Matrix Spike CLI (Read-Only)      \n")
+		fmt.Printf(" Target: %s (User: %s)\n", safeURL, username)
+		fmt.Printf("===================================================================\n\n")
+	}
 
 	u, err := soap.ParseURL(rawURL)
 	if err != nil {
@@ -48,6 +60,27 @@ func main() {
 		os.Exit(1)
 	}
 	u.User = url.UserPassword(username, password)
+
+	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelConnect()
+
+	// Connect govmomi client
+	client, err := govmomi.NewClient(connectCtx, u, insecureTLS)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: Failed to connect and authenticate to vCenter: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		logoutCtx, cancelLogout := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelLogout()
+		_ = client.Logout(logoutCtx)
+		fmt.Println("\n[Clean Logout] Session successfully terminated on server.")
+	}()
+
+	if observeMode {
+		runObservationMode(client, safeURL)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -57,17 +90,6 @@ func main() {
 	// 1. Probe TLS Behavior
 	tlsResult := probeTLS(u.Host, insecureTLS)
 	results = append(results, tlsResult)
-
-	// Connect govmomi client
-	client, err := govmomi.NewClient(ctx, u, insecureTLS)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Failed to connect and authenticate to vCenter: %v\n", err)
-		os.Exit(1)
-	}
-	defer func() {
-		_ = client.Logout(ctx)
-		fmt.Println("\n[Clean Logout] Session successfully terminated on server.")
-	}()
 
 	// 2. vCenter Version
 	results = append(results, probeVCenterVersion(client))
@@ -436,4 +458,308 @@ func getEnvBool(key string, defaultVal bool) bool {
 		}
 	}
 	return defaultVal
+}
+
+func runObservationMode(client *govmomi.Client, safeURL string) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if durStr := getEnv("OBSERVE_DURATION", ""); durStr != "" {
+		if dur, err := time.ParseDuration(durStr); err == nil && dur > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, dur)
+			defer cancel()
+			fmt.Printf("[Observation Mode] Running with configured duration limit: %v\n", dur)
+		}
+	}
+
+	fmt.Printf("===================================================================\n")
+	fmt.Printf(" vCenter Spike: Live Metadata & Event Observation Mode (Read-Only) \n")
+	fmt.Printf(" Target: %s\n", safeURL)
+	fmt.Printf(" Watching live:\n")
+	fmt.Printf("   1. PropertyCollector: 'customValue', 'name' on VirtualMachine\n")
+	fmt.Printf("   2. EventHistoryCollector: CustomField, Tag, and VM events\n")
+	fmt.Printf(" Press Ctrl+C to terminate cleanly.\n")
+	fmt.Printf("===================================================================\n\n")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		observePropertyCollector(ctx, client)
+	}()
+
+	go func() {
+		defer wg.Done()
+		observeEventHistoryCollector(ctx, client)
+	}()
+
+	wg.Wait()
+	fmt.Println("\n[Observation Mode] Cleaned up all observers. Exiting.")
+}
+
+func observePropertyCollector(ctx context.Context, client *govmomi.Client) {
+	pc := property.DefaultCollector(client.Client)
+	root := client.ServiceContent.RootFolder
+
+	viewMgr := view.NewManager(client.Client)
+	cv, err := viewMgr.CreateContainerView(ctx, root, []string{"VirtualMachine"}, true)
+	if err != nil {
+		fmt.Printf("[PropertyCollector] Failed to create ContainerView: %v\n", err)
+		return
+	}
+	defer func() {
+		destroyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = cv.Destroy(destroyCtx)
+	}()
+
+	filterSpec := types.PropertyFilterSpec{
+		ObjectSet: []types.ObjectSpec{
+			{
+				Obj:  cv.Reference(),
+				Skip: types.NewBool(true),
+				SelectSet: []types.BaseSelectionSpec{
+					&types.TraversalSpec{
+						Type: "ContainerView",
+						Path: "view",
+						Skip: types.NewBool(false),
+					},
+				},
+			},
+		},
+		PropSet: []types.PropertySpec{
+			{
+				Type:    "VirtualMachine",
+				PathSet: []string{"name", "customValue"},
+			},
+		},
+	}
+
+	filter, err := pc.CreateFilter(ctx, types.CreateFilter{
+		This: pc.Reference(),
+		Spec: filterSpec,
+	})
+	if err != nil {
+		fmt.Printf("[PropertyCollector] Failed to create PropertyFilter: %v\n", err)
+		return
+	}
+	defer func() {
+		destroyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = filter.Destroy(destroyCtx)
+	}()
+
+	fmt.Println("[PropertyCollector] Initialized filter on VirtualMachine.customValue and VirtualMachine.name")
+
+	curVersion := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		waitOpt := &types.WaitOptions{
+			MaxWaitSeconds: types.NewInt32(5),
+		}
+		req := types.WaitForUpdatesEx{
+			This:    pc.Reference(),
+			Version: curVersion,
+			Options: waitOpt,
+		}
+
+		res, err := methods.WaitForUpdatesEx(ctx, client.Client, &req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			fmt.Printf("[PropertyCollector] WaitForUpdatesEx error: %v\n", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(2 * time.Second):
+				continue
+			}
+		}
+
+		if res == nil || res.Returnval == nil {
+			continue
+		}
+
+		updateSet := res.Returnval
+		curVersion = updateSet.Version
+
+		for _, filterUpdate := range updateSet.FilterSet {
+			for _, objUpdate := range filterUpdate.ObjectSet {
+				moref := objUpdate.Obj.Value
+				kind := string(objUpdate.Kind)
+
+				for _, change := range objUpdate.ChangeSet {
+					ts := time.Now().Format("15:04:05.000")
+					switch change.Name {
+					case "customValue":
+						fmt.Printf("[%s] [PropertyCollector] VM %s (Op: %s, Change: %s) -> customValue:\n", ts, moref, kind, change.Op)
+						printCustomValues(change.Val)
+					case "name":
+						fmt.Printf("[%s] [PropertyCollector] VM %s (Op: %s, Change: %s) -> name: %v\n", ts, moref, kind, change.Op, change.Val)
+					default:
+						fmt.Printf("[%s] [PropertyCollector] VM %s (Op: %s, Change: %s) -> %s: %v\n", ts, moref, kind, change.Op, change.Name, change.Val)
+					}
+				}
+			}
+		}
+	}
+}
+
+func printCustomValues(val any) {
+	if val == nil {
+		fmt.Println("       <nil / cleared>")
+		return
+	}
+	switch v := val.(type) {
+	case types.ArrayOfCustomFieldValue:
+		if len(v.CustomFieldValue) == 0 {
+			fmt.Println("       <empty array>")
+			return
+		}
+		for _, cf := range v.CustomFieldValue {
+			formatCustomFieldValue(cf)
+		}
+	case []types.BaseCustomFieldValue:
+		if len(v) == 0 {
+			fmt.Println("       <empty slice>")
+			return
+		}
+		for _, cf := range v {
+			formatCustomFieldValue(cf)
+		}
+	default:
+		fmt.Printf("       %T: %+v\n", val, val)
+	}
+}
+
+func formatCustomFieldValue(cf types.BaseCustomFieldValue) {
+	switch item := cf.(type) {
+	case *types.CustomFieldStringValue:
+		fmt.Printf("       [FieldKey: %d] Value: %q\n", item.Key, item.Value)
+	default:
+		if item != nil {
+			fmt.Printf("       [FieldKey: %d] %+v\n", item.GetCustomFieldValue().Key, item)
+		}
+	}
+}
+
+func observeEventHistoryCollector(ctx context.Context, client *govmomi.Client) {
+	em := event.NewManager(client.Client)
+
+	filter := types.EventFilterSpec{}
+	collector, err := em.CreateCollectorForEvents(ctx, filter)
+	if err != nil {
+		fmt.Printf("[EventWatcher] Failed to create EventHistoryCollector: %v\n", err)
+		return
+	}
+	defer func() {
+		destroyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = collector.Destroy(destroyCtx)
+	}()
+
+	var maxKey int32
+	initialPage, err := collector.LatestPage(ctx)
+	if err == nil {
+		for _, e := range initialPage {
+			if k := e.GetEvent().Key; k > maxKey {
+				maxKey = k
+			}
+		}
+	}
+	fmt.Printf("[EventWatcher] Initialized collector (Baseline Event Key: %d)\n", maxKey)
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		page, err := collector.LatestPage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			fmt.Printf("[EventWatcher] Error reading LatestPage: %v\n", err)
+			continue
+		}
+
+		sort.Slice(page, func(i, j int) bool {
+			return page[i].GetEvent().Key < page[j].GetEvent().Key
+		})
+
+		var newEvents []types.BaseEvent
+		for _, e := range page {
+			if e.GetEvent().Key > maxKey {
+				newEvents = append(newEvents, e)
+			}
+		}
+
+		for _, e := range newEvents {
+			if k := e.GetEvent().Key; k > maxKey {
+				maxKey = k
+			}
+		}
+
+		for _, e := range newEvents {
+			base := e.GetEvent()
+			ts := base.CreatedTime.Format("15:04:05.000")
+			typeName := reflect.TypeOf(e).Elem().Name()
+			entityName := ""
+			if base.Vm != nil {
+				entityName = fmt.Sprintf("VM:%s(%s)", base.Vm.Name, base.Vm.Vm.Value)
+			} else if base.Host != nil {
+				entityName = fmt.Sprintf("Host:%s(%s)", base.Host.Name, base.Host.Host.Value)
+			} else if base.ComputeResource != nil {
+				entityName = fmt.Sprintf("Compute:%s(%s)", base.ComputeResource.Name, base.ComputeResource.ComputeResource.Value)
+			} else if base.Datacenter != nil {
+				entityName = fmt.Sprintf("DC:%s(%s)", base.Datacenter.Name, base.Datacenter.Datacenter.Value)
+			}
+
+			user := base.UserName
+			if user == "" {
+				user = "<system>"
+			}
+
+			fmt.Printf("[%s] [EventWatcher] Key=%-6d | Type=%-28s | User=%-16s | Entity=%-20s\n",
+				ts, base.Key, typeName, user, entityName)
+
+			switch ev := e.(type) {
+			case *types.CustomFieldValueChangedEvent:
+				fmt.Printf("     -> CustomFieldValueChanged: FieldKey=%d Name=%q Value=%q PrevState=%q\n",
+					ev.FieldKey, ev.Name, ev.Value, ev.PrevState)
+			case *types.CustomFieldDefAddedEvent:
+				fmt.Printf("     -> CustomFieldDefAdded: FieldKey=%d Name=%q\n",
+					ev.FieldKey, ev.Name)
+			case *types.CustomFieldDefRemovedEvent:
+				fmt.Printf("     -> CustomFieldDefRemoved: FieldKey=%d Name=%q\n",
+					ev.FieldKey, ev.Name)
+			case *types.CustomFieldDefRenamedEvent:
+				fmt.Printf("     -> CustomFieldDefRenamed: FieldKey=%d Name=%q (NewName: %q)\n",
+					ev.FieldKey, ev.Name, ev.NewName)
+			case *types.EventEx:
+				fmt.Printf("     -> EventEx: EventTypeId=%q ObjectId=%s ObjectType=%s Message=%q\n",
+					ev.EventTypeId, ev.ObjectId, ev.ObjectType, ev.Message)
+				for _, arg := range ev.Arguments {
+					fmt.Printf("        Arg: %s = %v\n", arg.Key, arg.Value)
+				}
+			default:
+				if base.FullFormattedMessage != "" {
+					fmt.Printf("     -> Msg: %s\n", base.FullFormattedMessage)
+				}
+			}
+		}
+	}
 }

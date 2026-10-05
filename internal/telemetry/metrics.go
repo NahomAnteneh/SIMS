@@ -61,6 +61,10 @@ type Metrics struct {
 	EventGapDetected             *prometheus.CounterVec
 	EventReconciliationRequested *prometheus.CounterVec
 
+	// Tag Synchronization Metrics (Sprint 2 / S2.14)
+	TagsState               *prometheus.GaugeVec
+	TagsLastSyncedTimestamp *prometheus.GaugeVec
+
 	serviceName string
 }
 
@@ -363,6 +367,22 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"vcenter_id"},
 	)
 
+	tagsState := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_tags_state",
+			Help: "State of vSphere tag synchronization (0=unavailable, 1=ok, 2=degraded).",
+		},
+		[]string{"vcenter_id", "state"},
+	)
+
+	tagsLastSyncedTimestamp := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_tags_last_synced_timestamp_seconds",
+			Help: "Unix timestamp of last successful tag synchronization.",
+		},
+		[]string{"vcenter_id"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
@@ -398,6 +418,8 @@ func NewMetrics(serviceName, version string) *Metrics {
 	reg.MustRegister(eventsStreamLagSeconds)
 	reg.MustRegister(eventGapDetected)
 	reg.MustRegister(eventReconciliationRequested)
+	reg.MustRegister(tagsState)
+	reg.MustRegister(tagsLastSyncedTimestamp)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
@@ -438,6 +460,8 @@ func NewMetrics(serviceName, version string) *Metrics {
 		EventsStreamLagSeconds:         eventsStreamLagSeconds,
 		EventGapDetected:               eventGapDetected,
 		EventReconciliationRequested:   eventReconciliationRequested,
+		TagsState:                      tagsState,
+		TagsLastSyncedTimestamp:        tagsLastSyncedTimestamp,
 		serviceName:                    serviceName,
 	}
 }

@@ -136,17 +136,18 @@ func (p *BulkPersister) ApplyVMIncrementalUpdate(ctx context.Context, vcenterID,
 		}
 	}
 
-	// 3. Update Custom Attributes if specified (without touching other fields)
+	// 3. Update Custom Attributes if specified (without touching other fields; replace-set per VM)
 	if mask.CustomAttributes != nil {
+		if _, err := tx.Exec(ctx, "DELETE FROM vm_custom_attributes WHERE vm_id = $1", vmID); err != nil {
+			return fmt.Errorf("failed to delete previous custom attributes: %w", err)
+		}
 		for _, ca := range mask.CustomAttributes {
 			_, err := tx.Exec(ctx, `
 				INSERT INTO vm_custom_attributes (vm_id, name, value, created_at)
 				VALUES ($1, $2, $3, NOW())
-				ON CONFLICT (vm_id, name) DO UPDATE
-				SET value = EXCLUDED.value
 			`, vmID, ca.Name, ca.Value)
 			if err != nil {
-				return fmt.Errorf("failed to upsert custom attribute %q: %w", ca.Name, err)
+				return fmt.Errorf("failed to insert custom attribute %q: %w", ca.Name, err)
 			}
 		}
 	}
