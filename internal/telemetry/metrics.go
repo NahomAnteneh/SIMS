@@ -40,6 +40,13 @@ type Metrics struct {
 	CollectorState                 *prometheus.GaugeVec
 	CollectorStateTransitionsTotal *prometheus.CounterVec
 
+	// Real-Time PropertyCollector Streaming Metrics (Sprint 2)
+	PropertyUpdatesTotal          *prometheus.CounterVec
+	PropertyUpdateLatency         *prometheus.HistogramVec
+	PropertyUpdatesTruncatedTotal *prometheus.CounterVec
+	ResyncTotal                   *prometheus.CounterVec
+	ResyncDuration                *prometheus.HistogramVec
+
 	serviceName string
 }
 
@@ -219,6 +226,48 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"vcenter_id", "from_state", "to_state"},
 	)
 
+	propertyUpdatesTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_property_updates_total",
+			Help: "Total count of object property updates received from PropertyCollector, labeled by kind (enter, modify, leave).",
+		},
+		[]string{"vcenter_id", "kind"},
+	)
+
+	propertyUpdateLatency := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_collector_property_update_latency_seconds",
+			Help:    "Latency of processing a PropertyCollector update batch in seconds.",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	propertyUpdatesTruncatedTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_property_updates_truncated_total",
+			Help: "Total count of truncated update sets returned by PropertyCollector.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	resyncTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_resync_total",
+			Help: "Total count of collector resync operations triggered, labeled by reason.",
+		},
+		[]string{"vcenter_id", "reason"},
+	)
+
+	resyncDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_collector_resync_duration_seconds",
+			Help:    "Duration of collector resync operations in seconds.",
+			Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60, 120, 300},
+		},
+		[]string{"vcenter_id"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
@@ -239,6 +288,11 @@ func NewMetrics(serviceName, version string) *Metrics {
 	reg.MustRegister(sessionState)
 	reg.MustRegister(collectorState)
 	reg.MustRegister(collectorStateTransitionsTotal)
+	reg.MustRegister(propertyUpdatesTotal)
+	reg.MustRegister(propertyUpdateLatency)
+	reg.MustRegister(propertyUpdatesTruncatedTotal)
+	reg.MustRegister(resyncTotal)
+	reg.MustRegister(resyncDuration)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
@@ -264,6 +318,11 @@ func NewMetrics(serviceName, version string) *Metrics {
 		SessionState:                   sessionState,
 		CollectorState:                 collectorState,
 		CollectorStateTransitionsTotal: collectorStateTransitionsTotal,
+		PropertyUpdatesTotal:           propertyUpdatesTotal,
+		PropertyUpdateLatency:          propertyUpdateLatency,
+		PropertyUpdatesTruncatedTotal:  propertyUpdatesTruncatedTotal,
+		ResyncTotal:                    resyncTotal,
+		ResyncDuration:                 resyncDuration,
 		serviceName:                    serviceName,
 	}
 }
