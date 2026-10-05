@@ -52,6 +52,7 @@ func NewBackoff(cfg BackoffConfig, src rand.Source) *Backoff {
 	}
 	return &Backoff{
 		cfg: cfg,
+		// #nosec G404 -- math/rand is safe and appropriate for network retry jitter calculations
 		rng: rand.New(src),
 	}
 }

@@ -71,7 +71,7 @@ func TestCleanupRegistry_VCSimOrderedTeardown(t *testing.T) {
 		},
 		PropSet: []types.PropertySpec{
 			{
-				Type: "VirtualMachine",
+				Type:    "VirtualMachine",
 				PathSet: []string{"name", "runtime.powerState"},
 			},
 		},
@@ -127,7 +127,7 @@ func TestCleanupRegistry_VCSimOrderedTeardown(t *testing.T) {
 	})
 	reg.RegisterEventCollector(wrappedEventCollector) // Stage 3
 	reg.RegisterPropertyFilter(wrappedFilter)         // Stage 4
-	reg.RegisterContainerView(cv.Destroy)              // Stage 5
+	reg.RegisterContainerView(cv.Destroy)             // Stage 5
 	reg.RegisterREST(func(ctx context.Context) error {
 		stageExecution = append(stageExecution, collector.ResourceKindREST)
 		return nil

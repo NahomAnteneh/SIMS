@@ -11,7 +11,7 @@ The execution of Sprint 2 is strictly organized into four sequential phases:
 - **Phase A: Foundation & Resilience Primitives (COMPLETED)**
   - Spike fixes, TLS port normalization, and lab vCenter 8.0.2 capability matrix
   - Topology standalone host `ComputeResource` and datacenter persistence
-  - **S2.0b:** Version detection (reject `< 7.0` with `ErrUnsupportedVersion`, accept `>= 7.0` without ceiling, reject unparseable versions with `ErrUnparseableVersion`, enforce `VirtualCenter` endpoint via `ErrInvalidApiType`)
+  - **S2.0b:** Version detection (reject `< 7.0` with `ErrUnsupportedVersion`, accept `>= 7.0` without ceiling, reject unparseable versions with `ErrUnparseableVersion`, enforce `VirtualCenter` endpoint via `ErrInvalidAPIType`)
   - Vendor Seam interfaces and fault-injecting fakes (`FakeSession`, `FakePropertyCollector`, `FakeEventCollector`)
   - **S2.6:** Bounded exponential backoff with +/- 20% jitter (base 2s, cap 60s, factor 2.0)
   - **S2.5:** Session guardian proactive keepalive (`CurrentTime`), consecutive failure tracking, `Dead()` channel, `sims_collector_*` metrics

@@ -60,16 +60,16 @@ func NewInvalidLoginFault() error {
 type FakeSession struct {
 	mu sync.Mutex
 
-	connectErr      error
-	loginErr        error
-	currentTimeErr  error
+	connectErr       error
+	loginErr         error
+	currentTimeErr   error
 	currentTimeDelay time.Duration
-	about           *types.AboutInfo
-	connected       bool
-	loggedIn        bool
-	logoutCalled    bool
-	reconnectCalled int
-	currentTime     time.Time
+	about            *types.AboutInfo
+	connected        bool
+	loggedIn         bool
+	logoutCalled     bool
+	reconnectCalled  int
+	currentTime      time.Time
 }
 
 func NewFakeSession() *FakeSession {
@@ -204,14 +204,14 @@ type FakePropertyCollector struct {
 
 	Ref types.ManagedObjectReference
 
-	injectedFault   error
-	waitDelay       time.Duration
-	truncatedFlag   *bool
-	updatesQueue    []*types.UpdateSet
-	currentVersion  string
-	createdFilters  []*FakePropertyFilter
-	canceledWaits   int
-	destroyedCount  int
+	injectedFault  error
+	waitDelay      time.Duration
+	truncatedFlag  *bool
+	updatesQueue   []*types.UpdateSet
+	currentVersion string
+	createdFilters []*FakePropertyFilter
+	canceledWaits  int
+	destroyedCount int
 }
 
 func NewFakePropertyCollector() *FakePropertyCollector {
