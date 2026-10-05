@@ -47,6 +47,14 @@ type Metrics struct {
 	ResyncTotal                   *prometheus.CounterVec
 	ResyncDuration                *prometheus.HistogramVec
 
+	// Bounded Queue & Backpressure Metrics (Sprint 2 / S2.12)
+	QueueDepth            *prometheus.GaugeVec
+	QueueCapacity         *prometheus.GaugeVec
+	QueueFillRatio        *prometheus.GaugeVec
+	QueueBlockedProducers *prometheus.GaugeVec
+	BatchFlushDuration    *prometheus.HistogramVec
+	BatchFlushTotal       *prometheus.CounterVec
+
 	serviceName string
 }
 
@@ -268,6 +276,55 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"vcenter_id"},
 	)
 
+	queueDepth := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_queue_depth",
+			Help: "Current number of items queued in the bounded streaming buffer.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	queueCapacity := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_queue_capacity",
+			Help: "Maximum capacity of the bounded streaming buffer.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	queueFillRatio := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_queue_fill_ratio",
+			Help: "Current fill ratio of the bounded streaming buffer (depth / capacity).",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	queueBlockedProducers := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_queue_blocked_producers",
+			Help: "Number of producers currently blocked waiting on the bounded queue.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	batchFlushDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "sims_batch_flush_duration_seconds",
+			Help:    "Duration of batch flush from stream queue to database.",
+			Buckets: []float64{0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5},
+		},
+		[]string{"vcenter_id"},
+	)
+
+	batchFlushTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_batch_flush_total",
+			Help: "Total count of stream batch flushes executed.",
+		},
+		[]string{"vcenter_id", "status"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
@@ -293,6 +350,12 @@ func NewMetrics(serviceName, version string) *Metrics {
 	reg.MustRegister(propertyUpdatesTruncatedTotal)
 	reg.MustRegister(resyncTotal)
 	reg.MustRegister(resyncDuration)
+	reg.MustRegister(queueDepth)
+	reg.MustRegister(queueCapacity)
+	reg.MustRegister(queueFillRatio)
+	reg.MustRegister(queueBlockedProducers)
+	reg.MustRegister(batchFlushDuration)
+	reg.MustRegister(batchFlushTotal)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
@@ -323,6 +386,12 @@ func NewMetrics(serviceName, version string) *Metrics {
 		PropertyUpdatesTruncatedTotal:  propertyUpdatesTruncatedTotal,
 		ResyncTotal:                    resyncTotal,
 		ResyncDuration:                 resyncDuration,
+		QueueDepth:                     queueDepth,
+		QueueCapacity:                  queueCapacity,
+		QueueFillRatio:                 queueFillRatio,
+		QueueBlockedProducers:          queueBlockedProducers,
+		BatchFlushDuration:             batchFlushDuration,
+		BatchFlushTotal:                batchFlushTotal,
 		serviceName:                    serviceName,
 	}
 }
