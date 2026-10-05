@@ -147,3 +147,33 @@ What happens to the vSphere stream when the bounded queue fills up due to a data
    - *Design:* Introduce a configurable `STREAM_BLOCK_MAX_DURATION` (default: **5 minutes / 300 seconds**). If the bounded queue remains full and blocks the producer continuously for longer than `STREAM_BLOCK_MAX_DURATION`, the worker proactively cancels the stalled `WaitForUpdatesEx` call, transitions to `RESYNCING`, and executes a full reconciliation once database backpressure clears.
 4. **InvalidCollectorVersion Handling:**
    If vCenter terminates the collector version token earlier than expected, vCenter returns a typed SOAP fault (`ServerFaultCode: InvalidCollectorVersion`). The worker catches this fault, transitions to `RESYNCING`, destroys the stale filter and ContainerView, runs a full baseline rehydration, and establishes a fresh stream (S2.4).
+
+---
+
+## Decision f: Sprint 1 Carry-over — Query Planner Index Selection for `(vcenter_id, moref)`
+
+### Problem
+In Sprint 1, the gate test `TestGate_50000RowSyntheticLoadAndExplain` noted that the `(vcenter_id, moref)` lookup selected `idx_vms_vcenter_name_id_active` rather than the dedicated unique index `uq_vms_vcenter_moref_active`.
+
+### Investigation & Root Cause
+1. **Index Definitions:**
+   - `uq_vms_vcenter_moref_active`: `UNIQUE (vcenter_id, moref) WHERE deleted_at IS NULL`
+   - `idx_vms_vcenter_name_id_active`: `(vcenter_id, name ASC, id ASC) WHERE deleted_at IS NULL`
+2. **Query Structure:**
+   `SELECT id, name FROM virtual_machines WHERE vcenter_id = $1::uuid AND moref = 'vm-syn-25000' AND deleted_at IS NULL;`
+3. **Planner Cost Trade-off Without Statistics:**
+   - In `idx_vms_vcenter_name_id_active`, columns `vcenter_id`, `name`, and `id` are all indexed. For `SELECT id, name`, if statistics for `moref` have not been collected via `ANALYZE`, PostgreSQL treats `idx_vms_vcenter_name_id_active` as a covering index for the selected columns with an in-flight filter on `moref`.
+   - Once statistics are gathered via `ANALYZE virtual_machines;`, the PostgreSQL 18 cost planner recognizes the high cardinality of `moref` (50,000 distinct values). The index scan on `uq_vms_vcenter_moref_active` resolves both conditions `((vcenter_id = $1) AND (moref = $2))` directly within the btree index scan, eliminating heap filtering.
+
+### Verification with `EXPLAIN (ANALYZE, BUFFERS)`
+The test `TestGate_50000RowSyntheticLoadAndExplain` was updated to execute `EXPLAIN (ANALYZE, BUFFERS)`:
+```
+Index Scan using uq_vms_vcenter_moref_active on virtual_machines (cost=0.41..8.43 rows=1 width=29) (actual time=0.035..0.036 rows=1.00 loops=1)
+  Index Cond: ((vcenter_id = '19d2e2ba-93f5-4196-af8f-b32b6190953e'::uuid) AND (moref = 'vm-syn-25000'::text))
+  Index Searches: 1
+  Buffers: shared hit=4
+Planning Time: 0.125 ms
+Execution Time: 0.065 ms
+```
+- **Result:** Strict usage of `uq_vms_vcenter_moref_active` confirmed with 4 buffer hits and 0.065 ms execution latency.
+
