@@ -253,10 +253,10 @@ func TestGate_5000VMHydration(t *testing.T) {
 // TestGate_50000RowSyntheticLoadAndExplain verifies:
 // 1. Bulk loading of 50,000 synthetic VM rows into PostgreSQL
 // 2. EXPLAIN query plan verification confirming index usage:
-//    - idx_vms_active_name_id for keyset pagination
-//    - pk_virtual_machines for primary key lookup
-//    - idx_vms_instance_uuid_active for instance_uuid lookup
-//    - idx_vms_vcenter_moref_active for (vcenter_id, moref) lookup
+//   - idx_vms_active_name_id for keyset pagination
+//   - pk_virtual_machines for primary key lookup
+//   - idx_vms_instance_uuid_active for instance_uuid lookup
+//   - idx_vms_vcenter_moref_active for (vcenter_id, moref) lookup
 func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 50,000-row synthetic load in short mode")

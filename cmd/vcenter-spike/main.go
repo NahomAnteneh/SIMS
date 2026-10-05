@@ -160,7 +160,6 @@ func probeTLS(host string, insecure bool) ProbeResult {
 	}
 }
 
-
 func probeVCenterVersion(c *govmomi.Client) ProbeResult {
 	about := c.ServiceContent.About
 	return ProbeResult{

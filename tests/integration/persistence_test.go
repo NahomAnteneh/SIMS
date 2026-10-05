@@ -273,11 +273,11 @@ func TestBulkPersistence_EmptyUUIDAndIPv6ZoneFallback(t *testing.T) {
 			},
 		},
 		{
-			VCenterID:      vcenterID,
-			MoRef:          "vm-edge-3",
-			InstanceUUID:   "", // Third VM with empty UUID!
-			Name:           "template-vm-3",
-			PowerState:     "poweredOff",
+			VCenterID:    vcenterID,
+			MoRef:        "vm-edge-3",
+			InstanceUUID: "", // Third VM with empty UUID!
+			Name:         "template-vm-3",
+			PowerState:   "poweredOff",
 		},
 	}
 
@@ -332,4 +332,3 @@ func TestBulkPersistence_EmptyUUIDAndIPv6ZoneFallback(t *testing.T) {
 		t.Errorf("expected 3 rows in database, got %d", rowCount)
 	}
 }
-

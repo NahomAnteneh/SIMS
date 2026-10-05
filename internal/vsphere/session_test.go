@@ -403,7 +403,7 @@ func TestSessionManager_RejectsNonVirtualCenterApiType(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected Connect to reject HostAgent endpoint, got nil")
 	}
-	if !errors.Is(err, vsphere.ErrInvalidApiType) {
-		t.Errorf("expected ErrInvalidApiType, got: %v", err)
+	if !errors.Is(err, vsphere.ErrInvalidAPIType) {
+		t.Errorf("expected ErrInvalidAPIType, got: %v", err)
 	}
 }

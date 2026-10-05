@@ -30,13 +30,13 @@ var (
 	ErrSessionExpired        = errors.New("vsphere session expired")
 	ErrUnsupportedVersion    = errors.New("unsupported_version")
 	ErrUnparseableVersion    = errors.New("unparseable_version")
-	ErrInvalidApiType        = errors.New("invalid_api_type")
+	ErrInvalidAPIType        = errors.New("invalid_api_type")
 )
 
 // UnsupportedVersionError represents an endpoint version that is strictly below 7.0.
 type UnsupportedVersionError struct {
 	Version    string
-	ApiVersion string
+	APIVersion string
 	Product    string
 }
 
@@ -131,7 +131,7 @@ func (sm *SessionManager) connectLocked(ctx context.Context) error {
 
 	about := vimClient.ServiceContent.About
 	if about.ApiType != "" && about.ApiType != "VirtualCenter" {
-		return fmt.Errorf("%w: expected VirtualCenter endpoint, got %q (direct ESXi connections unsupported)", ErrInvalidApiType, about.ApiType)
+		return fmt.Errorf("%w: expected VirtualCenter endpoint, got %q (direct ESXi connections unsupported)", ErrInvalidAPIType, about.ApiType)
 	}
 
 	major, err := parseMajorVersion(about.Version, about.ApiVersion)
@@ -141,7 +141,7 @@ func (sm *SessionManager) connectLocked(ctx context.Context) error {
 	if major < 7 {
 		return &UnsupportedVersionError{
 			Version:    about.Version,
-			ApiVersion: about.ApiVersion,
+			APIVersion: about.ApiVersion,
 			Product:    about.FullName,
 		}
 	}

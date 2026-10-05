@@ -33,12 +33,12 @@ type Metrics struct {
 	CustomAttributesPersisted *prometheus.CounterVec
 
 	// Session Guardian & Collector Lifecycle Metrics (Sprint 2)
-	VCenterInfo                     *prometheus.GaugeVec
-	KeepaliveTotal                  *prometheus.CounterVec
-	KeepaliveErrorsTotal            *prometheus.CounterVec
-	SessionState                    *prometheus.GaugeVec
-	CollectorState                  *prometheus.GaugeVec
-	CollectorStateTransitionsTotal  *prometheus.CounterVec
+	VCenterInfo                    *prometheus.GaugeVec
+	KeepaliveTotal                 *prometheus.CounterVec
+	KeepaliveErrorsTotal           *prometheus.CounterVec
+	SessionState                   *prometheus.GaugeVec
+	CollectorState                 *prometheus.GaugeVec
+	CollectorStateTransitionsTotal *prometheus.CounterVec
 
 	serviceName string
 }

@@ -18,10 +18,10 @@ import (
 )
 
 // TestTopology_StandaloneHostUnderComputeResource verifies:
-// 1. hosts.cluster_id is nullable in PostgreSQL schema.
-// 2. Direct SQL insertion of a standalone host with cluster_id = NULL and populated datacenter_id.
-// 3. BulkPersister.PersistTopology with a standalone host under a ComputeResource (cr-1)
-//    correctly resolves datacenter_id, leaves cluster_id as NULL, and persists cleanly.
+//  1. hosts.cluster_id is nullable in PostgreSQL schema.
+//  2. Direct SQL insertion of a standalone host with cluster_id = NULL and populated datacenter_id.
+//  3. BulkPersister.PersistTopology with a standalone host under a ComputeResource (cr-1)
+//     correctly resolves datacenter_id, leaves cluster_id as NULL, and persists cleanly.
 func TestTopology_StandaloneHostUnderComputeResource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -150,9 +150,10 @@ func TestTopology_StandaloneHostUnderComputeResource(t *testing.T) {
 
 // TestTopology_StandardSwitchPortgroupVLANExtraction verifies:
 // 1. Standard switch portgroup VLAN ID extraction:
-//    - 0 -> untagged (empty int4multirange '{}')
-//    - 10 -> single VLAN [10, 10] ('{[10,11)}')
-//    - 4095 -> trunk 1-4094 ('{[1,4095)}')
+//   - 0 -> untagged (empty int4multirange '{}')
+//   - 10 -> single VLAN [10, 10] ('{[10,11)}')
+//   - 4095 -> trunk 1-4094 ('{[1,4095)}')
+//
 // 2. Normalized int4multirange literal inserts cleanly into PostgreSQL networks.vlan_ids.
 func TestTopology_StandardSwitchPortgroupVLANExtraction(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
