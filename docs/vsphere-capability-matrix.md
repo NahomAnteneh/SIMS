@@ -10,11 +10,10 @@
 This document records the architectural and operational capabilities of VMware vSphere endpoints across all supported major versions. Simulator environments like `vcsim` do not fully reproduce real vCenter behavioral quirks, SOAP fault handling, session eviction timing, or cross-vCenter vMotion (xvMotion).
 
 ### Version Policy Summary (ADR-018)
-- **Supported:** VMware vSphere / vCenter Server **7.0 and higher** (7.x, 8.x, 9.x, and future releases) with **no hard-coded ceiling**.
+- **Supported:** VMware vCenter Server **7.0 and above** with **no upper version ceiling**.
 - **Rejected:** Versions strictly below 7.0 are rejected at registration/connect with typed error `unsupported_version`.
-- **Accepted:** Versions $\ge$ 7.0 are accepted.
-- **Compatibility Status:** A version is reported as `compatibility = certified` only when that major.minor (and patch level) has a verified real-vCenter column in this capability matrix; otherwise it is reported as `compatibility = untested` with a warning.
-- **9.x Guarantee:** A 9.x vCenter must never be rejected, and must not be reported as `untested` once its matrix column is empirically verified.
+- **Accepted:** Versions 7.0 or newer are accepted.
+- **Capability Matrix:** One column per version actually run. Empirical behavioral validation is tracked in this matrix. Never claim a version was tested unless its column exists with empirical results recorded.
 
 The spike CLI `cmd/vcenter-spike` provides a safe, read-only validation tool that probes all key endpoints, verifies object lifecycle teardown (destroying ContainerViews, PropertyFilters, and EventHistoryCollectors), and logs out cleanly.
 
