@@ -43,6 +43,7 @@ interface DataTableProps<TData extends RowData> {
 export function DataTable<TData extends RowData>({
   columns,
   data,
+  searchColumn
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -66,10 +67,10 @@ export function DataTable<TData extends RowData>({
     <div className="overflow-hidden rounded-md border">
       <div className="flex items-center py-4">
         <Input
-          placeholder="Filter datacenters..."
-          value={(table.getColumn("displayName")?.getFilterValue() as string) ?? ""}
+          placeholder="Filter ..."
+          value={(table.getColumn(searchColumn)?.getFilterValue() as string) ?? ""}
           onChange={(event) =>
-            table.getColumn("displayName")?.setFilterValue(event.target.value)
+            table.getColumn(searchColumn)?.setFilterValue(event.target.value)
           }
           className="max-w-sm"
         />

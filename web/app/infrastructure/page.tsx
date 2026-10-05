@@ -1,12 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { LayoutList, LayoutGrid } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { columns, type Datacenter } from "./columns";
+import { dcColumns, clusterColumns, storageColumns, netColumns, type Datacenter } from "./columns";
 import { DataTable } from "./data-table";
 import { DatacenterCard } from "./card";
+
+import {
+    InfraService
+} from "@/lib/services/infra"
 
 const sampleDatacenters: Datacenter[] = [
   {
@@ -56,7 +60,38 @@ const sampleDatacenters: Datacenter[] = [
 ];
 
 export default function DatacentersPage() {
+    console.log(dcColumns)
   const [view, setView] = useState<"table" | "card">("table");
+  const [loading, setLoading] = useState(true);
+
+  const [datacenters, setDatacenters] = useState<Datacenter[]>([]);
+  const [clusters, setClusters] = useState<any[]>([]);
+  const [storage, setStorage] = useState<any[]>([]);
+  const [networking, setNetworking] = useState<any[]>([]);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [dcData, clusterData, storageData, netData] = await Promise.all([
+          InfraService.getDatacenters(),
+          InfraService.getClusters(),
+          InfraService.getDatastores(),
+          InfraService.getNetworks(),
+        ]);
+
+        setDatacenters(dcData);
+        setClusters(clusterData);
+        setStorage(storageData);
+        setNetworking(netData);
+      } catch (error) {
+        console.error("Failed to load infrastructure data", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
 
   return (
     <div>
@@ -64,7 +99,7 @@ export default function DatacentersPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-zinc-100">
-              Datacenters
+              Infrastructure
             </h1>
             <p className="text-sm text-zinc-500 mt-1">
               Manage physical sites and top-level vCenter server instances.
@@ -100,32 +135,58 @@ export default function DatacentersPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="Datacenters" className="w-[400px]">
-          <TabsList>
+        <Tabs defaultValue="datacenters" className="w-full">
+          <TabsList variant={"line"}>
             <TabsTrigger value="datacenters">Datacenters</TabsTrigger>
             <TabsTrigger value="custers&hosts">Clusters & Hosts</TabsTrigger>
             <TabsTrigger value="storage">Storage</TabsTrigger>
             <TabsTrigger value="networking">Networking</TabsTrigger>
           </TabsList>
-          <TabsContent value="account">
-            Make changes to your account here.
-          </TabsContent>
-          <TabsContent value="password">Change your password here.</TabsContent>
-          <TabsContent value="account">
-            Make changes to your account here.
-          </TabsContent>
-          <TabsContent value="password">Change your password here.</TabsContent>
-        </Tabs>
 
-        {view === "table" ? (
-          <DataTable columns={columns} data={sampleDatacenters} />
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {sampleDatacenters.map((dc) => (
-              <DatacenterCard key={dc.siteCode} datacenter={dc} />
-            ))}
-          </div>
-        )}
+          <TabsContent value="datacenters">
+            {view === "table" ? (
+              <DataTable columns={dcColumns} data={datacenters} searchColumn={dcColumns[0].accessorKey}  />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* {datacenters.map((dc) => (
+                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
+                ))} */}
+              </div>
+            )}
+          </TabsContent> <TabsContent value="custers&hosts">
+            {view === "table" ? (
+              <DataTable columns={clusterColumns} data={clusters} searchColumn={clusterColumns[0].accessorKey} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* {clusters.map((dc) => (
+                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
+                ))} */}
+              </div>
+            )}
+          </TabsContent> <TabsContent value="storage">
+            {view === "table" ? (
+              <DataTable columns={storageColumns} data={storage} searchColumn={storageColumns[0].accessorKey} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* {storage.map((dc) => (
+                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
+                ))} */}
+              </div>
+            )}
+          </TabsContent> <TabsContent value="networking">
+            {view === "table" ? (
+              <DataTable columns={netColumns} data={networking} searchColumn={netColumns[0].accessorKey} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {/* {networking.map((dc) => (
+                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
+                ))} */}
+              </div>
+            )}
+          </TabsContent>
+
+        
+        </Tabs>
       </div>
     </div>
   );

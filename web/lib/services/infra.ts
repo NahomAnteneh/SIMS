@@ -20,14 +20,40 @@ async function infraFetch<T>(endpoint: string, options: RequestInit = {}): Promi
 }
 
 export const InfraService = {
-  getDatacenters:  () => infraFetch<any[]>('/datacenters'),
-  getVcenters:     () => infraFetch<any[]>('/vcenters'),
-  getClusters:     () => infraFetch<any[]>('/clusters'),
-  getHosts:        () => infraFetch<any[]>('/hosts'),
-  getClients:      () => infraFetch<any[]>('/clients'),
-  getApplications: () => infraFetch<any[]>('/applications'),
-  getVms:          () => infraFetch<any[]>('/vms'),
-  
-  // Example of a granular or dynamic call if needed later
-  getVmById:       (id: string) => infraFetch<any>(`/vms/${id}`),
+  // Core Infrastructure
+  getDatacenters:    () => infraFetch<any[]>('/datacenters'),
+  getDatacenterById: (id: string) => infraFetch<any>(`/datacenters/${id}`),
+
+  getVcenters:       () => infraFetch<any[]>('/vcenters'),
+  getVcenterById:    (id: string) => infraFetch<any>(`/vcenters/${id}`),
+
+  getClusters:       () => infraFetch<any[]>('/clusters'),
+  getClusterById:    (id: string) => infraFetch<any>(`/clusters/${id}`),
+
+  getHosts:          () => infraFetch<any[]>('/hosts'),
+  getHostById:       (id: string) => infraFetch<any>(`/hosts/${id}`),
+
+  // Business & Workloads
+  getClients:        () => infraFetch<any[]>('/clients'),
+  getClientById:     (id: string) => infraFetch<any>(`/clients/${id}`),
+
+  getApplications:   () => infraFetch<any[]>('/applications'),
+  getApplicationById:(id: string) => infraFetch<any>(`/applications/${id}`),
+
+  getVms:            () => infraFetch<any[]>('/vms'),
+  getVmById:         (id: string) => infraFetch<any>(`/vms/${id}`),
+
+  // Storage & Networking (Added)
+  getDatastores:     () => infraFetch<any[]>('/datastores'),
+  getDatastoreById:  (id: string) => infraFetch<any>(`/datastores/${id}`),
+
+  getNetworks:       () => infraFetch<any[]>('/networks'),
+  getNetworkById:    (id: string) => infraFetch<any>(`/networks/${id}`),
+
+  // Data Sources & Monitoring (Added)
+  getDataSources:    () => infraFetch<any[]>('/dataSources'),
+  getDataSourceById: (id: string) => infraFetch<any>(`/dataSources/${id}`),
+
+  getActivities:     () => infraFetch<any[]>('/activities'),
+  getActivityById:   (id: string) => infraFetch<any>(`/activities/${id}`),
 };
