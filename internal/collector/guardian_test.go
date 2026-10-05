@@ -234,3 +234,38 @@ func TestSessionGuardian_ProbeTimeout(t *testing.T) {
 		t.Errorf("expected 1 failure on timeout, got %d", guardian.ConsecutiveFailures())
 	}
 }
+
+func TestSessionGuardian_HeartbeatsWhileStreamPaused(t *testing.T) {
+	metrics := telemetry.NewMetrics("sims-test", "test")
+	fakeSess := vsphere.NewFakeSession()
+
+	cfg := collector.SessionGuardianConfig{
+		VCenterID:              "vc-paused-test",
+		Interval:               20 * time.Millisecond,
+		Timeout:                100 * time.Millisecond,
+		MaxConsecutiveFailures: 3,
+	}
+
+	guardian := collector.NewSessionGuardian(cfg, fakeSess, metrics, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := guardian.Start(ctx); err != nil {
+		t.Fatalf("failed to start guardian: %v", err)
+	}
+	defer guardian.Stop()
+
+	// Simulate stream paused for 100ms (no stream activity / stream backpressure)
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify guardian kept heartbeating independently
+	if fakeSess.CurrentTimeCalls() < 3 {
+		t.Errorf("expected at least 3 keepalive probes during stream pause, got %d", fakeSess.CurrentTimeCalls())
+	}
+	if guardian.State() != collector.SessionStateConnected {
+		t.Errorf("expected session to remain connected during pause, got %v", guardian.State())
+	}
+	if guardian.ConsecutiveFailures() != 0 {
+		t.Errorf("expected 0 consecutive failures, got %d", guardian.ConsecutiveFailures())
+	}
+}

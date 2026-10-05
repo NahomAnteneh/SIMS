@@ -304,7 +304,8 @@ func TestPropertyStreamer_ProactiveHangDetection(t *testing.T) {
 	cfg := collector.StreamerConfig{
 		VCenterID:              "vc-hang",
 		MaxWaitSeconds:         1,
-		MaxStreamBlockDuration: 50 * time.Millisecond, // Proactive hang timeout below fake delay
+		CallDeadline:           50 * time.Millisecond, // Per-call deadline below fake delay (hang detection)
+		MaxStreamBlockDuration: 5 * time.Minute,
 	}
 
 	streamer := collector.NewPropertyStreamer(fakePC, types.PropertyFilterSpec{}, cfg, nil, nil, nil)
