@@ -27,9 +27,10 @@ The following event types are verified against the upstream VMware vSphere Web S
 | **`VmDeployedEvent`** | Lifecycle | `created_at`, `created_by` | Emitted when a VM is deployed from a template or OVF/OVA. Sets creation timestamp and user. |
 | **`VmRegisteredEvent`** | Lifecycle | `created_at`, `created_by` | Emitted when an existing VM is registered into inventory from a datastore path (`.vmx`). |
 | **`VmDiscoveredEvent`** | Lifecycle | `created_at` | Emitted when an ESXi host with pre-existing VMs is added to vCenter. |
-| **`VmRemovedEvent`** | Lifecycle | Audit Ledger / Tombstone | Emitted when a VM is deleted from disk or unregistered from inventory. |
-| **`VmMigratedEvent`** | Relocation | Audit Ledger | Emitted when a VM is migrated via vMotion across hosts, datastores, or cross-vCenter (xvMotion). |
-| **`VmRelocatedEvent`** | Relocation | Audit Ledger | Emitted when a VM's storage or compute configuration is relocated. |
+| **`VmRemovedEvent`** | Lifecycle | Reconciler / Tombstone Trigger | Emitted when a VM is deleted from disk or unregistered. Provides explicit event-driven trigger for soft-delete (`deleted_at = NOW()`) if removal happens between PropertyCollector poll intervals. |
+| **`VmMigratedEvent`** | Relocation | xvMotion Correlation Trigger | Emitted when a VM is migrated via vMotion across hosts, datastores, or cross-vCenter (xvMotion). Connects VM relocation across independent vCenters using `instance_uuid` (ADR-011). |
+| **`VmRelocatedEvent`** | Relocation | Storage/Host Relocation Trigger | Emitted when a VM's storage or compute configuration is relocated across datastores or standalone hosts. Triggers targeted re-indexing of datastore associations. |
+
 
 ---
 
