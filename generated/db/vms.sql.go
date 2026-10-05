@@ -87,7 +87,7 @@ func (q *Queries) DeleteVMDatastores(ctx context.Context, vmID pgtype.UUID) erro
 }
 
 const getVMByID = `-- name: GetVMByID :one
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -119,12 +119,13 @@ func (q *Queries) GetVMByID(ctx context.Context, id pgtype.UUID) (VirtualMachine
 		&i.UpdatedAt,
 		&i.CreatedBy,
 		&i.LastSeenAt,
+		&i.FirstSeenAt,
 	)
 	return i, err
 }
 
 const getVMByInstanceUUID = `-- name: GetVMByInstanceUUID :one
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE instance_uuid = $1 AND deleted_at IS NULL
 `
 
@@ -156,12 +157,13 @@ func (q *Queries) GetVMByInstanceUUID(ctx context.Context, instanceUuid string) 
 		&i.UpdatedAt,
 		&i.CreatedBy,
 		&i.LastSeenAt,
+		&i.FirstSeenAt,
 	)
 	return i, err
 }
 
 const getVMByMoref = `-- name: GetVMByMoref :one
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE vcenter_id = $1 AND moref = $2 AND deleted_at IS NULL
 `
 
@@ -198,6 +200,7 @@ func (q *Queries) GetVMByMoref(ctx context.Context, arg GetVMByMorefParams) (Vir
 		&i.UpdatedAt,
 		&i.CreatedBy,
 		&i.LastSeenAt,
+		&i.FirstSeenAt,
 	)
 	return i, err
 }
@@ -389,7 +392,7 @@ func (q *Queries) ListTagsForVM(ctx context.Context, vmID pgtype.UUID) ([]VmTag,
 }
 
 const listVMsByVCenterFirstPage = `-- name: ListVMsByVCenterFirstPage :many
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE deleted_at IS NULL
   AND vcenter_id = $1
   AND ($2::text = '' OR name ILIKE '%' || $2 || '%')
@@ -438,6 +441,7 @@ func (q *Queries) ListVMsByVCenterFirstPage(ctx context.Context, arg ListVMsByVC
 			&i.UpdatedAt,
 			&i.CreatedBy,
 			&i.LastSeenAt,
+			&i.FirstSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -450,7 +454,7 @@ func (q *Queries) ListVMsByVCenterFirstPage(ctx context.Context, arg ListVMsByVC
 }
 
 const listVMsByVCenterNextPage = `-- name: ListVMsByVCenterNextPage :many
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE deleted_at IS NULL
   AND vcenter_id = $1
   AND ($2::text = '' OR name ILIKE '%' || $2 || '%')
@@ -507,6 +511,7 @@ func (q *Queries) ListVMsByVCenterNextPage(ctx context.Context, arg ListVMsByVCe
 			&i.UpdatedAt,
 			&i.CreatedBy,
 			&i.LastSeenAt,
+			&i.FirstSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -519,7 +524,7 @@ func (q *Queries) ListVMsByVCenterNextPage(ctx context.Context, arg ListVMsByVCe
 }
 
 const listVMsFirstPage = `-- name: ListVMsFirstPage :many
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE deleted_at IS NULL
   AND ($1::text = '' OR name ILIKE '%' || $1 || '%')
 ORDER BY name ASC, id ASC
@@ -567,6 +572,7 @@ func (q *Queries) ListVMsFirstPage(ctx context.Context, arg ListVMsFirstPagePara
 			&i.UpdatedAt,
 			&i.CreatedBy,
 			&i.LastSeenAt,
+			&i.FirstSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -579,7 +585,7 @@ func (q *Queries) ListVMsFirstPage(ctx context.Context, arg ListVMsFirstPagePara
 }
 
 const listVMsNextPage = `-- name: ListVMsNextPage :many
-SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at FROM virtual_machines
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE deleted_at IS NULL
   AND ($1::text = '' OR name ILIKE '%' || $1 || '%')
   AND (name, id) > ($2::text, $3::uuid)
@@ -633,6 +639,7 @@ func (q *Queries) ListVMsNextPage(ctx context.Context, arg ListVMsNextPageParams
 			&i.UpdatedAt,
 			&i.CreatedBy,
 			&i.LastSeenAt,
+			&i.FirstSeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -690,7 +697,7 @@ SET instance_uuid = EXCLUDED.instance_uuid,
     guest_ip_address = EXCLUDED.guest_ip_address,
     annotation = EXCLUDED.annotation,
     updated_at = NOW()
-RETURNING id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at
+RETURNING id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at
 `
 
 type UpsertVMParams struct {
@@ -761,6 +768,7 @@ func (q *Queries) UpsertVM(ctx context.Context, arg UpsertVMParams) (VirtualMach
 		&i.UpdatedAt,
 		&i.CreatedBy,
 		&i.LastSeenAt,
+		&i.FirstSeenAt,
 	)
 	return i, err
 }
