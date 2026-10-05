@@ -176,6 +176,8 @@ type VirtualMachine struct {
 	DeletedAt       pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	CreatedBy       string
+	LastSeenAt      pgtype.Timestamptz
 }
 
 type VmCustomAttribute struct {
