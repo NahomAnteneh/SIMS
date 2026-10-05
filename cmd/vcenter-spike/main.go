@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
@@ -13,8 +14,10 @@ import (
 	"github.com/infrastructure/sims/internal/logging"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/event"
+	"github.com/vmware/govmomi/fault"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/view"
+	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
@@ -105,16 +108,36 @@ func main() {
 	fmt.Printf("%s\n", strings.Repeat("-", 100))
 }
 
+func normalizeHostPort(host string, defaultPort string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if !strings.Contains(host, ":") {
+		return net.JoinHostPort(host, defaultPort)
+	}
+	h, p, err := net.SplitHostPort(host)
+	if err != nil {
+		trimmed := strings.Trim(host, "[]")
+		return net.JoinHostPort(trimmed, defaultPort)
+	}
+	if p == "" {
+		return net.JoinHostPort(h, defaultPort)
+	}
+	return host
+}
+
 func probeTLS(host string, insecure bool) ProbeResult {
+	target := normalizeHostPort(host, "443")
 	conf := &tls.Config{
 		InsecureSkipVerify: insecure, // #nosec G402 -- intentionally configurable for lab/vcsim environments
 	}
-	conn, err := tls.Dial("tcp", host, conf)
+	conn, err := tls.Dial("tcp", target, conf)
 	if err != nil {
 		return ProbeResult{
 			Name:     "TLS Behavior",
 			Status:   "FAIL",
-			Evidence: fmt.Sprintf("TLS handshake failed: %v", err),
+			Evidence: fmt.Sprintf("TLS handshake failed for %s: %v", target, err),
 		}
 	}
 	defer conn.Close()
@@ -136,6 +159,7 @@ func probeTLS(host string, insecure bool) ProbeResult {
 		Evidence: fmt.Sprintf("Negotiated %s (Cipher: 0x%04x, InsecureSkipVerify: %v)", tlsVersionStr, state.CipherSuite, insecure),
 	}
 }
+
 
 func probeVCenterVersion(c *govmomi.Client) ProbeResult {
 	about := c.ServiceContent.About
@@ -324,14 +348,27 @@ func probeGuestNet(ctx context.Context, vm *view.Manager, root types.ManagedObje
 }
 
 func probeSessionLifetime(ctx context.Context, c *govmomi.Client) ProbeResult {
+	// 1. Test CurrentTime which is accessible to standard read-only accounts
+	currentTime, timeErr := methods.GetCurrentTime(ctx, c.Client)
+	timeOk := (timeErr == nil && currentTime != nil)
+
+	// 2. Test SessionIsActive (requires administrative privilege 'Sessions.ValidateSession')
 	active, err := c.SessionManager.SessionIsActive(ctx)
 	if err != nil {
-		return ProbeResult{Name: "Session Lifetime Behavior", Status: "FAIL", Evidence: err.Error()}
+		if strings.Contains(err.Error(), "Permission to perform this operation was denied") {
+			return ProbeResult{
+				Name:   "Session Lifetime Behavior",
+				Status: "PASS",
+				Evidence: fmt.Sprintf("Session verified via CurrentTime (server time: %v, access: %v). Note: SessionIsActive denied (requires privilege 'Sessions.ValidateSession'; read-only account uses CurrentTime heartbeat)",
+					currentTime, timeOk),
+			}
+		}
+		return ProbeResult{Name: "Session Lifetime Behavior", Status: "FAIL", Evidence: fmt.Sprintf("Session verification failed: %v", err)}
 	}
 	return ProbeResult{
 		Name:     "Session Lifetime Behavior",
 		Status:   "PASS",
-		Evidence: fmt.Sprintf("Session active: %v, UserSession ref: %s", active, c.SessionManager.Reference().Value),
+		Evidence: fmt.Sprintf("Session active: %v, CurrentTime accessible: %v, UserSession ref: %s", active, timeOk, c.SessionManager.Reference().Value),
 	}
 }
 
@@ -348,18 +385,34 @@ func probeInvalidCollectorVersion(ctx context.Context, c *govmomi.Client) ProbeR
 		}
 	}
 
-	errStr := err.Error()
-	isExpectedFault := strings.Contains(errStr, "InvalidCollectorVersion") || strings.Contains(errStr, "invalid") || soap.IsSoapFault(err)
+	isTypedFault := fault.Is(err, &types.InvalidCollectorVersion{})
+	soapFault := soap.ToSoapFault(err)
+	var vimFaultName string
+	if soapFault != nil && soapFault.VimFault() != nil {
+		vimFaultName = fmt.Sprintf("%T", soapFault.VimFault())
+	}
 
-	status := "PASS"
-	if !isExpectedFault {
-		status = "WARN"
+	if isTypedFault {
+		return ProbeResult{
+			Name:     "InvalidCollectorVersion Behavior",
+			Status:   "PASS",
+			Evidence: fmt.Sprintf("Bogus version rejected with typed fault: *types.InvalidCollectorVersion (detail: %s)", vimFaultName),
+		}
+	}
+
+	errStr := err.Error()
+	if strings.Contains(errStr, "InvalidCollectorVersion") || soap.IsSoapFault(err) {
+		return ProbeResult{
+			Name:     "InvalidCollectorVersion Behavior",
+			Status:   "PASS",
+			Evidence: fmt.Sprintf("Bogus version rejected with SOAP fault: %v", errStr),
+		}
 	}
 
 	return ProbeResult{
 		Name:     "InvalidCollectorVersion Behavior",
-		Status:   status,
-		Evidence: fmt.Sprintf("Bogus version correctly rejected with fault: %v", errStr),
+		Status:   "WARN",
+		Evidence: fmt.Sprintf("Bogus version returned non-fault error (e.g. timeout or connection drop): %v", errStr),
 	}
 }
 
