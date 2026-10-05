@@ -257,11 +257,17 @@ func TestSessionManager_VersionPolicy(t *testing.T) {
 	}
 }
 
-func TestSessionManager_OlderAPIVersionCompatibility(t *testing.T) {
+// TestSessionManager_AcceptsVCSimConfiguredAs700 verifies that the session layer parses and accepts
+// a 7.0.0 AboutInfo and establishes a session against vcsim configured to report 7.0.0.
+//
+// NOTE: vcsim accepts any SOAPAction header string, so this test does NOT prove that a real
+// vCenter 7.0 accepts "urn:vim25/9.1.0.0". Empirical verification against a real vCenter 7.0
+// remains BLOCKED (human) until access to a real 7.0 lab environment is provided.
+func TestSessionManager_AcceptsVCSimConfiguredAs700(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Simulate a vCenter 7.0.0 server reporting API version 7.0.0.0
+	// Configure simulator to report vCenter 7.0.0 and API version 7.0.0.0
 	model := simulator.VPX()
 	model.ServiceContent.About.Version = "7.0.0"
 	model.ServiceContent.About.ApiVersion = "7.0.0.0"
@@ -287,17 +293,17 @@ func TestSessionManager_OlderAPIVersionCompatibility(t *testing.T) {
 		t.Fatalf("failed to create session manager: %v", err)
 	}
 
-	// 1. Connect verifies version 7.0.0 is accepted
+	// 1. Connect verifies version 7.0.0 is parsed and accepted
 	if err := sm.Connect(ctx); err != nil {
 		t.Fatalf("Connect failed against vCenter 7.0.0: %v", err)
 	}
 
-	// 2. Login verifies fixed SOAPAction (urn:vim25/9.1.0.0) works against vCenter 7.0
+	// 2. Login verifies session authentication against simulator
 	if err := sm.Login(ctx); err != nil {
 		t.Fatalf("Login failed against vCenter 7.0.0: %v", err)
 	}
 
-	// 3. CurrentTime verifies round-trip SOAP call succeed without fault
+	// 3. CurrentTime verifies round-trip SOAP call succeeds without fault
 	serverTime, err := sm.CurrentTime(ctx)
 	if err != nil {
 		t.Fatalf("CurrentTime failed: %v", err)
@@ -313,5 +319,91 @@ func TestSessionManager_OlderAPIVersionCompatibility(t *testing.T) {
 	}
 	if c.Client.Version != "9.1.0.0" {
 		t.Errorf("expected client Version 9.1.0.0, got %s", c.Client.Version)
+	}
+}
+
+func TestSessionManager_RejectsUnparseableVersion(t *testing.T) {
+	unparseableVersions := []struct {
+		name       string
+		version    string
+		apiVersion string
+	}{
+		{name: "both empty", version: "", apiVersion: ""},
+		{name: "non-numeric version", version: "unknown", apiVersion: ""},
+		{name: "alpha string", version: "preview", apiVersion: "beta"},
+	}
+
+	for _, tt := range unparseableVersions {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			model := simulator.VPX()
+			model.ServiceContent.About.Version = tt.version
+			model.ServiceContent.About.ApiVersion = tt.apiVersion
+			defer model.Remove()
+			if err := model.Create(); err != nil {
+				t.Fatalf("failed to create simulator: %v", err)
+			}
+
+			server := model.Service.NewServer()
+			defer server.Close()
+
+			sm, err := vsphere.NewSessionManager(vsphere.SessionConfig{
+				URL:            server.URL.String(),
+				Username:       "user",
+				Password:       "pass",
+				Insecure:       true,
+				RequestTimeout: 5 * time.Second,
+			})
+			if err != nil {
+				t.Fatalf("failed to create session manager: %v", err)
+			}
+
+			err = sm.Connect(ctx)
+			if err == nil {
+				t.Fatal("expected Connect to fail on unparseable version, got nil")
+			}
+			if !errors.Is(err, vsphere.ErrUnparseableVersion) {
+				t.Errorf("expected ErrUnparseableVersion, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestSessionManager_RejectsNonVirtualCenterApiType(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Direct ESXi HostAgent endpoint
+	model := simulator.VPX()
+	model.ServiceContent.About.Version = "8.0.3"
+	model.ServiceContent.About.ApiVersion = "8.0.3.0"
+	model.ServiceContent.About.ApiType = "HostAgent"
+	defer model.Remove()
+	if err := model.Create(); err != nil {
+		t.Fatalf("failed to create simulator: %v", err)
+	}
+
+	server := model.Service.NewServer()
+	defer server.Close()
+
+	sm, err := vsphere.NewSessionManager(vsphere.SessionConfig{
+		URL:            server.URL.String(),
+		Username:       "user",
+		Password:       "pass",
+		Insecure:       true,
+		RequestTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("failed to create session manager: %v", err)
+	}
+
+	err = sm.Connect(ctx)
+	if err == nil {
+		t.Fatal("expected Connect to reject HostAgent endpoint, got nil")
+	}
+	if !errors.Is(err, vsphere.ErrInvalidApiType) {
+		t.Errorf("expected ErrInvalidApiType, got: %v", err)
 	}
 }
