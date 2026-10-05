@@ -256,3 +256,82 @@ func TestNormalizeVMCustomAttributes(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeVM_StandaloneHostAndNilGuest(t *testing.T) {
+	snap := collector.NewEmptySnapshot("vc-test-01")
+	// Setup standalone host in topology: parent is ComputeResource (not ClusterComputeResource)
+	snap.ByMoRef["dc-1"] = collector.TopologyNode{MoRef: "dc-1", Name: "Datacenter-1"}
+	snap.Datacenters["dc-1"] = collector.TopologyNode{MoRef: "dc-1", Name: "Datacenter-1"}
+	snap.ByMoRef["cr-10"] = collector.TopologyNode{MoRef: "cr-10", Name: "host10.corp.local", ParentID: "dc-1"}
+	snap.ByMoRef["host-10"] = collector.TopologyNode{MoRef: "host-10", Name: "host10.corp.local", ParentID: "cr-10"}
+	snap.Hosts["host-10"] = collector.TopologyNode{MoRef: "host-10", Name: "host10.corp.local", ParentID: "cr-10"}
+	snap.HostIDByMoRef["host-10"] = "host-uuid-10"
+	snap.DatacenterIDByMoRef["host-10"] = "dc-uuid-1"
+	// No cluster for host-10: snap.ClusterIDByMoRef["host-10"] is empty!
+
+	// Network lookup
+	snap.NetworkIDByMoRef["network-standard"] = "net-uuid-standard"
+
+	// VM on standalone host with nil Guest
+	vm := mo.VirtualMachine{
+		ManagedEntity: mo.ManagedEntity{
+			ExtensibleManagedObject: mo.ExtensibleManagedObject{
+				Self: types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-400"},
+			},
+			Name: "standalone-vm-nil-guest",
+		},
+		Summary: types.VirtualMachineSummary{
+			Config: types.VirtualMachineConfigSummary{
+				Name:         "standalone-vm-nil-guest",
+				InstanceUuid: "70284e31-8e01-4474-9540-1e149363065c",
+			},
+			Runtime: types.VirtualMachineRuntimeInfo{
+				PowerState: types.VirtualMachinePowerStatePoweredOff,
+			},
+		},
+		Runtime: types.VirtualMachineRuntimeInfo{
+			Host: &types.ManagedObjectReference{Type: "HostSystem", Value: "host-10"},
+		},
+		Guest: nil, // Nil guest!
+		Config: &types.VirtualMachineConfigInfo{
+			Hardware: types.VirtualHardware{
+				NumCPU:   1,
+				MemoryMB: 2048,
+				Device: []types.BaseVirtualDevice{
+					&types.VirtualE1000{
+						VirtualEthernetCard: types.VirtualEthernetCard{
+							VirtualDevice: types.VirtualDevice{
+								Key: 4000,
+								Backing: &types.VirtualEthernetCardNetworkBackingInfo{
+									Network: &types.ManagedObjectReference{Type: "Network", Value: "network-standard"},
+								},
+							},
+							MacAddress: "00:50:56:C3:00:11",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	rec := collector.NormalizeVM("vc-test-01", vm, snap)
+
+	if rec.HostID != "host-uuid-10" {
+		t.Errorf("expected HostID host-uuid-10, got %s", rec.HostID)
+	}
+	if rec.ClusterID != "" {
+		t.Errorf("expected empty ClusterID for standalone host, got %s", rec.ClusterID)
+	}
+	if rec.DatacenterID != "dc-uuid-1" {
+		t.Errorf("expected DatacenterID dc-uuid-1, got %s", rec.DatacenterID)
+	}
+	if len(rec.NetworkInterfaces) != 1 {
+		t.Fatalf("expected 1 NIC from hardware fallback with nil guest, got %d", len(rec.NetworkInterfaces))
+	}
+	if rec.NetworkInterfaces[0].MacAddress != "00:50:56:c3:00:11" {
+		t.Errorf("expected mac 00:50:56:c3:00:11, got %s", rec.NetworkInterfaces[0].MacAddress)
+	}
+	if rec.NetworkInterfaces[0].NetworkID != "net-uuid-standard" {
+		t.Errorf("expected NetworkID net-uuid-standard, got %s", rec.NetworkInterfaces[0].NetworkID)
+	}
+}

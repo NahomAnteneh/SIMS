@@ -24,12 +24,13 @@ type TopologySnapshot struct {
 	ByID    map[string]TopologyNode
 
 	// Specialized lookups
-	Datastores map[string]TopologyNode
-	Networks   map[string]TopologyNode
-	Portgroups map[string]TopologyNode
-	Folders    map[string]TopologyNode
-	Hosts      map[string]TopologyNode
-	Clusters   map[string]TopologyNode
+	Datacenters map[string]TopologyNode
+	Datastores  map[string]TopologyNode
+	Networks    map[string]TopologyNode
+	Portgroups  map[string]TopologyNode
+	Folders     map[string]TopologyNode
+	Hosts       map[string]TopologyNode
+	Clusters    map[string]TopologyNode
 
 	// Fast ID resolutions for VM normalization
 	DatastoreIDByMoRef  map[string]string
@@ -51,6 +52,7 @@ func NewEmptySnapshot(vcenterID string) *TopologySnapshot {
 		VCenterID:           vcenterID,
 		ByMoRef:             make(map[string]TopologyNode),
 		ByID:                make(map[string]TopologyNode),
+		Datacenters:         make(map[string]TopologyNode),
 		Datastores:          make(map[string]TopologyNode),
 		Networks:            make(map[string]TopologyNode),
 		Portgroups:          make(map[string]TopologyNode),
@@ -89,4 +91,22 @@ func (tc *TopologyCache) Current() *TopologySnapshot {
 // Swap atomically swaps the current snapshot pointer with a freshly constructed one.
 func (tc *TopologyCache) Swap(newSnapshot *TopologySnapshot) {
 	tc.snapshot.Store(newSnapshot)
+}
+
+// ResolveDatacenterMoRef traverses up the topology tree from moref until it encounters a Datacenter.
+func (snap *TopologySnapshot) ResolveDatacenterMoRef(moref string) string {
+	curr := moref
+	visited := make(map[string]bool)
+	for curr != "" && !visited[curr] {
+		visited[curr] = true
+		if _, ok := snap.Datacenters[curr]; ok {
+			return curr
+		}
+		node, ok := snap.ByMoRef[curr]
+		if !ok {
+			break
+		}
+		curr = node.ParentID
+	}
+	return ""
 }
