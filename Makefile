@@ -72,6 +72,12 @@ test-gate: tools ## Run Sprint 1 Test Gate (5,000-VM vcsim hydration & 50,000 sy
 demo-s1: tools ## Run Sprint 1 end-to-end demo (starts stack, hydrates 5,000 VMs, queries API)
 	./scripts/demo-s1.sh
 
+demo-s2: tools ## Run Sprint 2 end-to-end demo (real-time ingestion, events, metadata sync, query API)
+	./scripts/demo-s2.sh
+
+test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
+	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline
+
 vulncheck: tools ## Scan Go dependencies for known vulnerabilities
 	$(GOVULNCHECK) ./...
 
