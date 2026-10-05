@@ -67,7 +67,7 @@ For that reason, the recommended delivery sequence is:
 ```text
 Sprint 0   Foundations and architecture validation                [Delivered]
 Sprint 1   Data model + snapshot ingestion + first end-to-end API slice   [Delivered, plus tags/custom attributes]
-Sprint 2   Real-time ingestion + event recovery + resilience + tag/attribute sync
+Sprint 2   Real-time ingestion + event recovery + resilience + tag/attribute sync   [Delivered]
 Sprint 3   Search engine + complete API + auth + vCenter management API
 Sprint 4   Multi-vCenter scale + reconciliation + HA + vCenter lifecycle
 Sprint 5   Performance + security + chaos + production release
@@ -1298,7 +1298,7 @@ documented API calls (curl)
 
 ---
 
-# 32. Sprint 2 — Real-Time Ingestion, Event Ledger, Recovery and Backpressure
+# 32. Sprint 2 — Real-Time Ingestion, Event Ledger, Recovery and Backpressure [Delivered]
 
 **Duration:** 2 weeks
 
@@ -1306,11 +1306,11 @@ documented API calls (curl)
 
 > The collector remains synchronized with a live vCenter through normal changes, reconnects, rollover, event replay, and database pressure without intentionally dropping updates.
 
-This is the riskiest engineering sprint.
+**Status [Delivered]:** see the Sprint 2 report ([`docs/sprint2-report.md`](sprint2-report.md)).
 
 ---
 
-# 33. S2.1 PropertyCollector stream
+# 33. S2.1 PropertyCollector stream [Delivered]
 
 Implement:
 
@@ -1330,7 +1330,7 @@ The implementation must preserve this invariant.
 
 ---
 
-# 34. S2.2 Incremental property application
+# 34. S2.2 Incremental property application [Delivered]
 
 For:
 
@@ -1363,7 +1363,7 @@ Tests must prove a single-field modification cannot zero out unrelated fields. T
 
 ---
 
-# 35. S2.3 Truncated update handling
+# 35. S2.3 Truncated update handling [Delivered]
 
 When:
 
@@ -1383,7 +1383,7 @@ collector_property_updates_truncated_total
 
 ---
 
-# 36. S2.4 InvalidCollectorVersion recovery
+# 36. S2.4 InvalidCollectorVersion recovery [Delivered]
 
 Implement:
 
@@ -1418,7 +1418,7 @@ recovery duration is measured
 
 ---
 
-# 37. S2.5 Session guardian
+# 37. S2.5 Session guardian [Delivered]
 
 Implement:
 
@@ -1439,7 +1439,7 @@ The worker then transitions into reconnect logic.
 
 ---
 
-# 38. S2.6 Backoff
+# 38. S2.6 Backoff [Delivered]
 
 Use exponential backoff with jitter.
 
@@ -1457,7 +1457,7 @@ Test at least 1,000 generated delays per backoff stage.
 
 ---
 
-# 39. S2.7 Resource cleanup registry
+# 39. S2.7 Resource cleanup registry [Delivered]
 
 Every server-side object must register itself:
 
@@ -1496,7 +1496,7 @@ InvalidCollectorVersion
 
 ---
 
-# 40. S2.8 EventHistoryCollector
+# 40. S2.8 EventHistoryCollector [Delivered]
 
 Implement event capture for the v1 event set.
 
@@ -1521,7 +1521,7 @@ Unique key:
 
 ---
 
-# 41. S2.9 Event restart/replay semantics
+# 41. S2.9 Event restart/replay semantics [Delivered]
 
 Do not assume an EventHistoryCollector survives client restart.
 
@@ -1558,7 +1558,7 @@ rather than pretending vSphere gives a durable broker offset.
 
 ---
 
-# 42. S2.10 Field ownership rules
+# 42. S2.10 Field ownership rules [Delivered]
 
 Explicitly define:
 
@@ -1583,7 +1583,7 @@ Every repository method must respect these ownership boundaries.
 
 ---
 
-# 43. S2.11 Network-interface updates
+# 43. S2.11 Network-interface updates [Delivered]
 
 Only rewrite NIC rows when network state actually changes.
 
@@ -1614,7 +1614,7 @@ VM deletion
 
 ---
 
-# 44. S2.12 Bounded queue
+# 44. S2.12 Bounded queue [Delivered]
 
 Implement:
 
@@ -1653,7 +1653,7 @@ The original plan explicitly requires bounded blocking rather than dropped event
 
 ---
 
-# 45. S2.13 Database outage behavior
+# 45. S2.13 Database outage behavior [Delivered]
 
 Test:
 
@@ -1676,7 +1676,7 @@ memory remains bounded
 
 ---
 
-# 46. S2.14 Tag and custom attribute synchronization [Added]
+# 46. S2.14 Tag and custom attribute synchronization [Added — Delivered]
 
 Custom attributes and tags change through different paths, so they are synchronized differently.
 
@@ -1725,7 +1725,7 @@ the tag poller holds no REST session after shutdown
 
 ---
 
-# 47. Sprint 2 test gate
+# 47. Sprint 2 test gate [Delivered]
 
 Mandatory:
 
@@ -1743,7 +1743,7 @@ race detector
 
 ---
 
-# 48. Sprint 2 demo
+# 48. Sprint 2 demo [Delivered]
 
 On real vCenter:
 
