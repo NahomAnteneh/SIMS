@@ -55,6 +55,12 @@ type Metrics struct {
 	BatchFlushDuration    *prometheus.HistogramVec
 	BatchFlushTotal       *prometheus.CounterVec
 
+	// Event Streamer Metrics (Sprint 2 / S2.8 & S2.9)
+	EventsIngestedTotal          *prometheus.CounterVec
+	EventsStreamLagSeconds       *prometheus.GaugeVec
+	EventGapDetected             *prometheus.CounterVec
+	EventReconciliationRequested *prometheus.CounterVec
+
 	serviceName string
 }
 
@@ -325,6 +331,38 @@ func NewMetrics(serviceName, version string) *Metrics {
 		[]string{"vcenter_id", "status"},
 	)
 
+	eventsIngestedTotal := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_events_ingested_total",
+			Help: "Total count of vSphere inventory events ingested.",
+		},
+		[]string{"vcenter_id", "event_type"},
+	)
+
+	eventsStreamLagSeconds := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "sims_events_stream_lag_seconds",
+			Help: "Lag in seconds between vSphere event created_time and current ingestion time.",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	eventGapDetected := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_event_gap_detected",
+			Help: "Count of event buffer gaps detected during replay (retention exceeded).",
+		},
+		[]string{"vcenter_id"},
+	)
+
+	eventReconciliationRequested := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sims_collector_event_reconciliation_requested",
+			Help: "Count of reconciliations triggered due to detected event gaps.",
+		},
+		[]string{"vcenter_id"},
+	)
+
 	reg.MustRegister(requestsTotal)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(buildInfo)
@@ -356,6 +394,10 @@ func NewMetrics(serviceName, version string) *Metrics {
 	reg.MustRegister(queueBlockedProducers)
 	reg.MustRegister(batchFlushDuration)
 	reg.MustRegister(batchFlushTotal)
+	reg.MustRegister(eventsIngestedTotal)
+	reg.MustRegister(eventsStreamLagSeconds)
+	reg.MustRegister(eventGapDetected)
+	reg.MustRegister(eventReconciliationRequested)
 
 	buildInfo.WithLabelValues(serviceName, version).Set(1)
 
@@ -392,6 +434,10 @@ func NewMetrics(serviceName, version string) *Metrics {
 		QueueBlockedProducers:          queueBlockedProducers,
 		BatchFlushDuration:             batchFlushDuration,
 		BatchFlushTotal:                batchFlushTotal,
+		EventsIngestedTotal:            eventsIngestedTotal,
+		EventsStreamLagSeconds:         eventsStreamLagSeconds,
+		EventGapDetected:               eventGapDetected,
+		EventReconciliationRequested:   eventReconciliationRequested,
 		serviceName:                    serviceName,
 	}
 }

@@ -442,6 +442,12 @@ func (f *FakeEventCollector) Destroy(ctx context.Context) error {
 	return nil
 }
 
+func (f *FakeEventCollector) DestroyCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.destroyCount
+}
+
 func (f *FakeEventCollector) Reference() types.ManagedObjectReference {
 	return f.Ref
 }
@@ -451,6 +457,7 @@ type FakeEventManager struct {
 	mu sync.Mutex
 
 	createdCollectors []*FakeEventCollector
+	lastFilter        types.EventFilterSpec
 	createErr         error
 }
 
@@ -472,5 +479,20 @@ func (m *FakeEventManager) CreateCollectorForEvents(ctx context.Context, filter 
 	}
 	c := NewFakeEventCollector()
 	m.createdCollectors = append(m.createdCollectors, c)
+	m.lastFilter = filter
 	return c, nil
+}
+
+func (m *FakeEventManager) LastFilter() types.EventFilterSpec {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastFilter
+}
+
+func (m *FakeEventManager) CreatedCollectors() []*FakeEventCollector {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	res := make([]*FakeEventCollector, len(m.createdCollectors))
+	copy(res, m.createdCollectors)
+	return res
 }
