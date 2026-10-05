@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/infrastructure/sims/internal/vsphere"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/simulator"
 	"github.com/vmware/govmomi/view"
@@ -18,6 +19,7 @@ func TestVCSim(t *testing.T) {
 
 	// 1. Initialize in-process VPX simulator model
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	defer model.Remove()
 
 	err := model.Create()
