@@ -251,8 +251,14 @@ func (s *PropertyStreamer) Run(ctx context.Context, handler UpdateHandler) error
 
 		// Handle Truncated updates (S2.3)
 		isTruncated := updateSet.Truncated != nil && *updateSet.Truncated
-		if isTruncated && s.metrics != nil {
-			s.metrics.PropertyUpdatesTruncatedTotal.WithLabelValues(s.cfg.VCenterID).Inc()
+		if isTruncated {
+			if s.metrics != nil {
+				s.metrics.PropertyUpdatesTruncatedTotal.WithLabelValues(s.cfg.VCenterID).Inc()
+			}
+			s.logger.Debug("PropertyCollector returned truncated updates; draining next batch immediately",
+				slog.String("vcenter_id", s.cfg.VCenterID),
+				slog.String("next_version", updateSet.Version),
+			)
 		}
 
 		// Extract all ObjectUpdates across filter sets
