@@ -1,0 +1,9 @@
+.git
+bin
+dist
+build
+coverage.txt
+web
+pgdata
+prometheus_data
+grafana_data

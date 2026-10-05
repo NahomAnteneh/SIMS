@@ -81,7 +81,7 @@ container-build: ## Build production multi-stage container images for all servic
 	docker build -f deploy/Dockerfile.web -t sims-web:0.1.0 ./web
 
 dev-up: ## Start the full local development stack with Docker Compose
-	docker compose -f deploy/docker-compose.yml up -d
+	docker compose -f deploy/docker-compose.yml up -d --build
 
 dev-down: ## Stop all local development stack containers
 	docker compose -f deploy/docker-compose.yml down
