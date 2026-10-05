@@ -298,10 +298,7 @@ func (a *IncrementalApplier) parseChangeSetToMask(vcenterID, moref string, chang
 			}
 
 		case "guest.net":
-			nics := a.parseGuestNet(c.Val, snap)
-			if len(nics) > 0 {
-				mask.NetworkInterfaces = nics
-			}
+			mask.NetworkInterfaces = a.parseGuestNet(c.Val, snap)
 
 		case "parent":
 			if ref, ok := c.Val.(types.ManagedObjectReference); ok && snap != nil {
@@ -371,7 +368,7 @@ func (a *IncrementalApplier) parseCustomValues(val any, snap *TopologySnapshot) 
 
 // parseGuestNet decodes GuestNicInfo items into domain.NetworkInterfaceRecords.
 func (a *IncrementalApplier) parseGuestNet(val any, snap *TopologySnapshot) []domain.NetworkInterfaceRecord {
-	var nics []domain.NetworkInterfaceRecord
+	nics := make([]domain.NetworkInterfaceRecord, 0)
 	var nicList []types.GuestNicInfo
 
 	switch v := val.(type) {
@@ -389,28 +386,40 @@ func (a *IncrementalApplier) parseGuestNet(val any, snap *TopologySnapshot) []do
 			continue
 		}
 
-		ip := ""
-		if len(gnic.IpAddress) > 0 {
-			ip = cleanIP(gnic.IpAddress[0])
-		}
-
-		nic := domain.NetworkInterfaceRecord{
-			DeviceKey:  gnic.DeviceConfigId,
-			MacAddress: mac,
-			IPAddress:  ip,
-		}
-
+		var netID, pgID, vlanSpec string
 		if snap != nil && gnic.Network != "" {
 			if net, ok := snap.Networks[gnic.Network]; ok {
-				nic.NetworkID = net.ID
-				nic.VLANSpec = net.VLANSpec
+				netID = net.ID
+				vlanSpec = net.VLANSpec
 			} else if pg, ok := snap.Portgroups[gnic.Network]; ok {
-				nic.PortgroupID = pg.ID
-				nic.VLANSpec = pg.VLANSpec
+				pgID = pg.ID
+				vlanSpec = pg.VLANSpec
 			}
 		}
 
-		nics = append(nics, nic)
+		if len(gnic.IpAddress) > 0 {
+			for _, rawIP := range gnic.IpAddress {
+				nics = append(nics, domain.NetworkInterfaceRecord{
+					DeviceKey:    gnic.DeviceConfigId,
+					MacAddress:   mac,
+					IPAddress:    cleanIP(rawIP),
+					NetworkID:    netID,
+					PortgroupID:  pgID,
+					NetworkMoRef: gnic.Network,
+					VLANSpec:     vlanSpec,
+				})
+			}
+		} else {
+			nics = append(nics, domain.NetworkInterfaceRecord{
+				DeviceKey:    gnic.DeviceConfigId,
+				MacAddress:   mac,
+				IPAddress:    "",
+				NetworkID:    netID,
+				PortgroupID:  pgID,
+				NetworkMoRef: gnic.Network,
+				VLANSpec:     vlanSpec,
+			})
+		}
 	}
 
 	return nics
