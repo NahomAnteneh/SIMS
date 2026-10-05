@@ -10,6 +10,7 @@ import (
 	"github.com/infrastructure/sims/internal/collector"
 	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/infrastructure/sims/internal/vsphere"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/vmware/govmomi/vim25/types"
 )
 
@@ -164,7 +165,7 @@ func TestPropertyStreamer_TruncatedUpdatesHandling(t *testing.T) {
 		MaxStreamBlockDuration: 5 * time.Second,
 	}
 
-	// Enqueue truncated batch followed by terminal batch
+	// Enqueue 3 batches: batch1 (truncated=true), batch2 (truncated=true), batch3 (truncated=false)
 	truncatedTrue := true
 	truncatedFalse := false
 
@@ -179,17 +180,6 @@ func TestPropertyStreamer_TruncatedUpdatesHandling(t *testing.T) {
 						Kind: types.ObjectUpdateKindEnter,
 						Obj:  types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-part1"},
 					},
-				},
-			},
-		},
-	}
-	batch2 := &types.UpdateSet{
-		Version:   "ver-trunc-2",
-		Truncated: &truncatedFalse,
-		FilterSet: []types.PropertyFilterUpdate{
-			{
-				Filter: types.ManagedObjectReference{Type: "PropertyFilter", Value: "filter-1"},
-				ObjectSet: []types.ObjectUpdate{
 					{
 						Kind: types.ObjectUpdateKindEnter,
 						Obj:  types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-part2"},
@@ -198,22 +188,54 @@ func TestPropertyStreamer_TruncatedUpdatesHandling(t *testing.T) {
 			},
 		},
 	}
+	batch2 := &types.UpdateSet{
+		Version:   "ver-trunc-2",
+		Truncated: &truncatedTrue,
+		FilterSet: []types.PropertyFilterUpdate{
+			{
+				Filter: types.ManagedObjectReference{Type: "PropertyFilter", Value: "filter-1"},
+				ObjectSet: []types.ObjectUpdate{
+					{
+						Kind: types.ObjectUpdateKindModify,
+						Obj:  types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-part3"},
+					},
+				},
+			},
+		},
+	}
+	batch3 := &types.UpdateSet{
+		Version:   "ver-trunc-3",
+		Truncated: &truncatedFalse,
+		FilterSet: []types.PropertyFilterUpdate{
+			{
+				Filter: types.ManagedObjectReference{Type: "PropertyFilter", Value: "filter-1"},
+				ObjectSet: []types.ObjectUpdate{
+					{
+						Kind: types.ObjectUpdateKindLeave,
+						Obj:  types.ManagedObjectReference{Type: "VirtualMachine", Value: "vm-part4"},
+					},
+				},
+			},
+		},
+	}
 
 	fakePC.EnqueueUpdate(batch1)
 	fakePC.EnqueueUpdate(batch2)
+	fakePC.EnqueueUpdate(batch3)
 
 	streamer := collector.NewPropertyStreamer(fakePC, types.PropertyFilterSpec{}, cfg, metrics, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var receivedCount int
+	var receivedUpdates []types.ObjectUpdate
 	var mu sync.Mutex
 
 	go func() {
 		_ = streamer.Run(ctx, func(_ context.Context, updates []types.ObjectUpdate) error {
 			mu.Lock()
-			receivedCount += len(updates)
-			if receivedCount >= 2 {
+			receivedUpdates = append(receivedUpdates, updates...)
+			count := len(receivedUpdates)
+			if count >= 4 {
 				cancel()
 			}
 			mu.Unlock()
@@ -229,11 +251,23 @@ func TestPropertyStreamer_TruncatedUpdatesHandling(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if receivedCount != 2 {
-		t.Fatalf("expected 2 updates drained across truncated batches, got %d", receivedCount)
+	if len(receivedUpdates) != 4 {
+		t.Fatalf("expected 4 updates drained across truncated batches, got %d", len(receivedUpdates))
 	}
-	if streamer.Version() != "ver-trunc-2" {
-		t.Errorf("expected final version 'ver-trunc-2', got %q", streamer.Version())
+	if receivedUpdates[0].Obj.Value != "vm-part1" ||
+		receivedUpdates[1].Obj.Value != "vm-part2" ||
+		receivedUpdates[2].Obj.Value != "vm-part3" ||
+		receivedUpdates[3].Obj.Value != "vm-part4" {
+		t.Fatalf("unexpected order or values of received updates: %+v", receivedUpdates)
+	}
+	if streamer.Version() != "ver-trunc-3" {
+		t.Errorf("expected final version 'ver-trunc-3', got %q", streamer.Version())
+	}
+
+	// Verify sims_collector_property_updates_truncated_total metric
+	truncatedCount := testutil.ToFloat64(metrics.PropertyUpdatesTruncatedTotal.WithLabelValues("vc-trunc"))
+	if truncatedCount != 2 {
+		t.Errorf("expected truncated counter to be 2, got %v", truncatedCount)
 	}
 }
 
