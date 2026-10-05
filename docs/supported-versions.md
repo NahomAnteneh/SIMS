@@ -57,8 +57,8 @@ When establishing a connection, SIMS reads `ServiceInstance.content.about` (`typ
 - `ProductLineId`: Typically `"vpx"`.
 
 ### Metrics & Logging
-- **Metric:** `sims_vcenter_info{vcenter_id="...", major_minor="8.0", api_version="8.0.3.0"}`
-- **Cardinality:** Restricted to `major.minor` to prevent metric cardinality explosion across patch releases.
+- **Metric:** `sims_vcenter_info{vcenter_id="...", major_minor="8.0"}`
+- **Cardinality:** Restricted strictly to `major.minor` to guarantee low cardinality bounded by the number of connected vCenters. Exact build and API version details are recorded in structured logs and persisted in `collector_state`.
 - **Collector State:** Preserves exact `version`, `api_version`, and `build` in memory and in the database `vcenters` record (added in Sprint 3).
 
 ---

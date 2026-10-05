@@ -4,6 +4,47 @@ This document formally records the design decisions and architectural trade-offs
 
 ---
 
+## Sprint 2 Execution Phases & Story Mapping
+
+The execution of Sprint 2 is strictly organized into four sequential phases:
+
+- **Phase A: Foundation & Resilience Primitives (COMPLETED)**
+  - Spike fixes, TLS port normalization, and lab vCenter 8.0.2 capability matrix
+  - Topology standalone host `ComputeResource` and datacenter persistence
+  - **S2.0b:** Version detection (reject `< 7.0` with `ErrUnsupportedVersion`, accept `>= 7.0` without ceiling, reject unparseable versions with `ErrUnparseableVersion`, enforce `VirtualCenter` endpoint via `ErrInvalidApiType`)
+  - Vendor Seam interfaces and fault-injecting fakes (`FakeSession`, `FakePropertyCollector`, `FakeEventCollector`)
+  - **S2.6:** Bounded exponential backoff with +/- 20% jitter (base 2s, cap 60s, factor 2.0)
+  - **S2.5:** Session guardian proactive keepalive (`CurrentTime`), consecutive failure tracking, `Dead()` channel, `sims_collector_*` metrics
+  - **S2.7:** Cleanup registry enforcing strict 8-stage reverse teardown, step timeout bounds, and panic safety
+
+- **Phase B: PropertyCollector Streaming Engine & Incremental Persistence (NEXT)**
+  - **S2.1:** PropertyCollector stream (`WaitForUpdatesEx` loop, single goroutine ownership)
+  - **S2.2:** Incremental application via field-mask model (`Enter`, `Modify`, `Leave`)
+  - **S2.3:** Truncated updates (`truncated: true` loop handling without losing changes)
+  - **S2.4:** `InvalidCollectorVersion` recovery (typed fault & timeout detection, re-baselining via `RESYNCING`)
+  - **S2.10:** Field ownership enforcement (PropertyCollector vs Event layer vs Tagging)
+  - **S2.11:** NIC updates (guest networking and MAC fallback updates)
+
+- **Phase C: Bounded Queue, Blocking Backpressure & Database Recovery**
+  - **S2.12:** Bounded queue & blocking backpressure (strictly blocking and bounded, never dropping, sampling, or lossy coalescing; compaction of same-VM updates inside one batch is allowed and already exists)
+  - **S2.13:** Database outage resilience & recovery
+
+- **Phase D: Event Stream Ingestion & Dedup Ledger**
+  - **S2.8:** Verified v1 event set (`EventHistoryCollector`)
+  - **S2.9:** Event overlap window & dedup ledger (`inventory_events` table)
+  - **S2.14:** 1-hour churn test gate
+
+### Database Migrations Status
+- `000001_extensions.sql`: `uuid-ossp`, `ltree`, `pg_trgm` extensions.
+- `000002_vcenters_and_collector.sql`: `vcenters`, `collector_state`.
+- `000003_topology.sql`: `datacenters`, `inventory_folders`, `clusters`, `hosts`, `datastores`, `networks`.
+- `000004_virtual_machines.sql`: `virtual_machines`, `vm_datastores`, `vm_network_interfaces`.
+- `000005_default_privileges.sql`: roles and permissions (`collector_rw`, `query_ro`).
+- `000006_vm_tags_and_custom_attributes.sql`: `vm_tags`, `vm_custom_attributes`.
+- Next migration: `000007_...` (forward-compatible, adding `inventory_events` and any required staging table adjustments).
+
+---
+
 ## Decision a: Topology Change Synchronization & Standalone Hosts
 
 ### Problem

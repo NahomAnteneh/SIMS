@@ -174,9 +174,9 @@ func NewMetrics(serviceName, version string) *Metrics {
 	vcenterInfo := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "sims_vcenter_info",
-			Help: "Information gauge reporting vCenter connection metadata with major.minor and API version.",
+			Help: "Information gauge reporting vCenter connection metadata with major.minor.",
 		},
-		[]string{"vcenter_id", "major_minor", "api_version"},
+		[]string{"vcenter_id", "major_minor"},
 	)
 
 	keepaliveTotal := prometheus.NewCounterVec(
