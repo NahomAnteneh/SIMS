@@ -94,7 +94,10 @@ func TestPropertyStreamer_VCSimLiveUpdates(t *testing.T) {
 	streamCtx, streamCancel := context.WithCancel(ctx)
 	defer streamCancel()
 
+	var streamWg sync.WaitGroup
+	streamWg.Add(1)
 	go func() {
+		defer streamWg.Done()
 		_ = streamer.Run(streamCtx, func(_ context.Context, updates []types.ObjectUpdate) error {
 			mu.Lock()
 			receivedUpdates = append(receivedUpdates, updates...)
@@ -155,6 +158,7 @@ func TestPropertyStreamer_VCSimLiveUpdates(t *testing.T) {
 	}
 
 	streamCancel()
+	streamWg.Wait()
 
 	if !foundPowerChange {
 		t.Log("Note: vcsim reported initial updates; verify power change was dispatched")
@@ -242,7 +246,10 @@ func TestPropertyStreamer_TruncatedUpdatesLiveVCSim(t *testing.T) {
 	streamCtx, streamCancel := context.WithCancel(ctx)
 	defer streamCancel()
 
+	var streamWg sync.WaitGroup
+	streamWg.Add(1)
 	go func() {
+		defer streamWg.Done()
 		_ = streamer.Run(streamCtx, func(_ context.Context, updates []types.ObjectUpdate) error {
 			mu.Lock()
 			receivedUpdates = append(receivedUpdates, updates...)
@@ -266,6 +273,7 @@ func TestPropertyStreamer_TruncatedUpdatesLiveVCSim(t *testing.T) {
 	}
 
 	streamCancel()
+	streamWg.Wait()
 
 	mu.Lock()
 	defer mu.Unlock()
