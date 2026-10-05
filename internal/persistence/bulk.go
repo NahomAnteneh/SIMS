@@ -445,7 +445,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_ip_address = EXCLUDED.guest_ip_address,
 			annotation = EXCLUDED.annotation,
 			deleted_at = EXCLUDED.deleted_at,
-			updated_at = NOW()
+			updated_at = NOW(),
+			last_seen_at = NOW()
 		RETURNING id::text, moref, instance_uuid;
 	`)
 	if err != nil {
@@ -754,4 +755,20 @@ func (sf *StreamFlusher) Close() error {
 	close(sf.stopCh)
 	<-sf.doneCh
 	return nil
+}
+
+// ReconcileStaleVMs marks VMs as soft-deleted if they belong to vcenterID, are currently active (deleted_at IS NULL),
+// and have last_seen_at strictly before the specified syncStartTime.
+func (p *BulkPersister) ReconcileStaleVMs(ctx context.Context, vcenterID string, syncStartTime time.Time) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE virtual_machines
+		SET deleted_at = NOW(), updated_at = NOW()
+		WHERE vcenter_id = $1
+		  AND deleted_at IS NULL
+		  AND last_seen_at < $2
+	`, vcenterID, syncStartTime)
+	if err != nil {
+		return 0, fmt.Errorf("failed to reconcile stale VMs: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
