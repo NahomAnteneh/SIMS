@@ -44,6 +44,7 @@ func TestGate_5000VMHydration(t *testing.T) {
 	t.Log("Initializing in-process vcsim with 5,000 VMs...")
 	simStart := time.Now()
 	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
 	model.Autostart = false // Disable power-on simulation tasks for instant model creation
 	model.Datacenter = 1
 	model.Cluster = 1
@@ -252,10 +253,10 @@ func TestGate_5000VMHydration(t *testing.T) {
 // TestGate_50000RowSyntheticLoadAndExplain verifies:
 // 1. Bulk loading of 50,000 synthetic VM rows into PostgreSQL
 // 2. EXPLAIN query plan verification confirming index usage:
-//    - idx_vms_active_name_id for keyset pagination
-//    - pk_virtual_machines for primary key lookup
-//    - idx_vms_instance_uuid_active for instance_uuid lookup
-//    - idx_vms_vcenter_moref_active for (vcenter_id, moref) lookup
+//   - idx_vms_active_name_id for keyset pagination
+//   - pk_virtual_machines for primary key lookup
+//   - idx_vms_instance_uuid_active for instance_uuid lookup
+//   - idx_vms_vcenter_moref_active for (vcenter_id, moref) lookup
 func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 50,000-row synthetic load in short mode")
@@ -341,7 +342,7 @@ func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	// 1. EXPLAIN check: Keyset pagination query MUST use idx_vms_name_id_active
 	t.Run("EXPLAIN keyset pagination uses idx_vms_name_id_active", func(t *testing.T) {
 		rows, err := roPool.Query(ctx, `
-			EXPLAIN SELECT id, vcenter_id, moref, instance_uuid, name
+			EXPLAIN (ANALYZE, BUFFERS) SELECT id, vcenter_id, moref, instance_uuid, name
 			FROM virtual_machines
 			WHERE deleted_at IS NULL AND (name, id) > ('syn-vm-25000', '00000000-0000-0000-0000-000000000000'::uuid)
 			ORDER BY name ASC, id ASC
@@ -371,7 +372,7 @@ func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	// 2. EXPLAIN check: Instance UUID lookup MUST use uq_vms_instance_uuid_active
 	t.Run("EXPLAIN instance_uuid lookup uses uq_vms_instance_uuid_active", func(t *testing.T) {
 		rows, err := roPool.Query(ctx, `
-			EXPLAIN SELECT id, name
+			EXPLAIN (ANALYZE, BUFFERS) SELECT id, name
 			FROM virtual_machines
 			WHERE instance_uuid = 'syn-inst-25000-uuid' AND deleted_at IS NULL;
 		`)
@@ -399,7 +400,7 @@ func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	// 3. EXPLAIN check: (vcenter_id, moref) lookup MUST use uq_vms_vcenter_moref_active
 	t.Run("EXPLAIN vcenter_moref lookup uses uq_vms_vcenter_moref_active", func(t *testing.T) {
 		rows, err := roPool.Query(ctx, `
-			EXPLAIN SELECT id, name
+			EXPLAIN (ANALYZE, BUFFERS) SELECT id, name
 			FROM virtual_machines
 			WHERE vcenter_id = $1::uuid AND moref = 'vm-syn-25000' AND deleted_at IS NULL;
 		`, vcenterID)
@@ -419,8 +420,8 @@ func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 		plan := strings.Join(lines, "\n")
 
 		t.Logf("vcenter_moref lookup plan:\n%s", plan)
-		if (!strings.Contains(plan, "uq_vms_vcenter_moref_active") && !strings.Contains(plan, "idx_vms_vcenter_name_id_active")) || !strings.Contains(plan, "Index Scan") {
-			t.Fatalf("expected Index Scan on uq_vms_vcenter_moref_active or idx_vms_vcenter_name_id_active, got:\n%s", plan)
+		if !strings.Contains(plan, "uq_vms_vcenter_moref_active") || !strings.Contains(plan, "Index Scan") {
+			t.Fatalf("expected Index Scan on uq_vms_vcenter_moref_active, got:\n%s", plan)
 		}
 	})
 }

@@ -56,6 +56,32 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 
 	vcenterID := snap.VCenterID
 
+	// 0. Datacenters
+	for moref, dc := range snap.Datacenters {
+		var id string
+		err := tx.QueryRow(ctx, `
+			INSERT INTO datacenters (vcenter_id, moref, name, updated_at)
+			VALUES ($1::uuid, $2, $3, NOW())
+			ON CONFLICT (vcenter_id, moref) DO UPDATE
+			SET name = EXCLUDED.name, updated_at = NOW()
+			RETURNING id::text
+		`, vcenterID, moref, dc.Name).Scan(&id)
+		if err != nil {
+			return fmt.Errorf("failed to upsert datacenter %s: %w", moref, err)
+		}
+		snap.DatacenterIDByMoRef[moref] = id
+	}
+
+	// Resolve Datacenter IDs for all nodes in the topology snapshot
+	for nodeMoref := range snap.ByMoRef {
+		dcMoref := snap.ResolveDatacenterMoRef(nodeMoref)
+		if dcMoref != "" {
+			if dcID, ok := snap.DatacenterIDByMoRef[dcMoref]; ok && dcID != "" {
+				snap.DatacenterIDByMoRef[nodeMoref] = dcID
+			}
+		}
+	}
+
 	// 1. Folders: insert parent-less first, then children
 	for moref, f := range snap.Folders {
 		var id string
@@ -157,13 +183,17 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 	// 6. Clusters
 	for moref, cl := range snap.Clusters {
 		var id string
+		var dcUUID *string
+		if dcID, ok := snap.DatacenterIDByMoRef[moref]; ok && dcID != "" {
+			dcUUID = &dcID
+		}
 		err := tx.QueryRow(ctx, `
-			INSERT INTO clusters (vcenter_id, moref, name, updated_at)
-			VALUES ($1::uuid, $2, $3, NOW())
+			INSERT INTO clusters (vcenter_id, datacenter_id, moref, name, updated_at)
+			VALUES ($1::uuid, $2::uuid, $3, $4, NOW())
 			ON CONFLICT (vcenter_id, moref) DO UPDATE
-			SET name = EXCLUDED.name, updated_at = NOW()
+			SET datacenter_id = EXCLUDED.datacenter_id, name = EXCLUDED.name, updated_at = NOW()
 			RETURNING id::text
-		`, vcenterID, moref, cl.Name).Scan(&id)
+		`, vcenterID, dcUUID, moref, cl.Name).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("failed to upsert cluster %s: %w", moref, err)
 		}
@@ -174,20 +204,27 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 	for moref, h := range snap.Hosts {
 		var id string
 		var clusterUUID *string
-		if clusterID, ok := snap.ClusterIDByMoRef[h.ParentID]; ok {
+		if clusterID, ok := snap.ClusterIDByMoRef[h.ParentID]; ok && clusterID != "" {
 			clusterUUID = &clusterID
 		}
+		var dcUUID *string
+		if dcID, ok := snap.DatacenterIDByMoRef[moref]; ok && dcID != "" {
+			dcUUID = &dcID
+		}
 		err := tx.QueryRow(ctx, `
-			INSERT INTO hosts (vcenter_id, cluster_id, moref, name, updated_at)
-			VALUES ($1::uuid, $2::uuid, $3, $4, NOW())
+			INSERT INTO hosts (vcenter_id, cluster_id, datacenter_id, moref, name, updated_at)
+			VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, NOW())
 			ON CONFLICT (vcenter_id, moref) DO UPDATE
-			SET cluster_id = EXCLUDED.cluster_id, name = EXCLUDED.name, updated_at = NOW()
+			SET cluster_id = EXCLUDED.cluster_id, datacenter_id = EXCLUDED.datacenter_id, name = EXCLUDED.name, updated_at = NOW()
 			RETURNING id::text
-		`, vcenterID, clusterUUID, moref, h.Name).Scan(&id)
+		`, vcenterID, clusterUUID, dcUUID, moref, h.Name).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("failed to upsert host %s: %w", moref, err)
 		}
 		snap.HostIDByMoRef[moref] = id
+		if clusterUUID != nil {
+			snap.ClusterIDByMoRef[moref] = *clusterUUID
+		}
 	}
 
 	return tx.Commit(ctx)
@@ -408,7 +445,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_ip_address = EXCLUDED.guest_ip_address,
 			annotation = EXCLUDED.annotation,
 			deleted_at = EXCLUDED.deleted_at,
-			updated_at = NOW()
+			updated_at = NOW(),
+			last_seen_at = NOW()
 		RETURNING id::text, moref, instance_uuid;
 	`)
 	if err != nil {
@@ -717,4 +755,20 @@ func (sf *StreamFlusher) Close() error {
 	close(sf.stopCh)
 	<-sf.doneCh
 	return nil
+}
+
+// ReconcileStaleVMs marks VMs as soft-deleted if they belong to vcenterID, are currently active (deleted_at IS NULL),
+// and have last_seen_at strictly before the specified syncStartTime.
+func (p *BulkPersister) ReconcileStaleVMs(ctx context.Context, vcenterID string, syncStartTime time.Time) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `
+		UPDATE virtual_machines
+		SET deleted_at = NOW(), updated_at = NOW()
+		WHERE vcenter_id = $1
+		  AND deleted_at IS NULL
+		  AND last_seen_at < $2
+	`, vcenterID, syncStartTime)
+	if err != nil {
+		return 0, fmt.Errorf("failed to reconcile stale VMs: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }

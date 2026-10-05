@@ -5,61 +5,87 @@ import (
 	"testing"
 
 	"github.com/infrastructure/sims/internal/collector"
+	"github.com/infrastructure/sims/internal/telemetry"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-func TestWorkerFSMValidTransitions(t *testing.T) {
-	fsm := collector.NewWorkerFSM()
-	if fsm.Current() != collector.StateInit {
-		t.Fatalf("expected initial state %s, got %s", collector.StateInit, fsm.Current())
+func TestWorkerFSM_LifecycleAndTransitions(t *testing.T) {
+	metrics := telemetry.NewMetrics("test", "0.1.0")
+	fsm := collector.NewWorkerFSM("vc-1", metrics, nil)
+
+	if fsm.Current() != collector.WorkerStateInit {
+		t.Fatalf("expected initial state INIT, got: %s", fsm.Current())
 	}
 
-	transitions := []collector.State{
-		collector.StateConnecting,
-		collector.StateSessionActive,
-		collector.StateTopologyPreflight,
-		collector.StateFullInventorySync,
-		collector.StateDeltaStreaming,
-		collector.StateResyncing,
-		collector.StateFullInventorySync,
-		collector.StateDegraded,
-		collector.StateConnecting,
-		collector.StateStopping,
+	// Normal lifecycle progression:
+	// INIT -> CONNECTING -> SESSION_ACTIVE -> TOPOLOGY_PREFLIGHT -> FULL_INVENTORY_SYNC -> DELTA_STREAMING
+	transitions := []collector.WorkerState{
+		collector.WorkerStateConnecting,
+		collector.WorkerStateSessionActive,
+		collector.WorkerStateTopologyPreflight,
+		collector.WorkerStateFullInventorySync,
+		collector.WorkerStateDeltaStreaming,
 	}
 
 	for _, next := range transitions {
-		err := fsm.Transition(next)
-		if err != nil {
+		if err := fsm.Transition(next); err != nil {
 			t.Fatalf("failed transition to %s: %v", next, err)
 		}
 		if fsm.Current() != next {
-			t.Fatalf("expected state %s, got %s", next, fsm.Current())
+			t.Fatalf("expected state %s, got: %s", next, fsm.Current())
 		}
+	}
+
+	// Test Recovery transition: DELTA_STREAMING -> RESYNCING -> DELTA_STREAMING
+	if err := fsm.Transition(collector.WorkerStateResyncing); err != nil {
+		t.Fatalf("failed transition to RESYNCING: %v", err)
+	}
+	if fsm.Current() != collector.WorkerStateResyncing {
+		t.Fatalf("expected state RESYNCING, got: %s", fsm.Current())
+	}
+	if err := fsm.Transition(collector.WorkerStateDeltaStreaming); err != nil {
+		t.Fatalf("failed transition back to DELTA_STREAMING: %v", err)
+	}
+
+	// Test Degraded transition: DELTA_STREAMING -> DEGRADED -> CONNECTING
+	if err := fsm.Transition(collector.WorkerStateDegraded); err != nil {
+		t.Fatalf("failed transition to DEGRADED: %v", err)
+	}
+	if err := fsm.Transition(collector.WorkerStateConnecting); err != nil {
+		t.Fatalf("failed transition from DEGRADED to CONNECTING: %v", err)
+	}
+
+	// Test Shutdown: CONNECTING -> STOPPING -> STOPPED
+	if err := fsm.Transition(collector.WorkerStateStopping); err != nil {
+		t.Fatalf("failed transition to STOPPING: %v", err)
+	}
+	if err := fsm.Transition(collector.WorkerStateStopped); err != nil {
+		t.Fatalf("failed transition to STOPPED: %v", err)
+	}
+
+	// Verify transitions metric recorded
+	initToConn := testutil.ToFloat64(metrics.CollectorStateTransitionsTotal.WithLabelValues("vc-1", "INIT", "CONNECTING"))
+	if initToConn != 1 {
+		t.Errorf("expected 1 INIT->CONNECTING transition, got: %v", initToConn)
 	}
 }
 
-func TestWorkerFSMIllegalTransitions(t *testing.T) {
-	fsm := collector.NewWorkerFSM()
+func TestWorkerFSM_IllegalTransitions(t *testing.T) {
+	metrics := telemetry.NewMetrics("test", "0.1.0")
+	fsm := collector.NewWorkerFSM("vc-illegal", metrics, nil)
 
-	// Cannot transition directly from INIT to DELTA_STREAMING
-	err := fsm.Transition(collector.StateDeltaStreaming)
+	// Direct INIT -> DELTA_STREAMING is illegal
+	err := fsm.Transition(collector.WorkerStateDeltaStreaming)
 	if err == nil {
-		t.Fatalf("expected error on illegal transition INIT -> DELTA_STREAMING, got nil")
-	}
-	if !errors.Is(err, collector.ErrIllegalTransition) {
-		t.Fatalf("expected ErrIllegalTransition, got: %v", err)
+		t.Fatal("expected illegal transition error, got nil")
 	}
 
-	// Move to STOPPING (terminal)
-	if err := fsm.Transition(collector.StateStopping); err != nil {
-		t.Fatalf("transition to STOPPING failed: %v", err)
+	var illegalErr collector.ErrIllegalTransition
+	if !errors.As(err, &illegalErr) {
+		t.Fatalf("expected ErrIllegalTransition type, got: %T (%v)", err, err)
 	}
 
-	// Cannot transition from STOPPING to INIT or CONNECTING
-	err = fsm.Transition(collector.StateConnecting)
-	if err == nil {
-		t.Fatalf("expected error on transition from terminal STOPPING, got nil")
-	}
-	if !errors.Is(err, collector.ErrIllegalTransition) {
-		t.Fatalf("expected ErrIllegalTransition, got: %v", err)
+	if illegalErr.From != collector.WorkerStateInit || illegalErr.To != collector.WorkerStateDeltaStreaming {
+		t.Errorf("unexpected transition details: from=%s, to=%s", illegalErr.From, illegalErr.To)
 	}
 }

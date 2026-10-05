@@ -30,13 +30,18 @@ type CollectorLease struct {
 }
 
 type CollectorState struct {
-	ID           pgtype.UUID
-	TargetID     pgtype.UUID
-	Status       string
-	LastSyncAt   pgtype.Timestamptz
-	SyncToken    pgtype.Text
-	ErrorMessage pgtype.Text
-	UpdatedAt    pgtype.Timestamptz
+	ID               pgtype.UUID
+	TargetID         pgtype.UUID
+	Status           string
+	LastSyncAt       pgtype.Timestamptz
+	SyncToken        pgtype.Text
+	ErrorMessage     pgtype.Text
+	UpdatedAt        pgtype.Timestamptz
+	VcenterID        pgtype.UUID
+	LastEventKey     pgtype.Int8
+	LastEventTime    pgtype.Timestamptz
+	TagsLastSyncedAt pgtype.Timestamptz
+	TagsState        string
 }
 
 type CollectorTarget struct {
@@ -105,6 +110,11 @@ type InventoryEvent struct {
 	Message        string
 	CreatedTime    pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
+	UserName       string
+	EntityType     string
+	EntityMoref    string
+	EntityName     string
+	Payload        []byte
 }
 
 type InventoryFolder struct {
@@ -176,6 +186,9 @@ type VirtualMachine struct {
 	DeletedAt       pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	CreatedBy       string
+	LastSeenAt      pgtype.Timestamptz
+	FirstSeenAt     pgtype.Timestamptz
 }
 
 type VmCustomAttribute struct {

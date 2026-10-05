@@ -16,12 +16,16 @@ type BaseConfig struct {
 // CollectorConfig holds runtime settings for the collector daemon.
 type CollectorConfig struct {
 	BaseConfig
-	DatabaseURL     string
-	VCenterURL      string
-	VCenterUsername string
-	VCenterPassword string
-	InsecureTLS     bool
-	SyncInterval    time.Duration
+	DatabaseURL            string
+	VCenterURL             string
+	VCenterUsername        string
+	VCenterPassword        string
+	InsecureTLS            bool
+	SyncInterval           time.Duration
+	KeepaliveInterval      time.Duration
+	KeepaliveTimeout       time.Duration
+	KeepaliveMaxFailures   int
+	MaxStreamBlockDuration time.Duration
 }
 
 // QueryAPIConfig holds runtime settings for the query API daemon.
@@ -38,12 +42,16 @@ func LoadCollectorConfig() CollectorConfig {
 			Port:     getEnv("PORT", "8081"),
 			LogLevel: getEnv("LOG_LEVEL", "info"),
 		},
-		DatabaseURL:     getEnv("DATABASE_URL", "postgres://collector_rw:collector_rw_pass@localhost:5432/sims?sslmode=disable"),
-		VCenterURL:      getEnv("VCENTER_URL", "https://localhost:8989/sdk"),
-		VCenterUsername: getEnv("VCENTER_USER", "user"),
-		VCenterPassword: getEnv("VCENTER_PASSWORD", "pass"),
-		InsecureTLS:     getEnvBool("VCENTER_INSECURE", true),
-		SyncInterval:    getEnvDuration("SYNC_INTERVAL", 30*time.Second),
+		DatabaseURL:            getEnv("DATABASE_URL", "postgres://collector_rw:collector_rw_pass@localhost:5432/sims?sslmode=disable"),
+		VCenterURL:             getEnv("VCENTER_URL", "https://localhost:8989/sdk"),
+		VCenterUsername:        getEnv("VCENTER_USER", "user"),
+		VCenterPassword:        getEnv("VCENTER_PASSWORD", "pass"),
+		InsecureTLS:            getEnvBool("VCENTER_INSECURE", true),
+		SyncInterval:           getEnvDuration("SYNC_INTERVAL", 30*time.Second),
+		KeepaliveInterval:      getEnvDuration("SIMS_COLLECTOR_KEEPALIVE_INTERVAL", 60*time.Second),
+		KeepaliveTimeout:       getEnvDuration("SIMS_COLLECTOR_KEEPALIVE_TIMEOUT", 10*time.Second),
+		KeepaliveMaxFailures:   getEnvInt("SIMS_COLLECTOR_KEEPALIVE_MAX_FAILURES", 2),
+		MaxStreamBlockDuration: getEnvDuration("SIMS_COLLECTOR_MAX_STREAM_BLOCK_DURATION", 5*time.Minute),
 	}
 }
 
@@ -62,6 +70,16 @@ func LoadQueryAPIConfig() QueryAPIConfig {
 func getEnv(key, defaultVal string) string {
 	if val, ok := os.LookupEnv(key); ok && strings.TrimSpace(val) != "" {
 		return strings.TrimSpace(val)
+	}
+	return defaultVal
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	if val, ok := os.LookupEnv(key); ok {
+		i, err := strconv.Atoi(strings.TrimSpace(val))
+		if err == nil {
+			return i
+		}
 	}
 	return defaultVal
 }

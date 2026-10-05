@@ -72,6 +72,12 @@ test-gate: tools ## Run Sprint 1 Test Gate (5,000-VM vcsim hydration & 50,000 sy
 demo-s1: tools ## Run Sprint 1 end-to-end demo (starts stack, hydrates 5,000 VMs, queries API)
 	./scripts/demo-s1.sh
 
+demo-s2: tools ## Run Sprint 2 end-to-end demo (real-time ingestion, events, metadata sync, query API)
+	./scripts/demo-s2.sh
+
+test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
+	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline
+
 vulncheck: tools ## Scan Go dependencies for known vulnerabilities
 	$(GOVULNCHECK) ./...
 
@@ -81,7 +87,7 @@ container-build: ## Build production multi-stage container images for all servic
 	docker build -f deploy/Dockerfile.web -t sims-web:0.1.0 ./web
 
 dev-up: ## Start the full local development stack with Docker Compose
-	docker compose -f deploy/docker-compose.yml up -d
+	docker compose -f deploy/docker-compose.yml up -d --build
 
 dev-down: ## Stop all local development stack containers
 	docker compose -f deploy/docker-compose.yml down
