@@ -1,9 +1,14 @@
-import type { Metadata } from "next";
-import React from "react";
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { Sidebar } from '@/components/layout/Sidebar';
+import { Topbar } from '@/components/layout/Topbar';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "SIMS — vSphere Inventory & Search",
-  description: "Distributed vSphere Inventory & Search Platform",
+  title: 'Depot - Inventory Management',
+  description: 'Analytics and insights for your inventory',
 };
 
 export default function RootLayout({
@@ -12,9 +17,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body style={{ fontFamily: "system-ui, sans-serif", margin: 0, padding: "2rem", backgroundColor: "#f8fafc", color: "#0f172a" }}>
-        {children}
+    <html lang="en" className="dark">
+      <body className={`${inter.className} flex h-screen w-full bg-black text-zinc-100 overflow-hidden antialiased`}>
+        {/* Left Sidebar */}
+        <Sidebar />
+        
+        {/* Right Content Area */}
+        <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+          <Topbar />
+          <main className="flex-1 overflow-y-auto bg-[#0a0a0a] p-6">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   );
