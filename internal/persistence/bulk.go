@@ -15,6 +15,8 @@ import (
 	"github.com/infrastructure/sims/internal/vlan"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // WriterConfig defines tuning parameters for the bulk persistence pipeline.
@@ -244,6 +246,15 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	compactedCount := len(compacted)
 
 	vcenterID := records[0].VCenterID
+	ctx, flushSpan := telemetry.StartSpan(ctx, "persistence.batch_flush",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+			attribute.Int("batch.raw_count", rawCount),
+			attribute.Int("batch.compacted_count", compactedCount),
+		),
+	)
+	defer flushSpan.End()
+
 	if p.metrics != nil && rawCount > 0 {
 		ratio := float64(rawCount-compactedCount) / float64(rawCount)
 		p.metrics.CompactionRatio.WithLabelValues(vcenterID).Observe(ratio)
@@ -253,6 +264,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	// 2. Begin single database transaction
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
+		telemetry.RecordSafeError(flushSpan, err)
 		return 0, fmt.Errorf("failed to begin persistence transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
@@ -309,6 +321,12 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	}
 
 	// 4. COPY FROM STDIN into staging table
+	_, copySpan := telemetry.StartSpan(ctx, "persistence.binary_copy",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+			attribute.Int("records.count", len(compacted)),
+		),
+	)
 	copyStart := time.Now()
 	_, err = tx.CopyFrom(
 		ctx,
@@ -384,8 +402,11 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		}),
 	)
 	if err != nil {
+		telemetry.RecordSafeError(copySpan, err)
+		copySpan.End()
 		return 0, fmt.Errorf("binary CopyFrom to staging failed: %w", err)
 	}
+	copySpan.End()
 
 	copyDuration := time.Since(copyStart)
 	if p.metrics != nil {
@@ -393,6 +414,12 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	}
 
 	// 5. Set-based upsert merge into virtual_machines
+	_, mergeSpan := telemetry.StartSpan(ctx, "persistence.merge_transaction",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+		),
+	)
+	defer mergeSpan.End()
 	mergeStart := time.Now()
 
 	// 5a. Soft-delete any existing active VMs marked deleted in staging
@@ -718,6 +745,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 
 	// 7. Commit transaction
 	if err := tx.Commit(ctx); err != nil {
+		telemetry.RecordSafeError(mergeSpan, err)
 		return 0, fmt.Errorf("transaction commit failed: %w", err)
 	}
 

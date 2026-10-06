@@ -12,7 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/search"
+	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // SearchVMsRequest represents structured search payload.
@@ -183,15 +186,35 @@ func (h *Handler) executeSearch(w http.ResponseWriter, r *http.Request, filter *
 		Limit:  limit + 1, // Request 1 extra to determine hasMore
 	}
 
+	_, compileSpan := telemetry.StartSpan(r.Context(), "search.ast_compile",
+		trace.WithAttributes(
+			attribute.String("search.query_tag", queryTag),
+			attribute.String("search.sort_field", sortSpec.Field),
+			attribute.String("search.sort_dir", sortSpec.Direction),
+		),
+	)
 	compiled, err := search.CompileVMQuery(filter, opts)
 	if err != nil {
+		telemetry.RecordSafeError(compileSpan, err)
+		compileSpan.End()
 		h.logger.Error("failed to compile search query", "error", err)
 		h.writeProblem(w, http.StatusBadRequest, "Bad Request", err.Error(), "invalid_filter")
 		return
 	}
+	compileSpan.End()
 
-	rows, err := h.pool.Query(r.Context(), compiled.SQL, compiled.Args...)
+	queryCtx, querySpan := telemetry.StartSpan(r.Context(), "search.db_query",
+		trace.WithAttributes(
+			attribute.String("db.system", "postgresql"),
+			attribute.String("db.operation", "SELECT"),
+			attribute.Int("search.limit", limit),
+		),
+	)
+	defer querySpan.End()
+
+	rows, err := h.pool.Query(queryCtx, compiled.SQL, compiled.Args...)
 	if err != nil {
+		telemetry.RecordSafeError(querySpan, err)
 		h.logger.Error("search query execution failed", "error", err, "sql", compiled.SQL)
 		h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "search query execution failed", "database_error")
 		return

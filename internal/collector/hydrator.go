@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/infrastructure/sims/internal/domain"
+	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/infrastructure/sims/internal/vsphere"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
@@ -14,6 +15,8 @@ import (
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // HydratorConfig configures batch sizes and traversal options for inventory collection.
@@ -339,10 +342,19 @@ func (h *Hydrator) HydrateInventory(
 		},
 	}
 
+	_, initSpan := telemetry.StartSpan(ctx, "vCenter.RetrievePropertiesEx",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+			attribute.Int("vcenter.max_objects", h.cfg.MaxObjects),
+		),
+	)
 	res, err := methods.RetrievePropertiesEx(ctx, client.Client, retrieveReq)
 	if err != nil {
+		telemetry.RecordSafeError(initSpan, err)
+		initSpan.End()
 		return fmt.Errorf("initial RetrievePropertiesEx failed: %w", err)
 	}
+	initSpan.End()
 
 	for res != nil && res.Returnval != nil {
 		objects := res.Returnval.Objects
@@ -403,10 +415,18 @@ func (h *Hydrator) HydrateInventory(
 			Token: retrievalContinuationToken,
 		}
 
+		_, contSpan := telemetry.StartSpan(ctx, "vCenter.ContinueRetrievePropertiesEx",
+			trace.WithAttributes(
+				attribute.String("vcenter.id", vcenterID),
+			),
+		)
 		continueRes, err := methods.ContinueRetrievePropertiesEx(ctx, client.Client, continueReq)
 		if err != nil {
+			telemetry.RecordSafeError(contSpan, err)
+			contSpan.End()
 			return fmt.Errorf("ContinueRetrievePropertiesEx failed with token %s: %w", retrievalContinuationToken, err)
 		}
+		contSpan.End()
 		res = &types.RetrievePropertiesExResponse{Returnval: &continueRes.Returnval}
 	}
 

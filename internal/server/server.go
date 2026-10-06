@@ -54,13 +54,14 @@ func (s *Server) Use(mw func(http.Handler) http.Handler) {
 	s.middlewares = append(s.middlewares, mw)
 }
 
-// Handler returns the HTTP handler wrapped with registered middlewares and metrics.
+// Handler returns the HTTP handler wrapped with registered middlewares, metrics, and OpenTelemetry tracing.
 func (s *Server) Handler() http.Handler {
 	var h http.Handler = s.Mux
 	for i := len(s.middlewares) - 1; i >= 0; i-- {
 		h = s.middlewares[i](h)
 	}
-	return s.Metrics.Middleware(h)
+	h = s.Metrics.Middleware(h)
+	return telemetry.HTTPTraceMiddleware(s.ServiceName)(h)
 }
 
 // AddReadinessCheck registers a named dependency readiness check.

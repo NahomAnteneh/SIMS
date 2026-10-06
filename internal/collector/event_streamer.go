@@ -12,6 +12,8 @@ import (
 	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/infrastructure/sims/internal/vsphere"
 	"github.com/vmware/govmomi/vim25/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // V1EventTypes defines the minimal, verified v1 event set per docs/events-v1.md.
@@ -190,8 +192,20 @@ func (s *EventStreamer) Run(ctx context.Context) error {
 		}
 
 		readCtx, cancelRead := context.WithTimeout(streamCtx, s.cfg.CallDeadline)
+		_, eventSpan := telemetry.StartSpan(readCtx, "collector.event_retrieval",
+			trace.WithAttributes(
+				attribute.String("vcenter.id", s.cfg.VCenterID),
+				attribute.Int("batch.size_limit", int(s.cfg.PageSize)),
+			),
+		)
 		events, readErr := collector.ReadNextEvents(readCtx, s.cfg.PageSize)
 		cancelRead()
+		if readErr != nil {
+			telemetry.RecordSafeError(eventSpan, readErr)
+		} else {
+			eventSpan.SetAttributes(attribute.Int("events.retrieved_count", len(events)))
+		}
+		eventSpan.End()
 
 		if readErr != nil {
 			if errors.Is(readErr, context.Canceled) || streamCtx.Err() != nil {
@@ -288,9 +302,17 @@ func (s *EventStreamer) Run(ctx context.Context) error {
 
 		// Persist updated watermark to collector_state
 		if s.persister != nil && lastTime != nil {
+			_, wmSpan := telemetry.StartSpan(streamCtx, "collector.watermark_save",
+				trace.WithAttributes(
+					attribute.String("vcenter.id", s.cfg.VCenterID),
+					attribute.Int64("watermark.key", lastKey),
+				),
+			)
 			if saveErr := s.persister.SaveEventWatermark(streamCtx, s.cfg.VCenterID, lastKey, *lastTime); saveErr != nil {
+				telemetry.RecordSafeError(wmSpan, saveErr)
 				s.logger.Error("failed to update event watermark in collector_state", "error", saveErr)
 			}
+			wmSpan.End()
 		}
 	}
 }
