@@ -189,6 +189,35 @@ func (h *Handler) recordAudit(ctx context.Context, actor, action, targetID, outc
 	}
 }
 
+const vcenterEventsChannel = "sims_vcenter_events"
+
+type vcenterEventPayload struct {
+	VCenterID string `json:"vcenter_id"`
+	Action    string `json:"action"`
+}
+
+func (h *Handler) notifyVCenterEvent(ctx context.Context, vcenterID, action string) {
+	if h.pool == nil {
+		return
+	}
+	payload, err := json.Marshal(vcenterEventPayload{
+		VCenterID: vcenterID,
+		Action:    action,
+	})
+	if err != nil {
+		return
+	}
+	_, err = h.pool.Exec(ctx, "SELECT pg_notify($1, $2)", vcenterEventsChannel, string(payload))
+	if err != nil {
+		h.logger.Warn("failed to send pg_notify for vcenter event",
+			slog.String("channel", vcenterEventsChannel),
+			slog.String("vcenter_id", vcenterID),
+			slog.String("action", action),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
 // POST /v1/vcenters/test-connection
 func (h *Handler) handleTestVCenterConnection(w http.ResponseWriter, r *http.Request) {
 	callerKey := getCallerKey(r)
@@ -422,6 +451,7 @@ func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 		"port":    port,
 		"version": valResult.ProductVersion,
 	})
+	h.notifyVCenterEvent(r.Context(), vcIDStr, "create")
 
 	resp := formatVCenterResponse(newVC, req.Host, port)
 
@@ -598,6 +628,11 @@ func (h *Handler) handleUpdateVCenter(w http.ResponseWriter, r *http.Request) {
 		"name":    name,
 		"enabled": enabled,
 	})
+	updateAction := "update"
+	if req.Enabled != nil && !*req.Enabled {
+		updateAction = "disable"
+	}
+	h.notifyVCenterEvent(r.Context(), idStr, updateAction)
 
 	host, port := parseHostPortFromURL(updatedVC.ApiUrl)
 	h.writeJSON(w, http.StatusOK, formatVCenterResponse(updatedVC, host, port))
@@ -633,6 +668,7 @@ func (h *Handler) handleDeleteVCenter(w http.ResponseWriter, r *http.Request) {
 	h.recordAudit(r.Context(), actor, "vcenter.delete", idStr, "success", "", map[string]any{
 		"vcenter_id": idStr,
 	})
+	h.notifyVCenterEvent(r.Context(), idStr, "delete")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -668,6 +704,7 @@ func (h *Handler) handleResyncVCenter(w http.ResponseWriter, r *http.Request) {
 	h.recordAudit(r.Context(), actor, "vcenter.resync", idStr, "accepted", "", map[string]any{
 		"name": vc.Name,
 	})
+	h.notifyVCenterEvent(r.Context(), idStr, "resync")
 
 	w.WriteHeader(http.StatusAccepted)
 }
