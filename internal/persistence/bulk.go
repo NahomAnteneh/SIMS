@@ -260,7 +260,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	// 3. Create unlogged/temporary staging table without foreign keys or indexes.
 	// folder_path is typed as TEXT to allow native string streaming via CopyFrom without ltree binary framing.
 	_, err = tx.Exec(ctx, `
-		CREATE TEMP TABLE staging_vms (
+		CREATE TEMP TABLE IF NOT EXISTS staging_vms (
 			vcenter_id UUID NOT NULL,
 			moref TEXT NOT NULL,
 			instance_uuid TEXT NOT NULL,
@@ -280,7 +280,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_ip_address inet,
 			annotation TEXT NOT NULL,
 			deleted_at TIMESTAMPTZ
-		) ON COMMIT DROP;
+		) ON COMMIT DELETE ROWS;
 	`)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create staging table: %w", err)
@@ -396,21 +396,29 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	mergeStart := time.Now()
 
 	// 5a. Soft-delete any existing active VMs marked deleted in staging
-	_, err = tx.Exec(ctx, `
-		UPDATE virtual_machines v
-		SET deleted_at = s.deleted_at, updated_at = NOW()
-		FROM staging_vms s
-		WHERE v.vcenter_id = s.vcenter_id
-		  AND v.moref = s.moref
-		  AND v.deleted_at IS NULL
-		  AND s.deleted_at IS NOT NULL;
-	`)
-	if err != nil {
-		return 0, fmt.Errorf("soft-delete merge failed: %w", err)
+	hasDeletes := false
+	for _, r := range compacted {
+		if r.DeletedAt != nil {
+			hasDeletes = true
+			break
+		}
+	}
+	if hasDeletes {
+		_, err = tx.Exec(ctx, `
+			UPDATE virtual_machines v
+			SET deleted_at = s.deleted_at, updated_at = NOW()
+			FROM staging_vms s
+			WHERE v.vcenter_id = s.vcenter_id
+			  AND v.moref = s.moref
+			  AND v.deleted_at IS NULL
+			  AND s.deleted_at IS NOT NULL;
+		`)
+		if err != nil {
+			return 0, fmt.Errorf("soft-delete merge failed: %w", err)
+		}
 	}
 
 	// 5a-2. Cross-vCenter migration (xvMotion):
-	// Transfer ownership to new vcenter_id and moref in place, preserving synthetic ID and first_seen_at.
 	_, err = tx.Exec(ctx, `
 		UPDATE virtual_machines v
 		SET vcenter_id = s.vcenter_id,
@@ -493,25 +501,15 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 
 	// 6. Bulk attach Datastores & Network Interfaces for affected VMs
 	if len(affectedVMIDs) > 0 {
-		// Clean stale child associations for the affected VMs
-		_, err = tx.Exec(ctx, `DELETE FROM vm_datastores WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale datastore attachments: %w", err)
-		}
-
-		_, err = tx.Exec(ctx, `DELETE FROM vm_network_interfaces WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale NICs: %w", err)
-		}
-
-		_, err = tx.Exec(ctx, `DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale tags: %w", err)
-		}
-
-		_, err = tx.Exec(ctx, `DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale custom attributes: %w", err)
+		// Pipeline stale child deletes in a single network round-trip using pgx.Batch
+		batch := &pgx.Batch{}
+		batch.Queue(`DELETE FROM vm_datastores WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
+		batch.Queue(`DELETE FROM vm_network_interfaces WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
+		batch.Queue(`DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
+		batch.Queue(`DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
+		br := tx.SendBatch(ctx, batch)
+		if err := br.Close(); err != nil {
+			return 0, fmt.Errorf("failed to clear stale child records: %w", err)
 		}
 
 		// Prepare bulk datastore attachments
@@ -635,7 +633,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		// COPY network interfaces via staging table to support int4multirange cast
 		if len(nicList) > 0 {
 			_, err = tx.Exec(ctx, `
-				CREATE TEMP TABLE staging_nics (
+				CREATE TEMP TABLE IF NOT EXISTS staging_nics (
 					vm_id UUID NOT NULL,
 					device_key INT NOT NULL,
 					mac_address TEXT NOT NULL,
@@ -643,7 +641,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 					network_id UUID,
 					portgroup_id UUID,
 					vlan_ids TEXT
-				) ON COMMIT DROP;
+				) ON COMMIT DELETE ROWS;
 			`)
 			if err != nil {
 				return 0, fmt.Errorf("failed creating staging_nics: %w", err)
