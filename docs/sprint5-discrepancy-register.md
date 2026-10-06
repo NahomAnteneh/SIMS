@@ -10,7 +10,7 @@
 
 | Phase | Story / Topic | Key Invariants & Guardrails | Verification Target | Status |
 |:---|:---|:---|:---|:---: |
-| **Phase A** | S5.1, S5.2 Performance Dataset Generator & Query Workload Model (`cmd/dataset-gen`, `internal/benchmark`) | High-throughput synthetic data generator (100k, 500k, 1M VMs; 5M–10M rows) via binary COPY; realistic distributions (ltree, multirange, CIDR, trgm); mixed concurrent query workload | `go test -v ./internal/benchmark/...` | [ ] Pending |
+| **Phase A** | S5.1, S5.2 Performance Dataset Generator & Query Workload Model (`cmd/dataset-gen`, `internal/benchmark`) | High-throughput synthetic data generator (100k, 500k, 1M VMs; 5M–10M rows) via binary COPY; realistic distributions (ltree, multirange, CIDR, trgm); mixed concurrent query workload | `go test -v ./internal/benchmark/...` | [x] Verified |
 | **Phase B** | S5.3, S5.4, S5.5, S5.6 Performance Gates & Postgres / Pool Tuning (`tests/integration/perf_query_test.go`, `perf_ingest_test.go`, `internal/database/pool.go`, `docs/postgres-tuning.md`) | Query SLO: DB P99 ≤ 5 ms; Ingestion SLO: Change → DB P95 ≤ 250 ms, Batch write P95 ≤ 15 ms, P99 ≤ 50 ms; Isolated connection pool budgets (`query_ro`, `collector_rw`, `reconciliation`, `admin`) | `make test-perf-query && make test-perf-ingest` | [ ] Pending |
 | **Phase C** | S5.7 OpenTelemetry Instrumentation & Observability (`internal/telemetry/tracer.go`, collector, API, reconciler) | W3C tracecontext propagation; HTTP, AST compiler, DB, and collector pipeline instrumentation; **CRITICAL:** 0 secrets/passwords/tokens in span attributes or logs | Unit & Integration Tracing Tests | [ ] Pending |
 | **Phase D** | S5.8 Security Hardening & Secret-Leak Auditing (`tests/integration/security_test.go`) | Secret leak scan across logs, spans, API payloads, audit events; SSRF defenses; JWT rotation & RBAC; DB least privilege; SQL injection & cursor tampering fuzzing; `make vulncheck` | `make vulncheck && go test -v -tags=integration ./tests/integration -run TestSecurityAudit` | [ ] Pending |
@@ -23,4 +23,5 @@
 
 | ID | Topic | Discrepancy Description | Resolution & Evidence | Status |
 |:---|:---|:---|:---|:---:|
-| - | - | - | - | - |
+| D5-01 | Binary COPY int4multirange | pgx binary CopyFrom cannot encode string literal into PostgreSQL `int4multirange` (OID 4451) | Stream via temporary staging table `staging_nics` with `vlan_ids TEXT` and cast to `int4multirange` on insert into core table | Resolved |
+| D5-02 | vcenters credentials | vcenters table does not have `user_name` or `password` columns (stored via `credential_ref` or secret store) | Updated generator topology seeding to insert `credential_ref` instead of raw credentials | Resolved |
