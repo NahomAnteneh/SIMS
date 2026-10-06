@@ -38,7 +38,7 @@ type Config struct {
 	Env          string
 }
 
-// Authenticator validates Bearer JWT tokens against upstream OIDC provider.
+// Authenticator validates Bearer JWT tokens against upstream OIDC provider or local credentials.
 type Authenticator struct {
 	cfg        Config
 	httpClient *http.Client
@@ -46,6 +46,29 @@ type Authenticator struct {
 	mu          sync.RWMutex
 	keys        map[string]*rsa.PublicKey
 	lastRefresh time.Time
+
+	tokenSigner *TokenSigner
+	userStore   UserStore
+}
+
+// SetTokenSigner configures local JWT token validation and issuance.
+func (a *Authenticator) SetTokenSigner(s *TokenSigner) {
+	a.tokenSigner = s
+}
+
+// TokenSigner returns the configured TokenSigner.
+func (a *Authenticator) TokenSigner() *TokenSigner {
+	return a.tokenSigner
+}
+
+// SetUserStore configures credential storage for local username and password verification.
+func (a *Authenticator) SetUserStore(s UserStore) {
+	a.userStore = s
+}
+
+// UserStore returns the configured UserStore.
+func (a *Authenticator) UserStore() UserStore {
+	return a.userStore
 }
 
 // NewAuthenticator creates and initializes an Authenticator.
@@ -347,9 +370,9 @@ func (a *Authenticator) AuthenticateToken(ctx context.Context, tokenStr string) 
 // Middleware returns an HTTP middleware verifying authentication.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Public health & observability bypass
+		// Public health, metrics & login bypass
 		path := r.URL.Path
-		if path == "/healthz" || path == "/readyz" || path == "/metrics" {
+		if path == "/healthz" || path == "/readyz" || path == "/metrics" || path == "/v1/auth/login" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -361,22 +384,73 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 		}
 
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" || !strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		if authHeader == "" {
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"missing or malformed bearer token","code":"unauthorized"}`))
+			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"missing authorization header","code":"unauthorized"}`))
 			return
 		}
 
-		tokenStr := strings.TrimSpace(authHeader[7:])
-		id, err := a.AuthenticateToken(r.Context(), tokenStr)
-		if err != nil {
-			w.Header().Set("Content-Type", "application/problem+json")
-			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = w.Write([]byte(fmt.Sprintf(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":%q,"code":"unauthorized"}`, err.Error())))
+		// Support Basic Auth
+		if strings.HasPrefix(strings.ToLower(authHeader), "basic ") {
+			if a.userStore == nil {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"basic auth is not enabled","code":"unauthorized"}`))
+				return
+			}
+			rawB64 := strings.TrimSpace(authHeader[6:])
+			decoded, err := base64.StdEncoding.DecodeString(rawB64)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"malformed basic auth header","code":"unauthorized"}`))
+				return
+			}
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) != 2 {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"malformed basic credentials","code":"unauthorized"}`))
+				return
+			}
+			id, err := a.userStore.AuthenticateUser(r.Context(), parts[0], parts[1])
+			if err != nil {
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"invalid username or password","code":"unauthorized"}`))
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 			return
 		}
 
-		next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
+		// Support Bearer Auth
+		if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+			tokenStr := strings.TrimSpace(authHeader[7:])
+			if a.tokenSigner != nil {
+				if id, err := a.tokenSigner.VerifyToken(tokenStr); err == nil {
+					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
+					return
+				}
+			}
+
+			if a.cfg.IssuerURL != "" || a.cfg.JWKSURL != "" {
+				id, err := a.AuthenticateToken(r.Context(), tokenStr)
+				if err == nil {
+					next.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
+					return
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"invalid or expired bearer token","code":"unauthorized"}`))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"type":"about:blank","title":"Unauthorized","status":401,"detail":"unsupported authorization scheme (use Bearer or Basic)","code":"unauthorized"}`))
 	})
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/api"
 	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/config"
@@ -69,16 +70,27 @@ func main() {
 		logger.Info("configured CORS middleware", slog.String("allowed_origins", cfg.CORSAllowedOrigins))
 	}
 
-	// Configure OIDC / JWT Authentication middleware
+	// Local Authentication & JWT Token Signer
+	queries := db.New(pool)
+	userStore := auth.NewDBUserStore(queries)
+	tokenSecret := []byte(os.Getenv("JWT_SECRET"))
+	if len(tokenSecret) == 0 {
+		tokenSecret = auth.DefaultJWTSecret
+	}
+	tokenSigner := auth.NewTokenSigner(tokenSecret, 24*time.Hour)
+
+	// Configure Authentication middleware (supports local DB username/password, local Bearer JWTs, and OIDC)
 	authCfg := auth.Config{
 		IssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
 		Audience:     os.Getenv("OIDC_AUDIENCE"),
 		JWKSURL:      os.Getenv("OIDC_JWKS_URL"),
-		AuthDisabled: os.Getenv("AUTH_ENABLED") == "false" || os.Getenv("OIDC_ISSUER_URL") == "",
+		AuthDisabled: os.Getenv("AUTH_ENABLED") == "false",
 		Env:          os.Getenv("ENV"),
 	}
 	authenticator, err := auth.NewAuthenticator(ctx, authCfg)
 	if err == nil {
+		authenticator.SetTokenSigner(tokenSigner)
+		authenticator.SetUserStore(userStore)
 		srv.Use(authenticator.Middleware)
 		logger.Info("configured authentication middleware", slog.Bool("auth_disabled", authCfg.AuthDisabled))
 	} else {
@@ -87,6 +99,7 @@ func main() {
 
 	// Register API endpoints
 	apiHandler := api.NewHandler(pool, logger)
+	apiHandler.SetAuth(tokenSigner, userStore)
 	apiHandler.RegisterRoutes(srv.Mux)
 
 	if err := srv.Run(); err != nil {

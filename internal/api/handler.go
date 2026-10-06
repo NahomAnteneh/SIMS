@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	db "github.com/infrastructure/sims/generated/db"
+	"github.com/infrastructure/sims/internal/auth"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,9 +25,11 @@ const (
 
 // Handler serves Query API endpoints.
 type Handler struct {
-	pool    *pgxpool.Pool
-	queries *db.Queries
-	logger  *slog.Logger
+	pool        *pgxpool.Pool
+	queries     *db.Queries
+	logger      *slog.Logger
+	tokenSigner *auth.TokenSigner
+	userStore   auth.UserStore
 }
 
 // NewHandler creates a new API Handler instance.
@@ -38,8 +41,22 @@ func NewHandler(pool *pgxpool.Pool, logger *slog.Logger) *Handler {
 	}
 }
 
+// SetAuth configures the token signer and user credential store.
+func (h *Handler) SetAuth(signer *auth.TokenSigner, store auth.UserStore) {
+	h.tokenSigner = signer
+	h.userStore = store
+}
+
 // RegisterRoutes registers Query API endpoints onto the provided ServeMux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	// Authentication & User Management
+	mux.HandleFunc("POST /v1/auth/login", h.handleLogin)
+	mux.HandleFunc("GET /v1/users", h.handleListUsers)
+	mux.HandleFunc("POST /v1/users", h.handleCreateUser)
+	mux.HandleFunc("GET /v1/users/{id}", h.handleGetUser)
+	mux.HandleFunc("PATCH /v1/users/{id}", h.handleUpdateUser)
+	mux.HandleFunc("DELETE /v1/users/{id}", h.handleDeleteUser)
+
 	// Virtual Machines & Search
 	mux.HandleFunc("GET /v1/vms", h.handleListVMs)
 	mux.HandleFunc("GET /v1/vms/{id}", h.handleGetVM)

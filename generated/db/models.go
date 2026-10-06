@@ -166,6 +166,18 @@ type Portgroup struct {
 	UpdatedAt pgtype.Timestamptz
 }
 
+type User struct {
+	ID                 pgtype.UUID
+	Username           string
+	PasswordHash       string
+	Email              pgtype.Text
+	Role               string
+	AllowedVcenterIds  []pgtype.UUID
+	AllowedFolderPaths []string
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
 type Vcenter struct {
 	ID             pgtype.UUID
 	Name           string
