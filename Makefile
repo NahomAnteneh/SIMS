@@ -99,6 +99,12 @@ test-perf-query: tools ## Run Sprint 5 Query Performance Gate (P99 <= 5ms target
 test-perf-ingest: tools ## Run Sprint 5 Ingestion Performance Gate (batch write P95 <= 15ms, e2e P95 <= 250ms)
 	$(GO) test -v -tags=integration ./tests/integration -run TestIngestionPerformanceGate
 
+test-chaos: tools ## Run Sprint 5 Chaos Resilience Suite (9 fault injection scenarios)
+	$(GO) test -v -tags=integration ./tests/integration -run TestChaos_
+
+test-soak: tools ## Run Sprint 5 Soak Test Harness (continuous ingestion, query, leak detection)
+	$(GO) test -v -tags=integration ./tests/soak -run TestSoak_ContinuousWorkload
+
 test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
 	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline
 
