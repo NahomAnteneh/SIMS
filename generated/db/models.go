@@ -10,6 +10,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuditEvent struct {
+	ID        pgtype.UUID
+	Actor     string
+	Action    string
+	TargetID  string
+	Outcome   string
+	RequestID string
+	Details   []byte
+	CreatedAt pgtype.Timestamptz
+}
+
 type Cluster struct {
 	ID           pgtype.UUID
 	VcenterID    pgtype.UUID
@@ -153,14 +164,23 @@ type Portgroup struct {
 }
 
 type Vcenter struct {
-	ID           pgtype.UUID
-	Name         string
-	ApiUrl       string
-	InstanceUuid pgtype.Text
-	Version      string
-	Build        string
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	ID             pgtype.UUID
+	Name           string
+	ApiUrl         string
+	InstanceUuid   pgtype.Text
+	Version        string
+	Build          string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	ProductVersion string
+	ApiVersion     string
+	Capabilities   []byte
+	TlsSettings    []byte
+	CredentialRef  string
+	Status         string
+	Priority       int32
+	Enabled        bool
+	DeletedAt      pgtype.Timestamptz
 }
 
 type VirtualMachine struct {
