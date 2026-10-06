@@ -150,3 +150,30 @@ UPDATE virtual_machines
 SET updated_at = NOW()
 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL;
 
+-- S4.8: Cross-vCenter migration (xvMotion)
+-- name: GetVMByInstanceUUIDAnyStatus :one
+SELECT * FROM virtual_machines
+WHERE instance_uuid = $1
+ORDER BY (deleted_at IS NULL) DESC, updated_at DESC
+LIMIT 1;
+
+-- name: MigrateVMToVCenter :one
+UPDATE virtual_machines
+SET vcenter_id = $2,
+    moref = $3,
+    deleted_at = NULL,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- S4.9: Bounded batch tombstone purging
+-- name: PurgeTombstonedVMsBatch :execrows
+DELETE FROM virtual_machines
+WHERE id IN (
+    SELECT vm.id
+    FROM virtual_machines vm
+    WHERE vm.deleted_at IS NOT NULL AND vm.deleted_at < $1
+    ORDER BY vm.deleted_at ASC
+    LIMIT $2
+);
+

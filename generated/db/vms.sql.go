@@ -162,6 +162,47 @@ func (q *Queries) GetVMByInstanceUUID(ctx context.Context, instanceUuid string) 
 	return i, err
 }
 
+const getVMByInstanceUUIDAnyStatus = `-- name: GetVMByInstanceUUIDAnyStatus :one
+SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
+WHERE instance_uuid = $1
+ORDER BY (deleted_at IS NULL) DESC, updated_at DESC
+LIMIT 1
+`
+
+// S4.8: Cross-vCenter migration (xvMotion)
+func (q *Queries) GetVMByInstanceUUIDAnyStatus(ctx context.Context, instanceUuid string) (VirtualMachine, error) {
+	row := q.db.QueryRow(ctx, getVMByInstanceUUIDAnyStatus, instanceUuid)
+	var i VirtualMachine
+	err := row.Scan(
+		&i.ID,
+		&i.VcenterID,
+		&i.Moref,
+		&i.InstanceUuid,
+		&i.BiosUuid,
+		&i.Name,
+		&i.PowerState,
+		&i.ConnectionState,
+		&i.CpuCores,
+		&i.MemoryMb,
+		&i.FolderID,
+		&i.FolderPath,
+		&i.HostID,
+		&i.ClusterID,
+		&i.DatacenterID,
+		&i.GuestOs,
+		&i.GuestHostName,
+		&i.GuestIpAddress,
+		&i.Annotation,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CreatedBy,
+		&i.LastSeenAt,
+		&i.FirstSeenAt,
+	)
+	return i, err
+}
+
 const getVMByMoref = `-- name: GetVMByMoref :one
 SELECT id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at FROM virtual_machines
 WHERE vcenter_id = $1 AND moref = $2 AND deleted_at IS NULL
@@ -682,6 +723,80 @@ func (q *Queries) ListVMsNextPage(ctx context.Context, arg ListVMsNextPageParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const migrateVMToVCenter = `-- name: MigrateVMToVCenter :one
+UPDATE virtual_machines
+SET vcenter_id = $2,
+    moref = $3,
+    deleted_at = NULL,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, vcenter_id, moref, instance_uuid, bios_uuid, name, power_state, connection_state, cpu_cores, memory_mb, folder_id, folder_path, host_id, cluster_id, datacenter_id, guest_os, guest_host_name, guest_ip_address, annotation, deleted_at, created_at, updated_at, created_by, last_seen_at, first_seen_at
+`
+
+type MigrateVMToVCenterParams struct {
+	ID        pgtype.UUID
+	VcenterID pgtype.UUID
+	Moref     string
+}
+
+func (q *Queries) MigrateVMToVCenter(ctx context.Context, arg MigrateVMToVCenterParams) (VirtualMachine, error) {
+	row := q.db.QueryRow(ctx, migrateVMToVCenter, arg.ID, arg.VcenterID, arg.Moref)
+	var i VirtualMachine
+	err := row.Scan(
+		&i.ID,
+		&i.VcenterID,
+		&i.Moref,
+		&i.InstanceUuid,
+		&i.BiosUuid,
+		&i.Name,
+		&i.PowerState,
+		&i.ConnectionState,
+		&i.CpuCores,
+		&i.MemoryMb,
+		&i.FolderID,
+		&i.FolderPath,
+		&i.HostID,
+		&i.ClusterID,
+		&i.DatacenterID,
+		&i.GuestOs,
+		&i.GuestHostName,
+		&i.GuestIpAddress,
+		&i.Annotation,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CreatedBy,
+		&i.LastSeenAt,
+		&i.FirstSeenAt,
+	)
+	return i, err
+}
+
+const purgeTombstonedVMsBatch = `-- name: PurgeTombstonedVMsBatch :execrows
+DELETE FROM virtual_machines
+WHERE id IN (
+    SELECT vm.id
+    FROM virtual_machines vm
+    WHERE vm.deleted_at IS NOT NULL AND vm.deleted_at < $1
+    ORDER BY vm.deleted_at ASC
+    LIMIT $2
+)
+`
+
+type PurgeTombstonedVMsBatchParams struct {
+	DeletedAt pgtype.Timestamptz
+	Limit     int32
+}
+
+// S4.9: Bounded batch tombstone purging
+func (q *Queries) PurgeTombstonedVMsBatch(ctx context.Context, arg PurgeTombstonedVMsBatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeTombstonedVMsBatch, arg.DeletedAt, arg.Limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const softDeleteVM = `-- name: SoftDeleteVM :exec

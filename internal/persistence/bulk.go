@@ -409,6 +409,27 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		return 0, fmt.Errorf("soft-delete merge failed: %w", err)
 	}
 
+	// 5a-2. Cross-vCenter migration (xvMotion):
+	// Transfer ownership to new vcenter_id and moref in place, preserving synthetic ID and first_seen_at.
+	_, err = tx.Exec(ctx, `
+		UPDATE virtual_machines v
+		SET vcenter_id = s.vcenter_id,
+		    moref = s.moref,
+		    deleted_at = NULL,
+		    updated_at = NOW()
+		FROM (
+			SELECT DISTINCT ON (instance_uuid) vcenter_id, moref, instance_uuid
+			FROM staging_vms
+			WHERE deleted_at IS NULL AND instance_uuid IS NOT NULL AND instance_uuid != ''
+			ORDER BY instance_uuid
+		) s
+		WHERE v.instance_uuid = s.instance_uuid
+		  AND (v.vcenter_id != s.vcenter_id OR v.moref != s.moref);
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("cross-vcenter migration merge failed: %w", err)
+	}
+
 	// 5b. Upsert active VMs and retrieve their synthetic UUIDs
 	rows, err := tx.Query(ctx, `
 		INSERT INTO virtual_machines (
