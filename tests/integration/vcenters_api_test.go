@@ -218,6 +218,39 @@ func TestVCentersAPI_FullLifecycle(t *testing.T) {
 		if vcResp.Status != "PENDING_ASSIGNMENT" {
 			t.Errorf("expected status PENDING_ASSIGNMENT, got %s", vcResp.Status)
 		}
+
+		// Verify S4.3: Expose owning worker ID, status, and last sync timestamp
+		var targetUUID string
+		err := rwPool.QueryRow(ctx, "SELECT id::text FROM collector_targets WHERE vcenter_id = $1", registeredVCID).Scan(&targetUUID)
+		if err == nil {
+			_, _ = rwPool.Exec(ctx, `
+				INSERT INTO collector_leases (target_id, holder_id, lease_until, version)
+				VALUES ($1, 'worker-beta-9', NOW() + INTERVAL '30 seconds', 1)
+				ON CONFLICT (target_id) DO UPDATE SET holder_id = 'worker-beta-9', lease_until = NOW() + INTERVAL '30 seconds'
+			`, targetUUID)
+			_, _ = rwPool.Exec(ctx, `
+				INSERT INTO collector_state (target_id, status, last_sync_at)
+				VALUES ($1, 'RUNNING', NOW())
+				ON CONFLICT (target_id) DO UPDATE SET status = 'RUNNING', last_sync_at = NOW()
+			`, targetUUID)
+
+			recWorker := httptest.NewRecorder()
+			reqWorker := httptest.NewRequest(http.MethodGet, "/v1/vcenters/"+registeredVCID.String(), nil)
+			reqWorker = reqWorker.WithContext(auth.WithIdentity(reqWorker.Context(), adminIdentity))
+			srv.Mux.ServeHTTP(recWorker, reqWorker)
+
+			var vcWorkerResp api.VCenterResponse
+			_ = json.Unmarshal(recWorker.Body.Bytes(), &vcWorkerResp)
+			if vcWorkerResp.OwningWorkerID == nil || *vcWorkerResp.OwningWorkerID != "worker-beta-9" {
+				t.Errorf("expected owning worker worker-beta-9, got %v", vcWorkerResp.OwningWorkerID)
+			}
+			if vcWorkerResp.Status != "RUNNING" {
+				t.Errorf("expected status RUNNING, got %s", vcWorkerResp.Status)
+			}
+			if vcWorkerResp.LastSyncAt == nil {
+				t.Errorf("expected last_sync_at to be populated")
+			}
+		}
 	})
 
 	// 7. PATCH /v1/vcenters/{id}
