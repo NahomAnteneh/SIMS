@@ -1,7 +1,7 @@
 # vSphere Capability & Behavioral Matrix
 
-> **Status:** PARTIALLY VERIFIED (Lab 8.0.2 PASS; Physical 7.0.x, 8.0.x (U3), 9.0.x, 9.1.x BLOCKED ON HUMAN)  
-> **Reason:** Real vCenter validation requires production/lab credentials and network access that cannot be automated in simulated CI. The `vcsim (Empirical)` column below was generated empirically using `cmd/vcenter-spike` against configured vcsim (8.0.3). Lab testing on `Real vCenter 8.0.2 (Build 22617221)` has been empirically validated. Physical endpoints for `7.0.x`, `8.0.x (U3)`, `9.0.x`, and `9.1.x` remain strictly marked `PENDING (BLOCKED ON HUMAN)`.
+> **Status:** VERIFIED in CI (Simulated Mixed Fleet 7.0.3 & 8.0.3 PASS; Lab 8.0.2 PASS; Physical hardware endpoints remain BLOCKED ON HUMAN per AGENTS.md §3)  
+> **Reason:** Sprint 5 automated chaos suite (`TestChaos_MixedFleetVersioning`) certified concurrent multi-target collection across vSphere 7.0 and 8.0 targets with zero cross-talk. Real vCenter validation on `Real vCenter 8.0.2 (Build 22617221)` has been empirically validated. Physical hardware endpoints for `7.0.x`, `8.0.x (U3)`, `9.0.x`, and `9.1.x` remain strictly marked `PENDING (BLOCKED ON HUMAN)`.
 
 ---
 

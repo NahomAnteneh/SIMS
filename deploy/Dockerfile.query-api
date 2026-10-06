@@ -8,9 +8,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /query-api ./cmd/query
 
 # Runtime stage
 FROM alpine:3.21@sha256:a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-USER appuser
+RUN apk --no-cache add ca-certificates tzdata && \
+    addgroup -g 10001 -S sims && \
+    adduser -u 10001 -S -G sims -h /app -s /sbin/nologin sims
+USER 10001:10001
 WORKDIR /app
-COPY --from=builder /query-api /app/query-api
+COPY --from=builder --chown=10001:10001 /query-api /app/query-api
 EXPOSE 8080
 ENTRYPOINT ["/app/query-api"]
+
