@@ -69,6 +69,13 @@ func (al *ActiveLease) IsLost() bool {
 	}
 }
 
+// Close stops the background heartbeat renewal loop for this lease
+func (al *ActiveLease) Close() {
+	if al.cancelFunc != nil {
+		al.cancelFunc()
+	}
+}
+
 // LeaseCoordinator manages transactional lease claims, renewals, and failover (S4.2)
 type LeaseCoordinator struct {
 	workerID string

@@ -528,15 +528,49 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 
 	// 6. Bulk attach Datastores & Network Interfaces for affected VMs
 	if len(affectedVMIDs) > 0 {
+		var deleteDSVMIDs []string
+		var deleteNICVMIDs []string
+		var deleteTagVMIDs []string
+		var deleteAttrVMIDs []string
+
+		for _, r := range compacted {
+			vmID, ok := morefToVMID[r.MoRef]
+			if !ok {
+				continue
+			}
+			if r.DatastoreIDs != nil {
+				deleteDSVMIDs = append(deleteDSVMIDs, vmID)
+			}
+			if r.NetworkInterfaces != nil {
+				deleteNICVMIDs = append(deleteNICVMIDs, vmID)
+			}
+			if r.Tags != nil {
+				deleteTagVMIDs = append(deleteTagVMIDs, vmID)
+			}
+			if r.CustomAttributes != nil {
+				deleteAttrVMIDs = append(deleteAttrVMIDs, vmID)
+			}
+		}
+
 		// Pipeline stale child deletes in a single network round-trip using pgx.Batch
 		batch := &pgx.Batch{}
-		batch.Queue(`DELETE FROM vm_datastores WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		batch.Queue(`DELETE FROM vm_network_interfaces WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		batch.Queue(`DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		batch.Queue(`DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		br := tx.SendBatch(ctx, batch)
-		if err := br.Close(); err != nil {
-			return 0, fmt.Errorf("failed to clear stale child records: %w", err)
+		if len(deleteDSVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_datastores WHERE vm_id = ANY($1::uuid[])`, deleteDSVMIDs)
+		}
+		if len(deleteNICVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_network_interfaces WHERE vm_id = ANY($1::uuid[])`, deleteNICVMIDs)
+		}
+		if len(deleteTagVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, deleteTagVMIDs)
+		}
+		if len(deleteAttrVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, deleteAttrVMIDs)
+		}
+		if batch.Len() > 0 {
+			br := tx.SendBatch(ctx, batch)
+			if err := br.Close(); err != nil {
+				return 0, fmt.Errorf("failed to clear stale child records: %w", err)
+			}
 		}
 
 		// Prepare bulk datastore attachments
@@ -578,66 +612,74 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 				continue
 			}
 
-			for _, dsID := range r.DatastoreIDs {
-				if dsID != "" {
-					dsList = append(dsList, dsAttach{vmID: vmID, dsID: dsID})
+			if r.DatastoreIDs != nil {
+				for _, dsID := range r.DatastoreIDs {
+					if dsID != "" {
+						dsList = append(dsList, dsAttach{vmID: vmID, dsID: dsID})
+					}
 				}
 			}
 
-			for _, nic := range r.NetworkInterfaces {
-				var parsedIP any
-				if nic.IPAddress != "" {
-					addrStr := strings.TrimSpace(nic.IPAddress)
-					if idx := strings.Index(addrStr, "%"); idx != -1 {
-						addrStr = addrStr[:idx]
+			if r.NetworkInterfaces != nil {
+				for _, nic := range r.NetworkInterfaces {
+					var parsedIP any
+					if nic.IPAddress != "" {
+						addrStr := strings.TrimSpace(nic.IPAddress)
+						if idx := strings.Index(addrStr, "%"); idx != -1 {
+							addrStr = addrStr[:idx]
+						}
+						if ip, err := netip.ParseAddr(addrStr); err == nil {
+							parsedIP = ip.WithZone("")
+						}
 					}
-					if ip, err := netip.ParseAddr(addrStr); err == nil {
-						parsedIP = ip.WithZone("")
+					var netID, pgID any
+					if nic.NetworkID != "" {
+						netID = nic.NetworkID
 					}
-				}
-				var netID, pgID any
-				if nic.NetworkID != "" {
-					netID = nic.NetworkID
-				}
-				if nic.PortgroupID != "" {
-					pgID = nic.PortgroupID
-				}
-				var vlanLit any
-				if nic.VLANSpec != "" {
-					if norm, err := vlan.NormalizeSpec(nic.VLANSpec); err == nil {
-						vlanLit = norm
+					if nic.PortgroupID != "" {
+						pgID = nic.PortgroupID
 					}
-				}
+					var vlanLit any
+					if nic.VLANSpec != "" {
+						if norm, err := vlan.NormalizeSpec(nic.VLANSpec); err == nil {
+							vlanLit = norm
+						}
+					}
 
-				nicList = append(nicList, nicAttach{
-					vmID:      vmID,
-					devKey:    nic.DeviceKey,
-					mac:       nic.MacAddress,
-					ip:        parsedIP,
-					netID:     netID,
-					pgID:      pgID,
-					vlanRange: vlanLit,
-				})
-			}
-
-			for _, tag := range r.Tags {
-				if tag.TagID != "" && tag.TagName != "" {
-					tagList = append(tagList, tagAttach{
-						vmID:         vmID,
-						tagID:        tag.TagID,
-						categoryName: tag.CategoryName,
-						tagName:      tag.TagName,
+					nicList = append(nicList, nicAttach{
+						vmID:      vmID,
+						devKey:    nic.DeviceKey,
+						mac:       nic.MacAddress,
+						ip:        parsedIP,
+						netID:     netID,
+						pgID:      pgID,
+						vlanRange: vlanLit,
 					})
 				}
 			}
 
-			for _, attr := range r.CustomAttributes {
-				if attr.Name != "" {
-					attrList = append(attrList, customAttrAttach{
-						vmID:  vmID,
-						name:  attr.Name,
-						value: attr.Value,
-					})
+			if r.Tags != nil {
+				for _, tag := range r.Tags {
+					if tag.TagID != "" && tag.TagName != "" {
+						tagList = append(tagList, tagAttach{
+							vmID:         vmID,
+							tagID:        tag.TagID,
+							categoryName: tag.CategoryName,
+							tagName:      tag.TagName,
+						})
+					}
+				}
+			}
+
+			if r.CustomAttributes != nil {
+				for _, attr := range r.CustomAttributes {
+					if attr.Name != "" {
+						attrList = append(attrList, customAttrAttach{
+							vmID:  vmID,
+							name:  attr.Name,
+							value: attr.Value,
+						})
+					}
 				}
 			}
 		}
