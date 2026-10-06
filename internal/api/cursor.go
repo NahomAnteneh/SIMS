@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -130,14 +132,20 @@ func (s *CursorSigner) Decode(raw string, expectedQueryHash string) (*Cursor, er
 		if c.LastID == "" {
 			return nil, fmt.Errorf("%w: missing id in cursor", ErrInvalidCursor)
 		}
+		if _, err := uuid.Parse(c.LastID); err != nil {
+			return nil, fmt.Errorf("%w: invalid id uuid in cursor", ErrInvalidCursor)
+		}
 		c.SortField = "name"
 		c.SortDir = "asc"
 		return &c, nil
 	}
 
-	// 1. Check ID presence
+	// 1. Check ID presence and format
 	if c.LastID == "" {
 		return nil, fmt.Errorf("%w: missing id in cursor", ErrInvalidCursor)
+	}
+	if _, err := uuid.Parse(c.LastID); err != nil {
+		return nil, fmt.Errorf("%w: invalid id uuid in cursor", ErrInvalidCursor)
 	}
 
 	// 2. Validate HMAC signature
