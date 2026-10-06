@@ -55,7 +55,7 @@ All default service endpoints, ports, and credentials for local development are 
 | **Next.js UI** | `3000` | HTTP | `http://localhost:3000` | None |
 | **Query API** | `8080` | HTTP | `http://localhost:8080/healthz` | None |
 | **Collector** | `8081` | HTTP | `http://localhost:8081/healthz` | None |
-| **PostgreSQL 18.6** | `5432` | TCP | `localhost:5432/sims` | `postgres` / `postgres` |
+| **PostgreSQL 18.6** | `5433` | TCP | `localhost:5433/sims` | `postgres` / `postgres` |
 | **vcsim (Simulator)**| `8989` | HTTPS | `https://localhost:8989/sdk` | `user` / `pass` |
 | **Prometheus** | `9090` | HTTP | `http://localhost:9090` | None |
 | **Grafana** | `3001` | HTTP | `http://localhost:3001` | `admin` / `admin` |
