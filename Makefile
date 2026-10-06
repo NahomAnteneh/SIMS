@@ -75,6 +75,12 @@ demo-s1: tools ## Run Sprint 1 end-to-end demo (starts stack, hydrates 5,000 VMs
 demo-s2: tools ## Run Sprint 2 end-to-end demo (real-time ingestion, events, metadata sync, query API)
 	./scripts/demo-s2.sh
 
+demo-s3: tools ## Run Sprint 3 end-to-end demo (search, AST filter, keyset pagination, scope, vcenter mgmt)
+	./scripts/demo-s3.sh
+
+test-gate-s3: tools ## Run Sprint 3 Test Gate (AST fuzzer, cursor tampering, SQL injection, scope bypass, SSRF, leak scan)
+	$(GO) test -v -tags=integration ./tests/integration -run TestGateS3
+
 test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
 	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline
 
