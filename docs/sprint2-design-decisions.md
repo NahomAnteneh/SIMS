@@ -35,7 +35,7 @@ The execution of Sprint 2 is strictly organized into four sequential phases:
   - **S2.14:** 1-hour churn test gate
 
 ### Database Migrations Status
-- `000001_extensions.sql`: `uuid-ossp`, `ltree`, `pg_trgm` extensions.
+- `000001_extensions.sql`: contains `ltree` and `pg_trgm`. `gen_random_uuid()` is a PostgreSQL built-in (13+), so no UUID extension is required.
 - `000002_vcenters_and_collector.sql`: `vcenters`, `collector_state`.
 - `000003_topology.sql`: `datacenters`, `inventory_folders`, `clusters`, `hosts`, `datastores`, `networks`.
 - `000004_virtual_machines.sql`: `virtual_machines`, `vm_datastores`, `vm_network_interfaces`.
@@ -77,20 +77,10 @@ Sprint 1 bulk persistence (`BulkPersister`) operates on full `domain.VMRecord` e
    - **`Enter`:** Marks all core fields and present child collections in the mask (full baseline upsert).
    - **`Modify`:** Sets only the specific fields modified in the incoming `PropertyUpdate`.
    - **`Leave`:** Sets only `FieldDeletedAt` (`deleted_at = NOW()`), preserving all child relations and column history for audit.
-3. **Staging & Conditional Merge:**
-   - Extend the staging table `stage_vms` with `field_mask BIGINT NOT NULL`.
-   - The set-based merge query conditionally updates columns:
-     ```sql
-     UPDATE virtual_machines vm
-     SET
-         power_state = CASE WHEN (s.field_mask & 1) != 0 THEN s.power_state ELSE vm.power_state END,
-         name = CASE WHEN (s.field_mask & 2) != 0 THEN s.name ELSE vm.name END,
-         ...
-         updated_at = NOW()
-     FROM stage_vms s
-     WHERE vm.vcenter_id = s.vcenter_id AND vm.moref = s.moref AND vm.deleted_at IS NULL;
-     ```
-   - Child tables (`vm_datastores`, `vm_network_interfaces`, `vm_custom_attributes`) are deleted and re-inserted **only** for VMs where the corresponding child mask bit is asserted.
+3. **Staging & Conditional Merge (Design Evolution):**
+   - *Original Concept:* Proposed extending staging table `stage_vms` with `field_mask BIGINT NOT NULL` for set-based merge queries.
+   - *Implemented Mechanism:* Superseded during Sprint 2. No `field_mask` column exists in the database. Instead, field ownership and incremental delta updates are managed via `collector.VMFieldMask` in `internal/collector/applier.go` and applied directly in `internal/persistence/incremental.go` (`ApplyVMIncrementalUpdate`), using pointer semantics (`nil` = omit; non-nil = update; non-nil empty slice = clear).
+   - Child tables (`vm_datastores`, `vm_network_interfaces`, `vm_custom_attributes`) are updated only when the corresponding child field mask is non-nil.
    - `vm_tags` is **never** touched by PropertyCollector streaming (strictly owned by the tag synchronizer).
 
 ---
@@ -127,7 +117,7 @@ Determine the default lookback overlap window for event retrieval after collecto
 - **Deduplication:** Events retrieved within `[last_event_time - 5m, now]` are inserted using `ON CONFLICT (vcenter_id, event_key) DO NOTHING`.
 - **Assumption & Measurement Plan:**
   - *Assumption:* In typical production vCenters, a 5-minute replay window yields < 500 duplicate events, requiring < 50 ms to ingest and deduplicate.
-  - *Measurement Plan:* The collector instruments `sims_collector_event_replay_count` and `sims_collector_event_replay_duration_seconds`. Real-world volume and latency will be empirically measured during Sprint 2 test gates and 1-hour churn testing on both vcsim and lab vCenter.
+  - *Measurement Plan:* The collector is specified to instrument `sims_collector_event_replay_count` and `sims_collector_event_replay_duration_seconds` (currently tracked as an S2.x wiring gap; active metrics are `sims_events_ingested_total`, `sims_events_stream_lag_seconds`, `sims_collector_event_gap_detected`, and `sims_collector_event_reconciliation_requested`). Real-world volume and latency will be empirically measured during Sprint 2 test gates and 1-hour churn testing on both vcsim and lab vCenter.
 
 ---
 
