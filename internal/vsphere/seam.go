@@ -4,11 +4,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/event"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Session abstracts vCenter session management for testing and fault injection.
@@ -106,6 +109,13 @@ func (g *GovmomiPropertyCollector) CreateFilter(ctx context.Context, spec types.
 }
 
 func (g *GovmomiPropertyCollector) WaitForUpdatesEx(ctx context.Context, version string, options *types.WaitOptions) (*types.UpdateSet, error) {
+	ctx, span := telemetry.StartSpan(ctx, "vCenter.WaitForUpdatesEx",
+		trace.WithAttributes(
+			attribute.String("vcenter.version", version),
+		),
+	)
+	defer span.End()
+
 	req := types.WaitForUpdatesEx{
 		This:    g.pc.Reference(),
 		Version: version,
@@ -113,6 +123,7 @@ func (g *GovmomiPropertyCollector) WaitForUpdatesEx(ctx context.Context, version
 	}
 	res, err := methods.WaitForUpdatesEx(ctx, g.client.Client, &req)
 	if err != nil {
+		telemetry.RecordSafeError(span, err)
 		return nil, err
 	}
 	if res == nil || res.Returnval == nil {

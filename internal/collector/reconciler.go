@@ -11,8 +11,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/infrastructure/sims/generated/db"
+	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/vmware/govmomi/view"
 	"github.com/vmware/govmomi/vim25"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // VMRef represents a lightweight virtual machine identifier from vCenter (S4.6)
@@ -109,12 +112,20 @@ func (r *DifferentialReconciler) Reconcile(
 	vcenterID uuid.UUID,
 	scanner VCReferenceScanner,
 ) (*ReconciliationStats, error) {
+	ctx, span := telemetry.StartSpan(ctx, "reconciliation.differential_sweep",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID.String()),
+		),
+	)
+	defer span.End()
+
 	start := time.Now()
 	pgVCID := pgtype.UUID{Bytes: vcenterID, Valid: true}
 
 	// 1. Fetch S_db: Active VMs in DB
 	dbVMs, err := r.queries.ListActiveVMIdentifiers(ctx, pgVCID)
 	if err != nil {
+		telemetry.RecordSafeError(span, err)
 		return nil, fmt.Errorf("failed to fetch active VMs from DB: %w", err)
 	}
 
@@ -195,6 +206,14 @@ func (r *DifferentialReconciler) Reconcile(
 		slog.Int("missing_in_db_enqueued", stats.MissingInDB),
 		slog.Int("present_in_both", stats.PresentInBoth),
 		slog.Duration("duration", stats.Duration),
+	)
+
+	span.SetAttributes(
+		attribute.Int("reconcile.checked_db", stats.CheckedDB),
+		attribute.Int("reconcile.checked_vcenter", stats.CheckedVCenter),
+		attribute.Int("reconcile.missing_in_vcenter", stats.MissingInVCenter),
+		attribute.Int("reconcile.missing_in_db", stats.MissingInDB),
+		attribute.Int("reconcile.present_in_both", stats.PresentInBoth),
 	)
 
 	return stats, nil
