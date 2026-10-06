@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -35,6 +36,7 @@ func main() {
 	}
 	port, _ := strconv.Atoi(portStr)
 
+	model.Service.TLS = new(tls.Config)
 	model.Service.Listen = &url.URL{
 		Scheme: "https",
 		Host:   fmt.Sprintf("%s:%d", host, port),

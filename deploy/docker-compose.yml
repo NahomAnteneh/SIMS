@@ -17,6 +17,18 @@ services:
       timeout: 5s
       retries: 10
 
+  migration:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.migration
+    container_name: sims-migration
+    environment:
+      GOOSE_DBSTRING: "postgres://postgres:postgres@postgres:5432/sims?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   vcsim:
     build:
       context: ..
@@ -79,7 +91,7 @@ services:
     environment:
       PORT: "8080"
       LOG_LEVEL: "debug"
-      DATABASE_URL: "postgres://query_ro:query_ro_pass@postgres:5432/sims?sslmode=disable"
+      DATABASE_URL: "postgres://collector_rw:collector_rw_pass@postgres:5432/sims?sslmode=disable"
     depends_on:
       postgres:
         condition: service_healthy
