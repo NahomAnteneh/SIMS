@@ -16,7 +16,7 @@ The SIMS Query API provides read-only access to normalized vSphere inventory sta
 | :--- | :--- | :--- |
 | `PORT` | Listening HTTP port | `8080` |
 | `LOG_LEVEL` | Log severity (`debug`, `info`, `warn`, `error`) | `info` |
-| `DATABASE_URL` | PostgreSQL connection string (must use `query_ro`) | `postgres://query_ro:query_ro_pass@localhost:5432/sims?sslmode=disable` |
+| `DATABASE_URL` | PostgreSQL connection string (must use `query_ro`) | `postgres://query_ro:query_ro_pass@localhost:5433/sims?sslmode=disable` |
 | `CORS_ALLOWED_ORIGINS` | Comma-delimited list of allowed CORS origins or `*` | `""` (restrictive default: CORS rejected) |
 
 ### CORS Integration for Frontend Development
@@ -24,7 +24,7 @@ By default, cross-origin requests without a matching origin are blocked. To allo
 
 ```bash
 export CORS_ALLOWED_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
-./bin/sims-query-api
+./bin/query-api
 ```
 
 ---
@@ -208,7 +208,9 @@ Response:
 
 ## Error Handling
 
-All error responses adhere to standard HTTP status codes and the `ErrorResponse` JSON shape:
+### Data Endpoints Error Responses
+
+Data endpoints (`/v1/vms`, `/v1/vms/{id}`) return error responses conforming to standard HTTP status codes and the `ErrorResponse` JSON shape:
 
 ```json
 {
@@ -218,9 +220,12 @@ All error responses adhere to standard HTTP status codes and the `ErrorResponse`
 }
 ```
 
-| HTTP Status | Reason |
-| :--- | :--- |
-| `400 Bad Request` | Invalid query parameter (e.g. invalid `limit`, malformed `cursor`, or invalid UUID path parameter) |
-| `404 Not Found` | Requested virtual machine ID does not exist or is inactive/soft-deleted |
-| `500 Internal Server Error` | Database query failure or unexpected server error |
-| `503 Service Unavailable` | Downstream database readiness check failed |
+| HTTP Status | Reason | Endpoints |
+| :--- | :--- | :--- |
+| `200 OK` | Successful retrieval or empty result set | `/healthz`, `/readyz`, `/metrics`, `/v1/vms`, `/v1/vms/{id}` |
+| `204 No Content` | CORS preflight (`OPTIONS`) | All routes |
+| `400 Bad Request` | Invalid query parameter (e.g. invalid `limit`, malformed `cursor`, or invalid UUID path parameter) | `/v1/vms`, `/v1/vms/{id}` |
+| `404 Not Found` | Requested virtual machine ID does not exist or is inactive/soft-deleted | `/v1/vms/{id}` |
+| `500 Internal Server Error` | Database query failure or unexpected server error (data endpoints return 500, never 503) | `/v1/vms`, `/v1/vms/{id}` |
+| `503 Service Unavailable` | Downstream dependency readiness check failed (returns `healthResponse` JSON, not `ErrorResponse`) | `/readyz` |
+
