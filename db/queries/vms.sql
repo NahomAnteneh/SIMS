@@ -134,3 +134,19 @@ ORDER BY name ASC;
 -- name: DeleteCustomAttributesForVM :exec
 DELETE FROM vm_custom_attributes WHERE vm_id = $1;
 
+-- S4.6: Differential reconciliation queries
+-- name: ListActiveVMIdentifiers :many
+SELECT id, moref, instance_uuid
+FROM virtual_machines
+WHERE vcenter_id = $1 AND deleted_at IS NULL;
+
+-- name: TombstoneVMsByIDs :exec
+UPDATE virtual_machines
+SET deleted_at = NOW(), updated_at = NOW()
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL;
+
+-- name: TouchVMsLastSeen :exec
+UPDATE virtual_machines
+SET updated_at = NOW()
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL;
+

@@ -250,6 +250,39 @@ func (q *Queries) InsertVMNetworkInterface(ctx context.Context, arg InsertVMNetw
 	return i, err
 }
 
+const listActiveVMIdentifiers = `-- name: ListActiveVMIdentifiers :many
+SELECT id, moref, instance_uuid
+FROM virtual_machines
+WHERE vcenter_id = $1 AND deleted_at IS NULL
+`
+
+type ListActiveVMIdentifiersRow struct {
+	ID           pgtype.UUID
+	Moref        string
+	InstanceUuid string
+}
+
+// S4.6: Differential reconciliation queries
+func (q *Queries) ListActiveVMIdentifiers(ctx context.Context, vcenterID pgtype.UUID) ([]ListActiveVMIdentifiersRow, error) {
+	rows, err := q.db.Query(ctx, listActiveVMIdentifiers, vcenterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveVMIdentifiersRow
+	for rows.Next() {
+		var i ListActiveVMIdentifiersRow
+		if err := rows.Scan(&i.ID, &i.Moref, &i.InstanceUuid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCustomAttributesForVM = `-- name: ListCustomAttributesForVM :many
 SELECT id, vm_id, name, value, created_at FROM vm_custom_attributes
 WHERE vm_id = $1
@@ -664,6 +697,28 @@ type SoftDeleteVMParams struct {
 
 func (q *Queries) SoftDeleteVM(ctx context.Context, arg SoftDeleteVMParams) error {
 	_, err := q.db.Exec(ctx, softDeleteVM, arg.VcenterID, arg.Moref)
+	return err
+}
+
+const tombstoneVMsByIDs = `-- name: TombstoneVMsByIDs :exec
+UPDATE virtual_machines
+SET deleted_at = NOW(), updated_at = NOW()
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+func (q *Queries) TombstoneVMsByIDs(ctx context.Context, dollar_1 []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, tombstoneVMsByIDs, dollar_1)
+	return err
+}
+
+const touchVMsLastSeen = `-- name: TouchVMsLastSeen :exec
+UPDATE virtual_machines
+SET updated_at = NOW()
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+func (q *Queries) TouchVMsLastSeen(ctx context.Context, dollar_1 []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchVMsLastSeen, dollar_1)
 	return err
 }
 
