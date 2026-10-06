@@ -27,7 +27,7 @@ Every close-out item from Checkpoint A and Review B was verified and grounded in
 
 | ID | Item Description | Verification Evidence | Status |
 | :--- | :--- | :--- | :--- |
-| **A1** | Version compatibility naming & typed errors | `TestSessionManager_AcceptsVCSimConfiguredAs700` and `TestSessionManager_OlderAPIVersionCompatibility` verify acceptance of 7.0.0 without asserting real SOAPAction tolerance. Typed `ErrUnparseableVersion` and `ErrInvalidAPIType` enforced. ADR-018 updated. Real 7.0 marked `BLOCKED (human)`. | **DONE** |
+| **A1** | Version compatibility naming & typed errors | `TestSessionManager_AcceptsVCSimConfiguredAs700` and `TestSessionManager_VersionPolicy` (`internal/vsphere/session_test.go:141`) verify acceptance of 7.0.0 without asserting real SOAPAction tolerance. Typed `ErrUnparseableVersion` and `ErrInvalidAPIType` enforced. ADR-018 updated. Real 7.0 marked `BLOCKED (human)`. | **DONE** |
 | **A2** | Cleanup registry reverse teardown | `tests/integration/cleanup_test.go` and `internal/collector/tag_poller_test.go` prove strict 8-stage reverse teardown. Drain stage has bounded timeout (5s default) and cannot deadlock against blocked producers. | **DONE** |
 | **A3** | Standalone host topology & Datacenter FKs | `tests/integration/topology_standalone_test.go` verifies standalone host under `ComputeResource` has `cluster_id = NULL` and resolves datacenter foreign key. No existing migrations on main were modified. | **DONE** |
 | **A4** | Dev stack Dockerfile pinning | `deploy/Dockerfile.vcsim` pins alpine base image and govmomi version; `make dev-up` boots vcsim reporting 8.0.3. | **DONE** |
@@ -35,9 +35,9 @@ Every close-out item from Checkpoint A and Review B was verified and grounded in
 | **A6** | Metrics Cardinality | `sims_vcenter_info` carries only `major_minor` label; detailed build numbers restricted to logs and `collector_state`. | **DONE** |
 | **A7** | Evidence Grounding & Assumptions | All assumptions in `docs/sprint2-design-decisions.md` (session retention, event sizes, buffer limits) labeled `UNVERIFIED assumption`. Event types justified against owned fields. | **DONE** |
 | **A8** | Real Lab Probes | TLS port normalization and `CurrentTime` heartbeat fixed; physical verification on non-lab versions recorded as `BLOCKED (human)` in `docs/real-vcenter-test-runbook.md`. | **DONE** |
-| **B1** | Migration 000001 Integrity | `000001_extensions.sql` contains `uuid-ossp`, `ltree`, `pg_trgm`. Git history verified untouched since merge to main. | **DONE** |
+| **B1** | Migration 000001 Integrity | `000001_extensions.sql` contains `ltree` and `pg_trgm`. `gen_random_uuid()` is a PostgreSQL built-in (13+), so no UUID extension is required. Git history verified untouched since merge to main. | **DONE** |
 | **B2** | Recovery Triggers (Fault vs Hang) | `TestPropertyStreamer_InvalidCollectorVersion` tests typed SOAP fault; `TestPropertyStreamer_ProactiveHangDetection` tests per-call deadline. Bounded backpressure timeout separated via `STREAM_BLOCK_MAX_DURATION`. | **DONE** |
-| **B3** | Field-Mask Change Model | `TestFieldOwnership_IncrementalFieldMask` proves single-field `Modify` never overwrites unrelated columns; tag/customValue changes never touch each other. | **DONE** |
+| **B3** | Field-Mask Change Model | `TestIncrementalApplier_SingleFieldModificationPreservesUnrelatedFields` (`tests/integration/incremental_test.go:48`) and `TestFieldOwnership_PropertyCollectorDoesNotTouchEventsOrTags` (`tests/integration/field_ownership_test.go:17`) prove single-field `Modify` never overwrites unrelated columns; tag/customValue changes never touch each other. | **DONE** |
 | **B4** | Concurrency Invariants | `TestPropertyStreamer_SingleGoroutineOwnership` proves second concurrent loop start is rejected. `SessionGuardian` keepalive continues during stream backpressure. | **DONE** |
 | **B5** | Migration 000008 Metadata-Only | Documented in migration notes that `first_seen_at NOT NULL DEFAULT NOW()` sets migration time for existing rows; confirmed metadata-only in PostgreSQL 18. | **DONE** |
 | **B6** | CI Pipeline & Vulnerability Check | `govulncheck ./...` executed with 0 vulnerabilities; integration test suite verified in CI environment. | **DONE** |
@@ -49,7 +49,13 @@ Every close-out item from Checkpoint A and Review B was verified and grounded in
 ### Phase A — Resilience Primitives & Seam Fakes
 - **Vendor Seam (`internal/vsphere/seam.go`):** Extracted `PropertyCollectorClient`, `SessionManagerClient`, and `EventManagerClient` interfaces with zero-leak production adapters.
 - **Fault-Injecting Fakes (`internal/vsphere/fake.go`):** Implemented fakes capable of deterministic error injection: `SetNextFault(&types.InvalidCollectorVersion{})`, `SetHungCalls(true)`, `SetAuthFault()`, and `SetTruncated(true)`.
-- **Session Guardian (`internal/vsphere/guardian.go`):** Independent goroutine executing read-only `CurrentTime` heartbeats every 30s. Exposes `Dead()` notification channel and Prometheus metrics (`sims_collector_session_healthy`, `sims_collector_heartbeat_duration_seconds`).
+- **Session Guardian (`internal/vsphere/guardian.go`):** Independent goroutine executing read-only `CurrentTime` heartbeats every 30s. Exposes `Dead()` notification channel and Prometheus metrics (`sims_collector_session_state`, `sims_collector_keepalive_total`, `sims_collector_keepalive_errors_total`).
+  ### Metrics specified but not yet implemented (see S2.x wiring gap)
+  The following metrics were specified in design docs but are not yet registered in `internal/telemetry/metrics.go`:
+  - `sims_collector_session_healthy`
+  - `sims_collector_heartbeat_duration_seconds`
+  - `sims_collector_event_replay_count`
+  - `sims_collector_event_replay_duration_seconds`
 - **Cleanup Registry (`internal/collector/cleanup.go`):** Strict 8-stage reverse teardown:
   `Stage 1: stop producers` -> `Stage 2: drain in-flight batches` -> `Stage 3: destroy event collectors` -> `Stage 4: destroy property filters` -> `Stage 5: destroy container views` -> `Stage 6: logout REST sessions` -> `Stage 7: logout SOAP sessions` -> `Stage 8: close DB connection pools`.
 

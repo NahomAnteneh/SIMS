@@ -38,10 +38,60 @@ func NewHandler(pool *pgxpool.Pool, logger *slog.Logger) *Handler {
 	}
 }
 
-// RegisterRoutes registers the /v1/vms endpoints onto the provided ServeMux.
+// RegisterRoutes registers Query API endpoints onto the provided ServeMux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	// Virtual Machines & Search
 	mux.HandleFunc("GET /v1/vms", h.handleListVMs)
 	mux.HandleFunc("GET /v1/vms/{id}", h.handleGetVM)
+	mux.HandleFunc("GET /v1/search/vms", h.handleQuickSearchVMs)
+	mux.HandleFunc("POST /v1/vms/search", h.handleStructuredSearchVMs)
+
+	// Facets & Metadata
+	mux.HandleFunc("GET /v1/vms/facets", h.handleGetVMFacets)
+	mux.HandleFunc("GET /v1/meta/vm-fields", h.handleGetVMFields)
+	mux.HandleFunc("GET /v1/tags", h.handleListTags)
+	mux.HandleFunc("GET /v1/custom-attributes", h.handleListCustomAttributes)
+	mux.HandleFunc("GET /v1/me", h.handleGetMe)
+
+	// Topology: Datacenters
+	mux.HandleFunc("GET /v1/datacenters", h.handleListTopology("datacenters"))
+	mux.HandleFunc("GET /v1/datacenters/{id}", h.handleGetTopologyByID("datacenters"))
+	mux.HandleFunc("GET /v1/datacenters/{id}/vms", h.handleListTopologyVMs("datacenter"))
+
+	// Topology: Clusters
+	mux.HandleFunc("GET /v1/clusters", h.handleListTopology("clusters"))
+	mux.HandleFunc("GET /v1/clusters/{id}", h.handleGetTopologyByID("clusters"))
+	mux.HandleFunc("GET /v1/clusters/{id}/vms", h.handleListTopologyVMs("cluster"))
+
+	// Topology: Hosts
+	mux.HandleFunc("GET /v1/hosts", h.handleListTopology("hosts"))
+	mux.HandleFunc("GET /v1/hosts/{id}", h.handleGetTopologyByID("hosts"))
+	mux.HandleFunc("GET /v1/hosts/{id}/vms", h.handleListTopologyVMs("host"))
+
+	// Topology: Datastores
+	mux.HandleFunc("GET /v1/datastores", h.handleListTopology("datastores"))
+	mux.HandleFunc("GET /v1/datastores/{id}", h.handleGetTopologyByID("datastores"))
+	mux.HandleFunc("GET /v1/datastores/{id}/vms", h.handleListTopologyVMs("datastore"))
+
+	// Topology: Networks
+	mux.HandleFunc("GET /v1/networks", h.handleListTopology("networks"))
+	mux.HandleFunc("GET /v1/networks/{id}", h.handleGetTopologyByID("networks"))
+	mux.HandleFunc("GET /v1/networks/{id}/vms", h.handleListTopologyVMs("network"))
+
+	// Topology: Folders
+	mux.HandleFunc("GET /v1/folders", h.handleListFolders)
+	mux.HandleFunc("GET /v1/folders/{id}", h.handleGetFolderByID)
+	mux.HandleFunc("GET /v1/folders/{id}/vms", h.handleListTopologyVMs("folder"))
+
+	// vCenter Management & Auditing
+	mux.HandleFunc("POST /v1/vcenters/test-connection", h.handleTestVCenterConnection)
+	mux.HandleFunc("GET /v1/vcenters", h.handleListVCenters)
+	mux.HandleFunc("POST /v1/vcenters", h.handleCreateVCenter)
+	mux.HandleFunc("GET /v1/vcenters/{id}", h.handleGetVCenter)
+	mux.HandleFunc("PATCH /v1/vcenters/{id}", h.handleUpdateVCenter)
+	mux.HandleFunc("DELETE /v1/vcenters/{id}", h.handleDeleteVCenter)
+	mux.HandleFunc("POST /v1/vcenters/{id}/resync", h.handleResyncVCenter)
+	mux.HandleFunc("GET /v1/audit-events", h.handleListAuditEvents)
 }
 
 // ErrorResponse represents a standardized API error shape.
@@ -58,11 +108,30 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func (h *Handler) writeError(w http.ResponseWriter, status int, errTitle, errMsg string) {
-	h.writeJSON(w, status, ErrorResponse{
-		Error:   errTitle,
-		Message: errMsg,
-		Code:    status,
-	})
+	h.writeProblem(w, status, errTitle, errMsg, "bad_request")
+}
+
+func (h *Handler) writeProblem(w http.ResponseWriter, status int, title, detail, code string) {
+	h.writeProblemWithDetails(w, status, title, detail, code, nil)
+}
+
+func (h *Handler) writeProblemWithDetails(w http.ResponseWriter, status int, title, detail, code string, details map[string]any) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	payload := map[string]any{
+		"type":       "about:blank",
+		"title":      title,
+		"status":     status,
+		"detail":     detail,
+		"code":       status,
+		"error_code": code,
+		"error":      title,
+		"message":    detail,
+	}
+	for k, v := range details {
+		payload[k] = v
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 // VMListItem represents a VM entry in list pagination responses.
@@ -88,6 +157,7 @@ type VMListItem struct {
 	Annotation      string `json:"annotation,omitempty"`
 	CreatedAt       string `json:"created_at"`
 	UpdatedAt       string `json:"updated_at"`
+	FirstSeenAt     string `json:"first_seen_at,omitempty"`
 }
 
 // PaginationMeta contains keyset pagination metadata.

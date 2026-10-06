@@ -36,32 +36,46 @@ The following event types are verified against the upstream VMware vSphere Web S
 
 ## 3. Database Schema & Persistence Contract
 
-Events are stored in `inventory_events`:
+Events are stored in `inventory_events` as defined in `db/migrations/000004_virtual_machines.sql`:
 
 ```sql
-CREATE TABLE IF NOT EXISTS inventory_events (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    vcenter_id VARCHAR(64) NOT NULL REFERENCES vcenters(id) ON DELETE CASCADE,
-    event_key BIGINT NOT NULL,
-    chain_id BIGINT,
-    event_type VARCHAR(128) NOT NULL,
+CREATE TABLE inventory_events (
+    id BIGSERIAL PRIMARY KEY,
+    vcenter_id UUID NOT NULL REFERENCES vcenters(id) ON DELETE CASCADE,
+    event_key INT NOT NULL,
+    chain_id INT NOT NULL DEFAULT 0,
+    event_type TEXT NOT NULL,
+    vm_moref TEXT,
+    vm_instance_uuid TEXT,
+    message TEXT NOT NULL DEFAULT '',
     created_time TIMESTAMPTZ NOT NULL,
-    user_name VARCHAR(256),
-    entity_type VARCHAR(64) NOT NULL,
-    entity_moref VARCHAR(64) NOT NULL,
-    entity_name VARCHAR(256),
-    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_inventory_events_vcenter_key UNIQUE (vcenter_id, event_key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_inventory_events_entity
-ON inventory_events (vcenter_id, entity_moref, created_time DESC);
-
-CREATE INDEX IF NOT EXISTS idx_inventory_events_time
-ON inventory_events (vcenter_id, created_time DESC);
+CREATE INDEX idx_events_vcenter_time ON inventory_events (vcenter_id, created_time DESC);
 ```
 
-### Deduplication Guarantee
-- Storage is strictly idempotent via `ON CONFLICT (vcenter_id, event_key) DO NOTHING`.
-- Replaying events from an overlap window never results in duplicate rows or skewed counts.
+> [!NOTE]
+> Migration `000009_inventory_events.sql` extends `inventory_events` with expanded metadata columns (`user_name TEXT`, `entity_type TEXT`, `entity_moref TEXT`, `entity_name TEXT`, and `payload JSONB DEFAULT '{}'::jsonb`), adds index `idx_inventory_events_entity (vcenter_id, entity_moref, created_time DESC)`, and adds watermark tracking columns (`last_event_key BIGINT`, `last_event_time TIMESTAMPTZ`) to `collector_state`.
+
+### Real Column Reference
+- `id`: `BIGSERIAL PRIMARY KEY` internal sequence ID.
+- `vcenter_id`: `UUID NOT NULL REFERENCES vcenters(id)` identifying source vCenter.
+- `event_key`: `INT NOT NULL` unique event sequence number assigned by vCenter.
+- `chain_id`: `INT NOT NULL DEFAULT 0` task/event correlation chain ID.
+- `event_type`: `TEXT NOT NULL` concrete vSphere event type name (e.g. `VmCreatedEvent`).
+- `vm_moref`: `TEXT` Managed Object Reference of the affected VM (if available).
+- `vm_instance_uuid`: `TEXT` invariant BIOS/SMBIOS instance UUID.
+- `message`: `TEXT NOT NULL DEFAULT ''` full formatted event message.
+- `created_time`: `TIMESTAMPTZ NOT NULL` server-side timestamp reported by vCenter.
+- `created_at`: `TIMESTAMPTZ NOT NULL DEFAULT NOW()` platform ingestion timestamp.
+- Expanded in Migration 000009: `user_name` (`TEXT`), `entity_type` (`TEXT`), `entity_moref` (`TEXT`), `entity_name` (`TEXT`), `payload` (`JSONB`).
+
+### Deduplication, Watermarking, and Overlap Guarantee
+Per `internal/collector/event_streamer.go` and `internal/persistence/events.go`:
+1. **Deduplication:** Storage is strictly idempotent via `ON CONFLICT (vcenter_id, event_key) DO NOTHING`. Replaying events across overlapping windows never duplicates records or mutates existing provenance.
+2. **Watermarking:** The streamer persists high watermarks (`last_event_key`, `last_event_time`) in `collector_state` at the end of each processed batch.
+3. **Overlap Lookback Window (ADR-010):** On startup, if a prior `last_event_time` exists, the collector queries with `BeginTime = last_event_time - EVENT_OVERLAP_WINDOW` (default: 5 minutes / `300s`).
+4. **Retention Gap Detection:** If the oldest event returned in the first batch after reconnect is strictly newer than `last_event_time`, an event retention gap is registered (`sims_collector_event_gap_detected`). If `ReconcileOnGap` is enabled, a full inventory reconciliation is triggered (`sims_collector_event_reconciliation_requested`).
+5. **Field Ownership Enforcement:** Creation events (`VmCreatedEvent`, `VmClonedEvent`, `VmDeployedEvent`, `VmRegisteredEvent`) set `virtual_machines.created_at` and `virtual_machines.created_by`. Deletion events (`VmRemovedEvent`) soft-delete the VM by setting `deleted_at = NOW()`.

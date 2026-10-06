@@ -1,7 +1,7 @@
 # vSphere Capability & Behavioral Matrix
 
-> **Status:** BLOCKED ON HUMAN  
-> **Reason:** Real vCenter validation requires production/lab credentials and network access that cannot be automated in simulated CI. The `vcsim (Empirical)` column below was generated empirically using `cmd/vcenter-spike`. The real vCenter columns (`7.0.x`, `8.0.x (U3)`, `9.0.x`, `9.1.x`) are strictly marked `PENDING (BLOCKED ON HUMAN)`.
+> **Status:** PARTIALLY VERIFIED (Lab 8.0.2 PASS; Physical 7.0.x, 8.0.x (U3), 9.0.x, 9.1.x BLOCKED ON HUMAN)  
+> **Reason:** Real vCenter validation requires production/lab credentials and network access that cannot be automated in simulated CI. The `vcsim (Empirical)` column below was generated empirically using `cmd/vcenter-spike` against configured vcsim (8.0.3). Lab testing on `Real vCenter 8.0.2 (Build 22617221)` has been empirically validated. Physical endpoints for `7.0.x`, `8.0.x (U3)`, `9.0.x`, and `9.1.x` remain strictly marked `PENDING (BLOCKED ON HUMAN)`.
 
 ---
 
@@ -23,7 +23,7 @@ The spike CLI `cmd/vcenter-spike` provides a safe, read-only validation tool tha
 
 | Probe / Behavior | vcsim (Empirical) | Real vCenter 7.0.x | Real vCenter 8.0.2 (Empirical, Build 22617221) | Real vCenter 9.0.x | Real vCenter 9.1.x | Architectural Assumption & Risk |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **vCenter Version** | VMware vCenter Server 6.5.0 build-5973321 (API 6.5, Linux) | `PENDING (BLOCKED ON HUMAN)` | PASS: VMware vCenter Server 8.0.2 build-22617221 (API 8.0.2.0, Linux). Fixed SOAPAction 9.1.0.0 accepted seamlessly. | `PENDING (BLOCKED ON HUMAN)` | `PENDING (BLOCKED ON HUMAN)` | Version detected at connect via `ServiceContent.About`. Client negotiates API version without pinning obsolete versions. |
+| **vCenter Version** | PASS: VMware vCenter Server 8.0.3 build-24022515 (API 8.0.3.0, Linux; configured per AGENTS.md §3). Note: default unconfigured vcsim (6.5.0 build-5973321) is rejected at connect via `ErrUnsupportedVersion`. | `PENDING (BLOCKED ON HUMAN)` | PASS: VMware vCenter Server 8.0.2 build-22617221 (API 8.0.2.0, Linux). Fixed SOAPAction 9.1.0.0 accepted seamlessly. | `PENDING (BLOCKED ON HUMAN)` | `PENDING (BLOCKED ON HUMAN)` | Version detected at connect via `ServiceContent.About`. Client negotiates API version without pinning obsolete versions. |
 | **ESXi Version** | VMware ESXi 8.0.2 build-21997540 (4 hosts discovered) | `PENDING (BLOCKED ON HUMAN)` | PASS: VMware ESXi 8.0.2 (4 standalone hosts discovered) | `PENDING (BLOCKED ON HUMAN)` | `PENDING (BLOCKED ON HUMAN)` | ESXi build numbers reflect patch levels; hardware status sensors differ by OEM build. |
 | **TLS Handshake & Ciphers** | PASS: Negotiated TLS 1.3 (Cipher: 0x1301) | `PENDING (BLOCKED ON HUMAN)` | PASS: Negotiated TLS on target URL (port normalized to 443 when omitted) | `PENDING (BLOCKED ON HUMAN)` | `PENDING (BLOCKED ON HUMAN)` | Real vCenters may enforce TLS 1.2 or TLS 1.3. Custom enterprise CA certs supported; untrusted certs return fingerprint for pinning. |
 | **PropertyCollector** | PASS: PropertyFilter created and destroyed; initial version token `"-"`; 1 update received | `PENDING (BLOCKED ON HUMAN)` | PASS: PropertyFilter created and destroyed cleanly; initial version token received | `PENDING (BLOCKED ON HUMAN)` | `PENDING (BLOCKED ON HUMAN)` | Real vCenter version strings are sequential integers or opaque alphanumeric tokens. Must handle version truncation. |

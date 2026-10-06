@@ -58,11 +58,12 @@ This runbook guides a human operator through executing and verifying Sprint 2 ca
 1. In vSphere Client, adjust network settings on test VM (or trigger DHCP renewal in guest OS).
 2. Query SIMS database:
    ```sql
-   SELECT mac_address, ip_addresses, connected FROM vm_network_interfaces vni
+   SELECT vni.mac_address, vni.ip_address, vm.guest_ip_address
+   FROM vm_network_interfaces vni
    JOIN virtual_machines vm ON vni.vm_id = vm.id
    WHERE vm.moref = 'vm-XXX';
    ```
-   **Expected Result:** Updated IP addresses appear in PostgreSQL without duplicate NIC records.
+   **Expected Result:** Updated IP address appears in PostgreSQL without duplicate NIC records.
 
 ---
 

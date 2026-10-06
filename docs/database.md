@@ -27,8 +27,8 @@ All migrations are versioned via Goose (`db/migrations/`), and type-safe query i
 | `virtual_machines` | Normalized virtual machine inventory records | `id UUID` | `UNIQUE(instance_uuid) WHERE deleted_at IS NULL`<br>`UNIQUE(vcenter_id, moref) WHERE deleted_at IS NULL` |
 | `vm_datastores` | VM storage attachments | `(vm_id, datastore_id)` | Foreign keys cascade on delete |
 | `vm_network_interfaces` | Virtual NICs, MACs, IP assignments, VLANs | `id UUID` | FK to `virtual_machines(id)` |
-| `vm_tags` | Attached vSphere tags and categories | `id UUID` | `UNIQUE(vm_id, tag_id)`, FK to `virtual_machines(id)` |
-| `vm_custom_attributes` | VM custom attribute key/value pairs | `id UUID` | `UNIQUE(vm_id, name)`, FK to `virtual_machines(id)` |
+| `vm_tags` | Attached vSphere tags and categories | `id BIGSERIAL` | `UNIQUE(vm_id, tag_id)`, FK to `virtual_machines(id)` |
+| `vm_custom_attributes` | VM custom attribute key/value pairs | `id BIGSERIAL` | `UNIQUE(vm_id, name)`, FK to `virtual_machines(id)` |
 | `inventory_events` | Immutable vCenter event log | `id BIGSERIAL` | `UNIQUE(vcenter_id, event_key)` |
 
 ---
@@ -104,13 +104,19 @@ Default privileges are configured in schema `public` so all newly migrated table
 ## 5. Connection Pool and Resource Sizing (`pgxpool`)
 
 For the collector and API services:
-- **Query API:**
+- **Query API (`cmd/query-api/main.go:41-46`):**
   - `MaxConns`: 20 connections per API instance.
-  - `MinConns`: 5 idle connections.
-  - `MaxConnLifetime`: 30 minutes.
-  - `MaxConnIdleTime`: 5 minutes.
-  - Sizing Rationale: Query API serves fast, indexed read queries (<10ms). 20 connections comfortably handle >1,000 req/sec per node without saturating database connection slots.
-- **Collector Worker:**
+  - `MinConns`: 2 idle connections (initial design specified 5; actual runtime uses 2).
+  - `MaxConnLifetime`: 1 hour (initial design specified 30m; actual runtime uses 1h).
+  - `MaxConnIdleTime`: 15 minutes (initial design specified 5m; actual runtime uses 15m).
+  - Sizing Rationale: `UNVERIFIED assumption` — assumes Query API serves indexed read queries in <10ms and 20 connections handle >1,000 req/sec per node without saturating database connection slots (to be measured during dedicated load testing).
+- **Collector Worker (`cmd/collector/main.go:48-53`):**
   - `MaxConns`: 10 connections per collector instance.
   - `MinConns`: 2 idle connections.
+  - `MaxConnLifetime`: 1 hour.
+  - `MaxConnIdleTime`: 15 minutes.
   - Sizing Rationale: Collector performs batch operations and bulk COPY streams. Fewer connections prevent connection starvation while maximizing dedicated worker bandwidth.
+
+> [!NOTE]
+> Configured pool limits (SPRINTPLAN S1.13) originally specified `MinConns: 5`, `MaxConnLifetime: 30m`, `MaxConnIdleTime: 5m`, but runtime code configures `MinConns: 2`, `MaxConnLifetime: 1h`, `MaxConnIdleTime: 15m`. Tracked as a configuration alignment point.
+

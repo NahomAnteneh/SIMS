@@ -3,8 +3,8 @@ info:
   title: Distributed vSphere Inventory & Search Platform API
   description: >
     Query API for distributed vSphere inventory, full-text search,
-    topology traversal, and system operational observability.
-  version: 0.1.0
+    topology traversal, authentication, and vCenter management.
+  version: 0.2.0
 servers:
   - url: http://localhost:8080
     description: Local development server
@@ -54,6 +54,78 @@ paths:
               schema:
                 type: string
 
+  /v1/search/vms:
+    get:
+      summary: Quick search virtual machines
+      description: Fast classified search across VM names, UUIDs, MoRefs, IP addresses, MAC addresses, and hostnames.
+      operationId: quickSearchVMs
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Raw search input
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of records to return (1-100, default 20)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Keyset pagination cursor
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchVMsResponse"
+        "400":
+          description: Invalid query parameter or cursor
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/vms/search:
+    post:
+      summary: Structured filter VM search
+      description: Recursive typed AST filter query with keyset pagination and sorting.
+      operationId: searchVMsStructured
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchVMsRequest"
+      responses:
+        "200":
+          description: Paginated search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchVMsResponse"
+        "400":
+          description: Invalid filter AST, unknown field or incompatible operator
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /v1/vms:
     get:
       summary: List virtual machines
@@ -98,12 +170,18 @@ paths:
         "400":
           description: Invalid request parameters or malformed cursor
           content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal server error
           content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
@@ -111,7 +189,7 @@ paths:
   /v1/vms/{id}:
     get:
       summary: Get virtual machine details
-      description: Retrieves complete details of a single virtual machine by internal UUID, including attached datastores and network interfaces.
+      description: Retrieves complete details of a single virtual machine by internal UUID, including attached datastores, network interfaces, tags, and custom attributes.
       operationId: getVM
       parameters:
         - name: id
@@ -131,21 +209,596 @@ paths:
         "400":
           description: Invalid UUID format
           content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Virtual machine not found
           content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal server error
           content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/vms/facets:
+    get:
+      summary: Aggregated facet counts
+      description: Returns distinct attribute counts within the caller's authorization scope.
+      operationId: getVMFacets
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          description: Comma-separated list of facet fields (power_state, cluster, host, datastore, vcenter, tag)
+          schema:
+            type: string
+            example: "power_state,cluster,datacenter"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum distinct buckets per field
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Facet distributions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FacetsResponse"
+        "400":
+          description: Unknown facet field
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /v1/meta/vm-fields:
+    get:
+      summary: Filterable and sortable fields metadata
+      description: Returns allowable filter and sort fields, their types, and supported operators.
+      operationId: getVMFieldsMetadata
+      responses:
+        "200":
+          description: Metadata catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VMFieldsMetadataResponse"
+
+  /v1/tags:
+    get:
+      summary: List inventory tags
+      description: Returns tag categories and tags with VM counts.
+      operationId: listTags
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tag catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagListResponse"
+
+  /v1/custom-attributes:
+    get:
+      summary: List inventory custom attributes
+      description: Returns attribute names and bounded distinct values with VM counts.
+      operationId: listCustomAttributes
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Custom attribute catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomAttributeListResponse"
+
+  /v1/datacenters:
+    get:
+      summary: List datacenters
+      operationId: listDatacenters
+      responses:
+        "200":
+          description: List of datacenters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyListResponse"
+
+  /v1/datacenters/{id}:
+    get:
+      summary: Get datacenter by ID
+      operationId: getDatacenter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Datacenter details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyItem"
+        "404":
+          description: Datacenter not found
+
+  /v1/datacenters/{id}/vms:
+    get:
+      summary: List VMs in datacenter
+      operationId: listDatacenterVMs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: VMs in datacenter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+
+  /v1/clusters:
+    get:
+      summary: List clusters
+      operationId: listClusters
+      responses:
+        "200":
+          description: List of clusters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyListResponse"
+
+  /v1/clusters/{id}:
+    get:
+      summary: Get cluster by ID
+      operationId: getCluster
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Cluster details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyItem"
+
+  /v1/clusters/{id}/vms:
+    get:
+      summary: List VMs in cluster
+      operationId: listClusterVMs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: VMs in cluster
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+
+  /v1/hosts:
+    get:
+      summary: List ESXi hosts
+      operationId: listHosts
+      responses:
+        "200":
+          description: List of hosts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyListResponse"
+
+  /v1/hosts/{id}:
+    get:
+      summary: Get host by ID
+      operationId: getHost
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Host details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyItem"
+
+  /v1/hosts/{id}/vms:
+    get:
+      summary: List VMs on host
+      operationId: listHostVMs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: VMs on host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+
+  /v1/datastores:
+    get:
+      summary: List datastores
+      operationId: listDatastores
+      responses:
+        "200":
+          description: List of datastores
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyListResponse"
+
+  /v1/datastores/{id}:
+    get:
+      summary: Get datastore by ID
+      operationId: getDatastore
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Datastore details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyItem"
+
+  /v1/datastores/{id}/vms:
+    get:
+      summary: List VMs on datastore
+      operationId: listDatastoreVMs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: VMs on datastore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+
+  /v1/networks:
+    get:
+      summary: List networks and portgroups
+      operationId: listNetworks
+      responses:
+        "200":
+          description: List of networks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyListResponse"
+
+  /v1/networks/{id}:
+    get:
+      summary: Get network by ID
+      operationId: getNetwork
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Network details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyItem"
+
+  /v1/networks/{id}/vms:
+    get:
+      summary: List VMs attached to network
+      operationId: listNetworkVMs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: VMs attached to network
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+
+  /v1/folders:
+    get:
+      summary: Browse inventory folders
+      operationId: listFolders
+      parameters:
+        - name: parent_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Folder tree list with VM counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderListResponse"
+
+  /v1/folders/{id}:
+    get:
+      summary: Get folder by ID
+      operationId: getFolder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Folder details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FolderItem"
+
+  /v1/folders/{id}/vms:
+    get:
+      summary: List VMs in folder
+      operationId: listFolderVMs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: VMs in folder
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVMsResponse"
+
+  /v1/me:
+    get:
+      summary: Caller identity and authorization scope
+      operationId: getCallerIdentity
+      responses:
+        "200":
+          description: Caller identity profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+
+  /v1/vcenters:
+    get:
+      summary: List registered vCenters
+      operationId: listVCenters
+      responses:
+        "200":
+          description: List of vCenters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VCenterListResponse"
+    post:
+      summary: Register a new vCenter
+      operationId: createVCenter
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVCenterRequest"
+      responses:
+        "201":
+          description: vCenter registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VCenterResponse"
+        "400":
+          description: Invalid request or validation failure
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: vCenter host already registered
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /v1/vcenters/test-connection:
+    post:
+      summary: Test vCenter connectivity without registering
+      operationId: testVCenterConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestConnectionRequest"
+      responses:
+        "200":
+          description: Connection validated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestConnectionResponse"
+        "400":
+          description: Connection or validation failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /v1/vcenters/{id}:
+    get:
+      summary: Get vCenter by ID
+      operationId: getVCenter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: vCenter record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VCenterResponse"
+        "404":
+          description: vCenter not found
+    patch:
+      summary: Update vCenter configuration or credentials
+      operationId: updateVCenter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVCenterRequest"
+      responses:
+        "200":
+          description: vCenter updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VCenterResponse"
+    delete:
+      summary: Decommission and tombstone vCenter inventory
+      operationId: deleteVCenter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: vCenter decommissioned
+
+  /v1/vcenters/{id}/resync:
+    post:
+      summary: Request full inventory resynchronization
+      operationId: resyncVCenter
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "202":
+          description: Resync accepted
 
 components:
   schemas:
@@ -168,10 +821,48 @@ components:
           example: query-api
         version:
           type: string
-          example: "0.1.0"
+          example: "0.2.0"
         details:
           type: object
           additionalProperties: true
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          example: "about:blank"
+        title:
+          type: string
+          example: "Bad Request"
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: "Invalid filter specification"
+        instance:
+          type: string
+          example: "/v1/vms/search"
+        code:
+          type: integer
+          example: 400
+        error_code:
+          type: string
+          example: "invalid_filter"
+        invalid_params:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              reason:
+                type: string
 
     ErrorResponse:
       type: object
@@ -189,6 +880,14 @@ components:
         code:
           type: integer
           example: 400
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
 
     PaginationMeta:
       type: object
@@ -296,6 +995,10 @@ components:
           type: string
           format: date-time
           example: "2026-10-02T08:30:00Z"
+        first_seen_at:
+          type: string
+          format: date-time
+          example: "2026-10-01T12:00:00Z"
 
     ListVMsResponse:
       type: object
@@ -309,6 +1012,49 @@ components:
             $ref: "#/components/schemas/VMListItem"
         pagination:
           $ref: "#/components/schemas/PaginationMeta"
+
+    SearchVMsRequest:
+      type: object
+      required:
+        - filter
+      properties:
+        filter:
+          type: object
+          description: Typed recursive Filter AST node
+        sort:
+          type: object
+          properties:
+            field:
+              type: string
+              example: "name"
+            direction:
+              type: string
+              enum: [asc, desc]
+              default: asc
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        cursor:
+          type: string
+
+    SearchVMsResponse:
+      type: object
+      required:
+        - items
+        - hasMore
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VMListItem"
+        nextCursor:
+          type: string
+          example: "eyJuYW1lIjoidm0tMDIwIiwiaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMTQifQ=="
+        hasMore:
+          type: boolean
+          example: true
 
     DatastoreAttachment:
       type: object
@@ -428,3 +1174,380 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/VMCustomAttribute"
+
+    FacetsResponse:
+      type: object
+      required:
+        - facets
+      properties:
+        facets:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              required:
+                - value
+                - count
+              properties:
+                value:
+                  type: string
+                  example: "poweredOn"
+                count:
+                  type: integer
+                  example: 42
+
+    VMFieldMeta:
+      type: object
+      required:
+        - name
+        - type
+        - allowed_operators
+      properties:
+        name:
+          type: string
+          example: "power_state"
+        type:
+          type: string
+          example: "enum"
+        allowed_operators:
+          type: array
+          items:
+            type: string
+          example: ["EQ", "NE", "IN"]
+        description:
+          type: string
+
+    VMFieldsMetadataResponse:
+      type: object
+      required:
+        - fields
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/VMFieldMeta"
+
+    TagItem:
+      type: object
+      required:
+        - category_name
+        - tag_name
+        - vm_count
+      properties:
+        category_name:
+          type: string
+          example: "Environment"
+        tag_name:
+          type: string
+          example: "Production"
+        vm_count:
+          type: integer
+          example: 15
+
+    TagListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagItem"
+
+    CustomAttributeItem:
+      type: object
+      required:
+        - name
+        - vm_count
+        - sample_values
+      properties:
+        name:
+          type: string
+          example: "CostCenter"
+        vm_count:
+          type: integer
+          example: 10
+        sample_values:
+          type: array
+          items:
+            type: string
+          example: ["CC-100", "CC-200"]
+
+    CustomAttributeListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomAttributeItem"
+
+    TopologyItem:
+      type: object
+      required:
+        - id
+        - vcenter_id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+        vcenter_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        moref:
+          type: string
+
+    TopologyListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopologyItem"
+
+    FolderItem:
+      type: object
+      required:
+        - id
+        - vcenter_id
+        - name
+        - path
+        - vm_count
+      properties:
+        id:
+          type: string
+          format: uuid
+        vcenter_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        path:
+          type: string
+          example: "Datacenters.DC1.vm.Production"
+        vm_count:
+          type: integer
+          example: 8
+
+    FolderListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FolderItem"
+
+    MeResponse:
+      type: object
+      required:
+        - subject
+        - role
+        - vcenter_ids
+        - folder_paths
+      properties:
+        subject:
+          type: string
+          example: "user@corp.local"
+        role:
+          type: string
+          enum: [viewer, inventory-admin]
+          example: "viewer"
+        vcenter_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        folder_paths:
+          type: array
+          items:
+            type: string
+
+    CreateVCenterRequest:
+      type: object
+      required:
+        - name
+        - host
+        - username
+        - password
+      properties:
+        name:
+          type: string
+          example: "vc-prod-01"
+        host:
+          type: string
+          example: "vc01.example.com"
+        port:
+          type: integer
+          default: 443
+        username:
+          type: string
+          example: "svc-inventory@vsphere.local"
+        password:
+          type: string
+          writeOnly: true
+          example: "SuperSecret!"
+        tls:
+          type: object
+          properties:
+            verify:
+              type: boolean
+              default: true
+            ca_pem:
+              type: string
+            pinned_fingerprint:
+              type: string
+        enabled:
+          type: boolean
+          default: true
+        priority:
+          type: integer
+          default: 100
+
+    UpdateVCenterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        tls:
+          type: object
+          properties:
+            verify:
+              type: boolean
+            ca_pem:
+              type: string
+            pinned_fingerprint:
+              type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+
+    TestConnectionRequest:
+      type: object
+      required:
+        - host
+        - username
+        - password
+      properties:
+        host:
+          type: string
+          example: "vc01.example.com"
+        port:
+          type: integer
+          default: 443
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+        tls:
+          type: object
+          properties:
+            verify:
+              type: boolean
+              default: true
+            ca_pem:
+              type: string
+            pinned_fingerprint:
+              type: string
+
+    TestConnectionResponse:
+      type: object
+      required:
+        - status
+        - version
+        - capabilities
+      properties:
+        status:
+          type: string
+          example: "connected"
+        version:
+          type: object
+          required:
+            - product
+            - api
+            - build
+          properties:
+            product:
+              type: string
+              example: "VMware vCenter Server"
+            api:
+              type: string
+              example: "8.0.3"
+            build:
+              type: string
+              example: "24022515"
+        capabilities:
+          type: object
+          properties:
+            tags:
+              type: string
+              example: "available"
+
+    VCenterResponse:
+      type: object
+      required:
+        - id
+        - name
+        - host
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+          default: 443
+        version:
+          type: object
+          properties:
+            product:
+              type: string
+            api:
+              type: string
+            build:
+              type: string
+        capabilities:
+          type: object
+          properties:
+            tags:
+              type: string
+        enabled:
+          type: boolean
+        status:
+          type: string
+          example: "PENDING_ASSIGNMENT"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    VCenterListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VCenterResponse"
