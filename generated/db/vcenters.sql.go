@@ -11,8 +11,154 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createVCenter = `-- name: CreateVCenter :one
+INSERT INTO vcenters (
+    name,
+    api_url,
+    instance_uuid,
+    version,
+    build,
+    product_version,
+    api_version,
+    capabilities,
+    tls_settings,
+    credential_ref,
+    status,
+    priority,
+    enabled
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+)
+RETURNING id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at
+`
+
+type CreateVCenterParams struct {
+	Name           string
+	ApiUrl         string
+	InstanceUuid   pgtype.Text
+	Version        string
+	Build          string
+	ProductVersion string
+	ApiVersion     string
+	Capabilities   []byte
+	TlsSettings    []byte
+	CredentialRef  string
+	Status         string
+	Priority       int32
+	Enabled        bool
+}
+
+func (q *Queries) CreateVCenter(ctx context.Context, arg CreateVCenterParams) (Vcenter, error) {
+	row := q.db.QueryRow(ctx, createVCenter,
+		arg.Name,
+		arg.ApiUrl,
+		arg.InstanceUuid,
+		arg.Version,
+		arg.Build,
+		arg.ProductVersion,
+		arg.ApiVersion,
+		arg.Capabilities,
+		arg.TlsSettings,
+		arg.CredentialRef,
+		arg.Status,
+		arg.Priority,
+		arg.Enabled,
+	)
+	var i Vcenter
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ApiUrl,
+		&i.InstanceUuid,
+		&i.Version,
+		&i.Build,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const disableCollectorTarget = `-- name: DisableCollectorTarget :exec
+UPDATE collector_targets
+SET enabled = false,
+    updated_at = NOW()
+WHERE vcenter_id = $1
+`
+
+func (q *Queries) DisableCollectorTarget(ctx context.Context, vcenterID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, disableCollectorTarget, vcenterID)
+	return err
+}
+
+const getActiveVCenterByID = `-- name: GetActiveVCenterByID :one
+SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at FROM vcenters WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) GetActiveVCenterByID(ctx context.Context, id pgtype.UUID) (Vcenter, error) {
+	row := q.db.QueryRow(ctx, getActiveVCenterByID, id)
+	var i Vcenter
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ApiUrl,
+		&i.InstanceUuid,
+		&i.Version,
+		&i.Build,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getActiveVCenterByURL = `-- name: GetActiveVCenterByURL :one
+SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at FROM vcenters WHERE api_url = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) GetActiveVCenterByURL(ctx context.Context, apiUrl string) (Vcenter, error) {
+	row := q.db.QueryRow(ctx, getActiveVCenterByURL, apiUrl)
+	var i Vcenter
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ApiUrl,
+		&i.InstanceUuid,
+		&i.Version,
+		&i.Build,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getVCenterByID = `-- name: GetVCenterByID :one
-SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at FROM vcenters WHERE id = $1
+SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at FROM vcenters WHERE id = $1
 `
 
 func (q *Queries) GetVCenterByID(ctx context.Context, id pgtype.UUID) (Vcenter, error) {
@@ -27,12 +173,21 @@ func (q *Queries) GetVCenterByID(ctx context.Context, id pgtype.UUID) (Vcenter, 
 		&i.Build,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getVCenterByURL = `-- name: GetVCenterByURL :one
-SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at FROM vcenters WHERE api_url = $1
+SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at FROM vcenters WHERE api_url = $1
 `
 
 func (q *Queries) GetVCenterByURL(ctx context.Context, apiUrl string) (Vcenter, error) {
@@ -47,12 +202,90 @@ func (q *Queries) GetVCenterByURL(ctx context.Context, apiUrl string) (Vcenter, 
 		&i.Build,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
+const insertCollectorTarget = `-- name: InsertCollectorTarget :one
+INSERT INTO collector_targets (vcenter_id, enabled)
+VALUES ($1, $2)
+ON CONFLICT (vcenter_id) DO UPDATE
+SET enabled = EXCLUDED.enabled,
+    updated_at = NOW()
+RETURNING id, vcenter_id, enabled, created_at, updated_at
+`
+
+type InsertCollectorTargetParams struct {
+	VcenterID pgtype.UUID
+	Enabled   bool
+}
+
+func (q *Queries) InsertCollectorTarget(ctx context.Context, arg InsertCollectorTargetParams) (CollectorTarget, error) {
+	row := q.db.QueryRow(ctx, insertCollectorTarget, arg.VcenterID, arg.Enabled)
+	var i CollectorTarget
+	err := row.Scan(
+		&i.ID,
+		&i.VcenterID,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listActiveVCenters = `-- name: ListActiveVCenters :many
+SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at FROM vcenters WHERE deleted_at IS NULL ORDER BY name ASC
+`
+
+func (q *Queries) ListActiveVCenters(ctx context.Context) ([]Vcenter, error) {
+	rows, err := q.db.Query(ctx, listActiveVCenters)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Vcenter
+	for rows.Next() {
+		var i Vcenter
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ApiUrl,
+			&i.InstanceUuid,
+			&i.Version,
+			&i.Build,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProductVersion,
+			&i.ApiVersion,
+			&i.Capabilities,
+			&i.TlsSettings,
+			&i.CredentialRef,
+			&i.Status,
+			&i.Priority,
+			&i.Enabled,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVCenters = `-- name: ListVCenters :many
-SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at FROM vcenters ORDER BY name ASC
+SELECT id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at FROM vcenters ORDER BY name ASC
 `
 
 func (q *Queries) ListVCenters(ctx context.Context) ([]Vcenter, error) {
@@ -73,6 +306,15 @@ func (q *Queries) ListVCenters(ctx context.Context) ([]Vcenter, error) {
 			&i.Build,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProductVersion,
+			&i.ApiVersion,
+			&i.Capabilities,
+			&i.TlsSettings,
+			&i.CredentialRef,
+			&i.Status,
+			&i.Priority,
+			&i.Enabled,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -84,6 +326,84 @@ func (q *Queries) ListVCenters(ctx context.Context) ([]Vcenter, error) {
 	return items, nil
 }
 
+const softDeleteVCenter = `-- name: SoftDeleteVCenter :exec
+UPDATE vcenters
+SET deleted_at = NOW(),
+    enabled = false,
+    status = 'DECOMMISSIONED',
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteVCenter(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteVCenter, id)
+	return err
+}
+
+const tombstoneVCenterVMs = `-- name: TombstoneVCenterVMs :exec
+UPDATE virtual_machines
+SET deleted_at = NOW()
+WHERE vcenter_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) TombstoneVCenterVMs(ctx context.Context, vcenterID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, tombstoneVCenterVMs, vcenterID)
+	return err
+}
+
+const updateVCenter = `-- name: UpdateVCenter :one
+UPDATE vcenters
+SET name = COALESCE($2, name),
+    enabled = COALESCE($3, enabled),
+    priority = COALESCE($4, priority),
+    credential_ref = COALESCE($5, credential_ref),
+    tls_settings = COALESCE($6, tls_settings),
+    updated_at = NOW()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at
+`
+
+type UpdateVCenterParams struct {
+	ID            pgtype.UUID
+	Name          string
+	Enabled       bool
+	Priority      int32
+	CredentialRef string
+	TlsSettings   []byte
+}
+
+func (q *Queries) UpdateVCenter(ctx context.Context, arg UpdateVCenterParams) (Vcenter, error) {
+	row := q.db.QueryRow(ctx, updateVCenter,
+		arg.ID,
+		arg.Name,
+		arg.Enabled,
+		arg.Priority,
+		arg.CredentialRef,
+		arg.TlsSettings,
+	)
+	var i Vcenter
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ApiUrl,
+		&i.InstanceUuid,
+		&i.Version,
+		&i.Build,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const upsertVCenter = `-- name: UpsertVCenter :one
 INSERT INTO vcenters (name, api_url, instance_uuid, version, build, updated_at)
 VALUES ($1, $2, $3, $4, $5, NOW())
@@ -93,7 +413,7 @@ SET name = EXCLUDED.name,
     version = EXCLUDED.version,
     build = EXCLUDED.build,
     updated_at = NOW()
-RETURNING id, name, api_url, instance_uuid, version, build, created_at, updated_at
+RETURNING id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at
 `
 
 type UpsertVCenterParams struct {
@@ -122,6 +442,15 @@ func (q *Queries) UpsertVCenter(ctx context.Context, arg UpsertVCenterParams) (V
 		&i.Build,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
 	)
 	return i, err
 }

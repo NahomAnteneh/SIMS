@@ -82,6 +82,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/folders", h.handleListFolders)
 	mux.HandleFunc("GET /v1/folders/{id}", h.handleGetFolderByID)
 	mux.HandleFunc("GET /v1/folders/{id}/vms", h.handleListTopologyVMs("folder"))
+
+	// vCenter Management & Auditing
+	mux.HandleFunc("POST /v1/vcenters/test-connection", h.handleTestVCenterConnection)
+	mux.HandleFunc("GET /v1/vcenters", h.handleListVCenters)
+	mux.HandleFunc("POST /v1/vcenters", h.handleCreateVCenter)
+	mux.HandleFunc("GET /v1/vcenters/{id}", h.handleGetVCenter)
+	mux.HandleFunc("PATCH /v1/vcenters/{id}", h.handleUpdateVCenter)
+	mux.HandleFunc("DELETE /v1/vcenters/{id}", h.handleDeleteVCenter)
+	mux.HandleFunc("POST /v1/vcenters/{id}/resync", h.handleResyncVCenter)
+	mux.HandleFunc("GET /v1/audit-events", h.handleListAuditEvents)
 }
 
 // ErrorResponse represents a standardized API error shape.
@@ -102,9 +112,13 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, errTitle, errMsg
 }
 
 func (h *Handler) writeProblem(w http.ResponseWriter, status int, title, detail, code string) {
+	h.writeProblemWithDetails(w, status, title, detail, code, nil)
+}
+
+func (h *Handler) writeProblemWithDetails(w http.ResponseWriter, status int, title, detail, code string, details map[string]any) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	payload := map[string]any{
 		"type":       "about:blank",
 		"title":      title,
 		"status":     status,
@@ -113,7 +127,11 @@ func (h *Handler) writeProblem(w http.ResponseWriter, status int, title, detail,
 		"error_code": code,
 		"error":      title,
 		"message":    detail,
-	})
+	}
+	for k, v := range details {
+		payload[k] = v
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 // VMListItem represents a VM entry in list pagination responses.
