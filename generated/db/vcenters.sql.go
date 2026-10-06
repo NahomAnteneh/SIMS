@@ -221,7 +221,7 @@ VALUES ($1, $2)
 ON CONFLICT (vcenter_id) DO UPDATE
 SET enabled = EXCLUDED.enabled,
     updated_at = NOW()
-RETURNING id, vcenter_id, enabled, created_at, updated_at
+RETURNING id, vcenter_id, enabled, created_at, updated_at, priority, limits, concurrency_policy
 `
 
 type InsertCollectorTargetParams struct {
@@ -238,6 +238,9 @@ func (q *Queries) InsertCollectorTarget(ctx context.Context, arg InsertCollector
 		&i.Enabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Priority,
+		&i.Limits,
+		&i.ConcurrencyPolicy,
 	)
 	return i, err
 }

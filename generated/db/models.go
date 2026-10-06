@@ -56,11 +56,14 @@ type CollectorState struct {
 }
 
 type CollectorTarget struct {
-	ID        pgtype.UUID
-	VcenterID pgtype.UUID
-	Enabled   bool
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	ID                pgtype.UUID
+	VcenterID         pgtype.UUID
+	Enabled           bool
+	CreatedAt         pgtype.Timestamptz
+	UpdatedAt         pgtype.Timestamptz
+	Priority          int32
+	Limits            []byte
+	ConcurrencyPolicy []byte
 }
 
 type Datacenter struct {

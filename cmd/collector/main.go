@@ -5,21 +5,20 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/collector"
 	"github.com/infrastructure/sims/internal/config"
-	"github.com/infrastructure/sims/internal/domain"
 	"github.com/infrastructure/sims/internal/logging"
 	"github.com/infrastructure/sims/internal/persistence"
 	"github.com/infrastructure/sims/internal/server"
 	"github.com/infrastructure/sims/internal/vsphere"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	cfg := config.LoadCollectorConfig()
@@ -44,8 +43,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// S1 sizing guidelines from docs/database.md:
-	// collector_rw pool: max 10 connections, min 2 connections, max conn lifetime 1 hour
 	poolCfg.MaxConns = 10
 	poolCfg.MinConns = 2
 	poolCfg.MaxConnLifetime = time.Hour
@@ -68,142 +65,112 @@ func main() {
 		return nil
 	})
 
-	var initialSyncDone atomic.Bool
-	srv.AddReadinessCheck("inventory_synced", func(_ context.Context) error {
-		if !initialSyncDone.Load() {
-			return fmt.Errorf("initial inventory sync in progress")
-		}
+	queries := db.New(pool)
+	persister := persistence.NewBulkPersister(pool, persistence.WriterConfig{}, srv.Metrics)
+
+	// Lease Coordinator (S4.2)
+	leaseCoord := collector.NewLeaseCoordinator(pool, queries, collector.LeaseConfig{
+		LeaseTTL:          30 * time.Second,
+		HeartbeatInterval: 10 * time.Second,
+	}, logger)
+
+	// Target Assignment FSM (S4.3)
+	targetFSM := collector.NewTargetFSM(queries, logger)
+
+	// PostgreSQL LISTEN/NOTIFY Listener (S4.4)
+	listener := collector.NewPostgresListener(cfg.DatabaseURL, 60*time.Second, logger)
+
+	// Concurrency Limiter & Rate Budgets (S4.5)
+	limiter := collector.NewConcurrencyRegistry(2, 10, 4)
+
+	// Fleet Manager (S4.5)
+	fleet := collector.NewFleetManager(
+		pool,
+		queries,
+		leaseCoord,
+		targetFSM,
+		listener,
+		limiter,
+		persister,
+		collector.FleetConfig{
+			WorkerID:               leaseCoord.WorkerID(),
+			DefaultVCenterUsername: cfg.VCenterUsername,
+			DefaultVCenterPassword: cfg.VCenterPassword,
+			DefaultInsecureTLS:     cfg.InsecureTLS,
+		},
+		srv.Metrics,
+		logger,
+	)
+
+	srv.AddReadinessCheck("fleet_coordinator", func(_ context.Context) error {
 		return nil
 	})
 
-	// Background worker loop
-	go func() {
-		sessCfg := vsphere.SessionConfig{
-			URL:            cfg.VCenterURL,
-			Username:       cfg.VCenterUsername,
-			Password:       cfg.VCenterPassword,
-			Insecure:       cfg.InsecureTLS,
-			RequestTimeout: 30 * time.Second,
-		}
-		session, err := vsphere.NewSessionManager(sessCfg)
-		if err != nil {
-			logger.Error("failed to configure vCenter session manager", slog.String("error", err.Error()))
-			return
-		}
-
-		logger.Info("connecting to vCenter session manager")
-		if err := session.Connect(ctx); err != nil {
-			logger.Error("failed to connect to vCenter", slog.String("error", err.Error()))
-			return
-		}
-		if err := session.Login(ctx); err != nil {
-			logger.Error("failed to login to vCenter", slog.String("error", err.Error()))
-			return
-		}
-		defer func() {
-			logoutCtx, logoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer logoutCancel()
-			_ = session.Logout(logoutCtx)
-		}()
-
-		client := session.Client()
-		about := client.ServiceContent.About
-
-		// Upsert vCenter record
-		var vcenterID string
-		err = pool.QueryRow(ctx, `
-			INSERT INTO vcenters (name, api_url, instance_uuid)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (api_url) DO UPDATE
-			SET name = EXCLUDED.name, instance_uuid = EXCLUDED.instance_uuid, updated_at = NOW()
-			RETURNING id::text
-		`, about.FullName, cfg.VCenterURL, about.InstanceUuid).Scan(&vcenterID)
-		if err != nil {
-			logger.Error("failed to upsert vcenter entity", slog.String("error", err.Error()))
-			return
-		}
-
-		logger.Info("vCenter entity established",
-			slog.String("vcenter_id", vcenterID),
-			slog.String("instance_uuid", about.InstanceUuid),
-			slog.String("name", about.FullName),
-		)
-
-		hydrator := collector.NewHydrator(session, collector.HydratorConfig{MaxObjects: 500})
-		tagFetcher := collector.NewRestTagFetcher(
-			client.Client,
-			vcenterID,
-			collector.TagFetcherConfig{Timeout: 15 * time.Second, BatchSize: 500},
-			srv.Metrics,
-		)
-		if err := tagFetcher.Init(ctx, session.UserInfo()); err != nil {
-			logger.Warn("tagging REST service unavailable; proceeding with tags degraded", slog.String("error", err.Error()))
-		} else {
-			logger.Info("tagging REST service initialized successfully")
-		}
-		defer func() {
-			logoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = tagFetcher.Close(logoutCtx)
-		}()
-		hydrator.SetTagFetcher(tagFetcher)
-
-		persister := persistence.NewBulkPersister(pool, persistence.WriterConfig{}, srv.Metrics)
-
-		runSync := func() {
-			syncStart := time.Now()
-			logger.Info("starting topology hydration sync", slog.String("vcenter_id", vcenterID))
-
-			snap, err := hydrator.HydrateTopology(ctx, vcenterID)
+	// Bootstrap single-vCenter configuration if provided in environment
+	if cfg.VCenterURL != "" {
+		go func() {
+			sessCfg := vsphere.SessionConfig{
+				URL:            cfg.VCenterURL,
+				Username:       cfg.VCenterUsername,
+				Password:       cfg.VCenterPassword,
+				Insecure:       cfg.InsecureTLS,
+				RequestTimeout: 30 * time.Second,
+			}
+			session, err := vsphere.NewSessionManager(sessCfg)
 			if err != nil {
-				logger.Error("topology hydration failed", slog.String("error", err.Error()))
+				logger.Warn("bootstrap session config failed", slog.String("error", err.Error()))
 				return
 			}
-
-			if err := persister.PersistTopology(ctx, snap); err != nil {
-				logger.Error("topology persistence failed", slog.String("error", err.Error()))
+			if err := session.Connect(ctx); err != nil {
+				logger.Warn("bootstrap vCenter connect failed", slog.String("error", err.Error()))
 				return
 			}
-			logger.Info("topology persisted successfully")
+			if err := session.Login(ctx); err != nil {
+				logger.Warn("bootstrap vCenter login failed", slog.String("error", err.Error()))
+				return
+			}
+			defer func() {
+				logoutCtx, logoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer logoutCancel()
+				_ = session.Logout(logoutCtx)
+			}()
 
-			totalVMs := 0
-			err = hydrator.HydrateInventory(ctx, vcenterID, snap, func(batch []domain.VMRecord) error {
-				persisted, err := persister.PersistVMBatch(ctx, batch)
-				if err != nil {
-					return err
-				}
-				totalVMs += persisted
-				return nil
-			})
+			about := session.Client().ServiceContent.About
+			var vcenterID string
+			err = pool.QueryRow(ctx, `
+				INSERT INTO vcenters (name, api_url, instance_uuid, product_version, api_version, build)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (api_url) DO UPDATE
+				SET name = EXCLUDED.name, instance_uuid = EXCLUDED.instance_uuid, updated_at = NOW()
+				RETURNING id::text
+			`, about.FullName, cfg.VCenterURL, about.InstanceUuid, about.Version, about.ApiVersion, about.Build).Scan(&vcenterID)
 			if err != nil {
-				logger.Error("inventory hydration failed", slog.String("error", err.Error()))
+				logger.Warn("failed to upsert bootstrap vcenter record", slog.String("error", err.Error()))
 				return
 			}
 
-			initialSyncDone.Store(true)
-			logger.Info("inventory hydration and persistence complete",
-				slog.Int("total_vms", totalVMs),
-				slog.Duration("duration", time.Since(syncStart)),
-			)
-		}
-
-		// Initial sync
-		runSync()
-
-		// Periodic sync if configured
-		if cfg.SyncInterval > 0 {
-			ticker := time.NewTicker(cfg.SyncInterval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					runSync()
-				}
+			_, err = pool.Exec(ctx, `
+				INSERT INTO collector_targets (vcenter_id, enabled)
+				VALUES ($1::uuid, true)
+				ON CONFLICT (vcenter_id) DO NOTHING
+			`, vcenterID)
+			if err != nil {
+				logger.Warn("failed to insert bootstrap collector target", slog.String("error", err.Error()))
+				return
 			}
-		}
+			logger.Info("bootstrap vCenter target registered in target registry", slog.String("vcenter_id", vcenterID))
+		}()
+	}
+
+	// Start Fleet Manager
+	if err := fleet.Start(ctx); err != nil {
+		logger.Error("failed to start fleet manager", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stopCancel()
+		_ = fleet.Stop(stopCtx)
 	}()
 
 	if err := srv.Run(); err != nil {

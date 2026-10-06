@@ -127,17 +127,19 @@ type UpdateVCenterRequest struct {
 }
 
 type VCenterResponse struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	Host         string            `json:"host"`
-	Port         int               `json:"port"`
-	Version      VCenterVersion    `json:"version"`
-	Capabilities map[string]string `json:"capabilities"`
-	Enabled      bool              `json:"enabled"`
-	Status       string            `json:"status"`
-	Priority     int               `json:"priority"`
-	CreatedAt    string            `json:"created_at"`
-	UpdatedAt    string            `json:"updated_at"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Host           string            `json:"host"`
+	Port           int               `json:"port"`
+	Version        VCenterVersion    `json:"version"`
+	Capabilities   map[string]string `json:"capabilities"`
+	Enabled        bool              `json:"enabled"`
+	Status         string            `json:"status"`
+	Priority       int               `json:"priority"`
+	OwningWorkerID *string           `json:"owning_worker_id,omitempty"`
+	LastSyncAt     *string           `json:"last_sync_at,omitempty"`
+	CreatedAt      string            `json:"created_at"`
+	UpdatedAt      string            `json:"updated_at"`
 }
 
 type VCenterListResponse struct {
@@ -184,6 +186,35 @@ func (h *Handler) recordAudit(ctx context.Context, actor, action, targetID, outc
 	})
 	if err != nil {
 		h.logger.Warn("failed to record audit event", slog.String("action", action), slog.String("error", err.Error()))
+	}
+}
+
+const vcenterEventsChannel = "sims_vcenter_events"
+
+type vcenterEventPayload struct {
+	VCenterID string `json:"vcenter_id"`
+	Action    string `json:"action"`
+}
+
+func (h *Handler) notifyVCenterEvent(ctx context.Context, vcenterID, action string) {
+	if h.pool == nil {
+		return
+	}
+	payload, err := json.Marshal(vcenterEventPayload{
+		VCenterID: vcenterID,
+		Action:    action,
+	})
+	if err != nil {
+		return
+	}
+	_, err = h.pool.Exec(ctx, "SELECT pg_notify($1, $2)", vcenterEventsChannel, string(payload))
+	if err != nil {
+		h.logger.Warn("failed to send pg_notify for vcenter event",
+			slog.String("channel", vcenterEventsChannel),
+			slog.String("vcenter_id", vcenterID),
+			slog.String("action", action),
+			slog.String("error", err.Error()),
+		)
 	}
 }
 
@@ -420,6 +451,7 @@ func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 		"port":    port,
 		"version": valResult.ProductVersion,
 	})
+	h.notifyVCenterEvent(r.Context(), vcIDStr, "create")
 
 	resp := formatVCenterResponse(newVC, req.Host, port)
 
@@ -444,7 +476,7 @@ func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleListVCenters(w http.ResponseWriter, r *http.Request) {
 	id, ok := auth.FromContext(r.Context())
 
-	vcs, err := h.queries.ListActiveVCenters(r.Context())
+	vcs, err := h.queries.ListActiveVCentersWithCollectorDetails(r.Context())
 	if err != nil {
 		h.logger.Error("failed to list vCenters", slog.String("error", err.Error()))
 		h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "Failed to retrieve vCenters", "internal_error")
@@ -460,8 +492,12 @@ func (h *Handler) handleListVCenters(w http.ResponseWriter, r *http.Request) {
 		if ok && !id.CanAccessVCenter(parsedID) {
 			continue
 		}
-		host, port := parseHostPortFromURL(vc.ApiUrl)
-		items = append(items, formatVCenterResponse(vc, host, port))
+		items = append(items, formatVCenterDetailsResponse(
+			vc.ID, vc.Name, vc.ApiUrl, vc.ProductVersion, vc.ApiVersion, vc.Build,
+			vc.Capabilities, vc.Enabled, vc.Status, vc.Priority,
+			vc.CreatedAt, vc.UpdatedAt,
+			vc.HolderID, vc.CollectorStatus, vc.LastSyncAt,
+		))
 	}
 
 	h.writeJSON(w, http.StatusOK, VCenterListResponse{Items: items})
@@ -484,7 +520,7 @@ func (h *Handler) handleGetVCenter(w http.ResponseWriter, r *http.Request) {
 
 	pgUUID := pgtype.UUID{Bytes: parsedUUID, Valid: true}
 
-	vc, err := h.queries.GetActiveVCenterByID(r.Context(), pgUUID)
+	vc, err := h.queries.GetVCenterCollectorDetails(r.Context(), pgUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			h.writeProblem(w, http.StatusNotFound, "Not Found", "vCenter not found", "not_found")
@@ -495,8 +531,13 @@ func (h *Handler) handleGetVCenter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, port := parseHostPortFromURL(vc.ApiUrl)
-	h.writeJSON(w, http.StatusOK, formatVCenterResponse(vc, host, port))
+	resp := formatVCenterDetailsResponse(
+		vc.ID, vc.Name, vc.ApiUrl, vc.ProductVersion, vc.ApiVersion, vc.Build,
+		vc.Capabilities, vc.Enabled, vc.Status, vc.Priority,
+		vc.CreatedAt, vc.UpdatedAt,
+		vc.HolderID, vc.CollectorStatus, vc.LastSyncAt,
+	)
+	h.writeJSON(w, http.StatusOK, resp)
 }
 
 // PATCH /v1/vcenters/{id}
@@ -587,6 +628,11 @@ func (h *Handler) handleUpdateVCenter(w http.ResponseWriter, r *http.Request) {
 		"name":    name,
 		"enabled": enabled,
 	})
+	updateAction := "update"
+	if req.Enabled != nil && !*req.Enabled {
+		updateAction = "disable"
+	}
+	h.notifyVCenterEvent(r.Context(), idStr, updateAction)
 
 	host, port := parseHostPortFromURL(updatedVC.ApiUrl)
 	h.writeJSON(w, http.StatusOK, formatVCenterResponse(updatedVC, host, port))
@@ -622,6 +668,7 @@ func (h *Handler) handleDeleteVCenter(w http.ResponseWriter, r *http.Request) {
 	h.recordAudit(r.Context(), actor, "vcenter.delete", idStr, "success", "", map[string]any{
 		"vcenter_id": idStr,
 	})
+	h.notifyVCenterEvent(r.Context(), idStr, "delete")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -657,6 +704,7 @@ func (h *Handler) handleResyncVCenter(w http.ResponseWriter, r *http.Request) {
 	h.recordAudit(r.Context(), actor, "vcenter.resync", idStr, "accepted", "", map[string]any{
 		"name": vc.Name,
 	})
+	h.notifyVCenterEvent(r.Context(), idStr, "resync")
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -738,39 +786,76 @@ func parsePgUUID(s string) (pgtype.UUID, error) {
 	return pgtype.UUID{Bytes: parsed, Valid: true}, nil
 }
 
-func formatVCenterResponse(vc db.Vcenter, host string, port int) VCenterResponse {
+func formatVCenterDetailsResponse(
+	id pgtype.UUID, name string, apiURL string, prodVer, apiVer, build string,
+	capabilities []byte, enabled bool, status string, priority int32,
+	createdAt, updatedAt pgtype.Timestamptz,
+	holderID pgtype.Text, collectorStatus pgtype.Text, lastSyncAt pgtype.Timestamptz,
+) VCenterResponse {
 	var caps map[string]string
-	if len(vc.Capabilities) > 0 {
-		_ = json.Unmarshal(vc.Capabilities, &caps)
+	if len(capabilities) > 0 {
+		_ = json.Unmarshal(capabilities, &caps)
 	}
 	if caps == nil {
 		caps = map[string]string{"tags": "unavailable"}
 	}
 
-	createdAt := ""
-	if vc.CreatedAt.Valid {
-		createdAt = vc.CreatedAt.Time.Format(time.RFC3339)
+	createdAtStr := ""
+	if createdAt.Valid {
+		createdAtStr = createdAt.Time.Format(time.RFC3339)
 	}
-	updatedAt := ""
-	if vc.UpdatedAt.Valid {
-		updatedAt = vc.UpdatedAt.Time.Format(time.RFC3339)
+	updatedAtStr := ""
+	if updatedAt.Valid {
+		updatedAtStr = updatedAt.Time.Format(time.RFC3339)
 	}
 
+	effectiveStatus := status
+	if collectorStatus.Valid && collectorStatus.String != "" {
+		effectiveStatus = collectorStatus.String
+	}
+	if !enabled {
+		effectiveStatus = "DISABLED"
+	}
+
+	var owningWorker *string
+	if holderID.Valid && holderID.String != "" {
+		owningWorker = &holderID.String
+	}
+
+	var lastSyncStr *string
+	if lastSyncAt.Valid {
+		s := lastSyncAt.Time.Format(time.RFC3339)
+		lastSyncStr = &s
+	}
+
+	host, port := parseHostPortFromURL(apiURL)
+
 	return VCenterResponse{
-		ID:   uuidFromPg(vc.ID),
-		Name: vc.Name,
+		ID:   uuidFromPg(id),
+		Name: name,
 		Host: host,
 		Port: port,
 		Version: VCenterVersion{
-			Product: vc.ProductVersion,
-			API:     vc.ApiVersion,
-			Build:   vc.Build,
+			Product: prodVer,
+			API:     apiVer,
+			Build:   build,
 		},
-		Capabilities: caps,
-		Enabled:      vc.Enabled,
-		Status:       vc.Status,
-		Priority:     int(vc.Priority),
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		Capabilities:   caps,
+		Enabled:        enabled,
+		Status:         effectiveStatus,
+		Priority:       int(priority),
+		OwningWorkerID: owningWorker,
+		LastSyncAt:     lastSyncStr,
+		CreatedAt:      createdAtStr,
+		UpdatedAt:      updatedAtStr,
 	}
+}
+
+func formatVCenterResponse(vc db.Vcenter, host string, port int) VCenterResponse {
+	return formatVCenterDetailsResponse(
+		vc.ID, vc.Name, vc.ApiUrl, vc.ProductVersion, vc.ApiVersion, vc.Build,
+		vc.Capabilities, vc.Enabled, vc.Status, vc.Priority,
+		vc.CreatedAt, vc.UpdatedAt,
+		pgtype.Text{}, pgtype.Text{}, pgtype.Timestamptz{},
+	)
 }

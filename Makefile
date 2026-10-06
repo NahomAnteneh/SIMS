@@ -10,6 +10,7 @@ GOVULNCHECK := $(BIN_DIR)/govulncheck
 
 .PHONY: all help format lint test test-unit test-race build clean
 .PHONY: sqlc-generate sqlc-verify test-migration test-db-integration test-vcsim-integration
+.PHONY: test-gate-s4 test-scale-s4 demo-s4
 .PHONY: vulncheck container-build dev-up dev-down dev-reset tools
 
 all: help
@@ -80,6 +81,15 @@ demo-s3: tools ## Run Sprint 3 end-to-end demo (search, AST filter, keyset pagin
 
 test-gate-s3: tools ## Run Sprint 3 Test Gate (AST fuzzer, cursor tampering, SQL injection, scope bypass, SSRF, leak scan)
 	$(GO) test -v -tags=integration ./tests/integration -run TestGateS3
+
+demo-s4: tools ## Run Sprint 4 end-to-end demo (leases, takeover, xvMotion, reconciliation, scale)
+	./scripts/demo-s4.sh
+
+test-gate-s4: tools ## Run Sprint 4 Test Gate (worker takeover, lease race, xvMotion, differential reconciliation, tags, purger)
+	$(GO) test -v -tags=integration ./tests/integration -run TestGateS4
+
+test-scale-s4: tools ## Run Sprint 4 Scale Suite (3, 5, 10 vCenters multi-target scale simulation)
+	$(GO) test -v -tags=integration ./tests/integration -run TestScaleS4
 
 test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
 	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline
