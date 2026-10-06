@@ -1535,6 +1535,17 @@ components:
         status:
           type: string
           example: "PENDING_ASSIGNMENT"
+        priority:
+          type: integer
+          default: 100
+        owning_worker_id:
+          type: string
+          nullable: true
+          example: "worker-prod-1"
+        last_sync_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time

@@ -10,9 +10,9 @@
 
 | Phase | Story / Topic | Key Invariants & Guardrails | Verification Target | Status |
 |:---|:---|:---|:---|:---:|
-| **Phase A** | S4.1, S4.2, S4.3 Schema & Queries (`000013_leases_and_reconciliation.sql`, `leases.sql`, `collector.sql`) | Atomic lease claim/renewal/release with fencing version; collector state tracking; type-safe sqlc | `make test-migration && make sqlc-verify` | Pending |
-| **Phase A** | S4.2 Worker Lease Coordinator (`internal/collector/lease.go`) | Transactional row-locking; randomized heartbeat jitter; standby takeover; graceful release | `TestLeaseCoordinator` | Pending |
-| **Phase A** | S4.3 Target Assignment FSM (`internal/collector/target_fsm.go`, `internal/api/vcenters.go`) | FSM states (`AVAILABLE`, `ASSIGNED`, `RUNNING`, `DEGRADED`, `REASSIGNING`); `GET /v1/vcenters/{id}` exposes owner, status, last_sync | `TestTargetAssignmentFSM` | Pending |
+| **Phase A** | S4.1, S4.2, S4.3 Schema & Queries (`000013_leases_and_reconciliation.sql`, `leases.sql`, `collector.sql`) | Atomic lease claim/renewal/release with fencing version; collector state tracking; type-safe sqlc | `make test-migration && make sqlc-verify` | [x] Verified |
+| **Phase A** | S4.2 Worker Lease Coordinator (`internal/collector/lease.go`) | Transactional row-locking; randomized heartbeat jitter; standby takeover; graceful release | `TestLeaseCoordinator` | [x] Verified |
+| **Phase A** | S4.3 Target Assignment FSM (`internal/collector/target_fsm.go`, `internal/api/vcenters.go`) | FSM states (`AVAILABLE`, `ASSIGNED`, `RUNNING`, `DEGRADED`, `REASSIGNING`); `GET /v1/vcenters/{id}` exposes owner, status, last_sync | `TestTargetAssignmentFSM && TestVCentersAPI` | [x] Verified |
 | **Phase B** | S4.4 LISTEN/NOTIFY Integration (`internal/collector/listener.go`) | Dedicated `pgx.Conn` on `sims_vcenter_events`; API broadcasts on create/update/resync; 60s fallback periodic sweep | `TestPostgresListener` | Pending |
 | **Phase B** | S4.5 Fleet Manager & Limiter (`internal/collector/fleet.go`, `limiter.go`) | Dynamic target spawn/teardown; global hydration semaphore; per-vCenter API token bucket/semaphore | `TestFleetManager && TestConcurrencyLimiter` | Pending |
 | **Phase C** | S4.6 Differential Reconciliation (`internal/collector/reconciler.go`) | Lightweight identifier set math ($S_{db} \setminus S_{vc}$, $S_{vc} \setminus S_{db}$, $S_{db} \cap S_{vc}$); tombstoning; hydration enqueue; touch last seen | `TestDifferentialReconciler` | Pending |
