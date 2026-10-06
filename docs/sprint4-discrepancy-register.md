@@ -21,8 +21,8 @@
 | **Phase D** | S4.9 Tombstone Batch Purger (`internal/persistence/tombstone.go`) | Partial index on `deleted_at`; bounded batch deletes (`LIMIT`); rows purged and latency telemetry | `TestTombstonePurger` | [x] Verified |
 | **Phase E** | S4.10, S4.11 PostgreSQL HA & Runbooks (`docs/ha-runbook.md`, `docs/backup-restore-runbook.md`) | CloudNativePG / Patroni architecture; failover drill; WAL archival & base backup runbook; RTO/RPO measurement | Document Review & Drill Verification | [x] Verified |
 | **Phase E** | S4.12 Tag & Attribute Convergence (`internal/collector/tag_reconciler.go`) | Non-destructive tag reconciliation; drift resolution; never delete tags on fetch failure; alert on high drift | `TestTagReconciler` | [x] Verified |
-| **Phase F** | S4.13 Multi-Target Scale Suite (`tests/integration/scale_s4_test.go`) | 3, 5, 10 vCenter simulations; measure hydration concurrency, queue depth, DB writes, memory | `TestScaleS4` | Pending |
-| **Phase F** | S4.14 Sprint 4 Test Gate & Demo (`tests/integration/gate_s4_test.go`, `scripts/demo-s4.sh`) | Comprehensive test gates (`make test-gate-s4`) and automated end-to-end demo (`make demo-s4`) | `make test-gate-s4 && make demo-s4` | Pending |
+| **Phase F** | S4.13 Multi-Target Scale Suite (`tests/integration/scale_s4_test.go`) | 3, 5, 10 vCenter simulations; measure hydration concurrency, queue depth, DB writes, memory | `TestScaleS4` | [x] Verified |
+| **Phase F** | S4.14 Sprint 4 Test Gate & Demo (`tests/integration/gate_s4_test.go`, `scripts/demo-s4.sh`) | Comprehensive test gates (`make test-gate-s4`) and automated end-to-end demo (`make demo-s4`) | `make test-gate-s4 && make demo-s4` | [x] Verified |
 
 ---
 
