@@ -849,6 +849,9 @@ components:
           type: string
           example: "/v1/vms/search"
         code:
+          type: integer
+          example: 400
+        error_code:
           type: string
           example: "invalid_filter"
         invalid_params:
