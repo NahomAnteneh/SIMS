@@ -90,6 +90,12 @@ demo-s4: tools ## Run Sprint 4 end-to-end demo (leases, takeover, xvMotion, reco
 test-gate-s4: tools ## Run Sprint 4 Test Gate (worker takeover, lease race, xvMotion, differential reconciliation, tags, purger)
 	$(GO) test -v -tags=integration ./tests/integration -run TestGateS4
 
+test-gate-s5: tools ## Run Sprint 5 Release Candidate Test Gate (v1.0.0 criteria)
+	$(GO) test -v -tags=integration ./tests/integration -run TestGateS5
+
+demo-s5: tools ## Run Sprint 5 End-to-End Demo Script
+	./scripts/demo-s5.sh
+
 test-scale-s4: tools ## Run Sprint 4 Scale Suite (3, 5, 10 vCenters multi-target scale simulation)
 	$(GO) test -v -tags=integration ./tests/integration -run TestScaleS4
 
@@ -112,9 +118,11 @@ vulncheck: tools ## Scan Go dependencies for known vulnerabilities
 	$(GOVULNCHECK) ./...
 
 container-build: ## Build production multi-stage container images for all services
-	docker build -f deploy/Dockerfile.collector -t sims-collector:0.1.0 .
-	docker build -f deploy/Dockerfile.query-api -t sims-query-api:0.1.0 .
-	docker build -f deploy/Dockerfile.web -t sims-web:0.1.0 ./web
+	docker build -f deploy/Dockerfile.collector -t sims-collector:1.0.0 .
+	docker build -f deploy/Dockerfile.query-api -t sims-query-api:1.0.0 .
+	docker build -f deploy/Dockerfile.migration -t sims-migration:1.0.0 .
+	docker build -f deploy/Dockerfile.web -t sims-web:1.0.0 ./web
+
 
 dev-up: ## Start the full local development stack with Docker Compose
 	docker compose -f deploy/docker-compose.yml up -d --build
