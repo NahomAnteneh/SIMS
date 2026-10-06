@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/infrastructure/sims/internal/api"
+	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/config"
 	"github.com/infrastructure/sims/internal/logging"
 	"github.com/infrastructure/sims/internal/server"
@@ -66,6 +67,22 @@ func main() {
 		corsMw := api.NewCORSMiddleware(cfg.CORSAllowedOrigins)
 		srv.Use(corsMw.Handler)
 		logger.Info("configured CORS middleware", slog.String("allowed_origins", cfg.CORSAllowedOrigins))
+	}
+
+	// Configure OIDC / JWT Authentication middleware
+	authCfg := auth.Config{
+		IssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
+		Audience:     os.Getenv("OIDC_AUDIENCE"),
+		JWKSURL:      os.Getenv("OIDC_JWKS_URL"),
+		AuthDisabled: os.Getenv("AUTH_ENABLED") == "false" || os.Getenv("OIDC_ISSUER_URL") == "",
+		Env:          os.Getenv("ENV"),
+	}
+	authenticator, err := auth.NewAuthenticator(ctx, authCfg)
+	if err == nil {
+		srv.Use(authenticator.Middleware)
+		logger.Info("configured authentication middleware", slog.Bool("auth_disabled", authCfg.AuthDisabled))
+	} else {
+		logger.Warn("failed to initialize authenticator", slog.String("error", err.Error()))
 	}
 
 	// Register API endpoints

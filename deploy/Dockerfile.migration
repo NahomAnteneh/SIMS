@@ -11,5 +11,6 @@ USER 10001:10001
 WORKDIR /migrations
 COPY --from=builder /go/bin/goose /usr/local/bin/goose
 COPY --chown=10001:10001 db/migrations /migrations
-ENTRYPOINT ["goose", "-dir", "/migrations", "postgres"]
+ENV GOOSE_DRIVER=postgres
+ENTRYPOINT ["goose", "-dir", "/migrations"]
 CMD ["up"]
