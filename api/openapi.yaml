@@ -646,6 +646,230 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListVMsResponse"
 
+  /v1/auth/login:
+    post:
+      summary: Local user authentication
+      description: Authenticate with username and password to obtain an HS256 Bearer JWT token.
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: Malformed request payload
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Invalid username or password
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /v1/users:
+    get:
+      summary: List provisioned users
+      description: Returns a list of provisioned users. Requires inventory-admin role.
+      operationId: listUsers
+      responses:
+        "200":
+          description: List of provisioned users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Insufficient privileges (requires inventory-admin)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    post:
+      summary: Create a new user
+      description: Provisions a new local user with specified role and optional tenant scoping. Requires inventory-admin role.
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: Validation error or weak password
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Insufficient privileges
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: Username already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /v1/users/{id}:
+    get:
+      summary: Get user details
+      description: Retrieve details for a specific user. Requires inventory-admin role.
+      operationId: getUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: User profile details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Insufficient privileges
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: User not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    patch:
+      summary: Update user password or metadata
+      description: Updates credentials for an existing user. Requires inventory-admin role.
+      operationId: updateUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Insufficient privileges
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: User not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    delete:
+      summary: Delete user
+      description: Deletes an existing user account. Requires inventory-admin role. Self-deletion is prevented.
+      operationId: deleteUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: User deleted successfully
+        "400":
+          description: Cannot delete own user account
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Insufficient privileges
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: User not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /v1/me:
     get:
       summary: Caller identity and authorization scope
@@ -1562,3 +1786,133 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/VCenterResponse"
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: admin123
+
+    LoginResponse:
+      type: object
+      required:
+        - token
+        - token_type
+        - expires_at
+        - user
+      properties:
+        token:
+          type: string
+          description: Signed HS256 JWT bearer token
+        token_type:
+          type: string
+          example: Bearer
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/UserResponse"
+
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          example: operator1
+        password:
+          type: string
+          format: password
+          minLength: 6
+          example: Password123!
+        email:
+          type: string
+          format: email
+          example: operator1@corp.local
+        role:
+          type: string
+          enum:
+            - inventory-admin
+            - viewer
+          default: viewer
+        allowed_vcenter_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        allowed_folder_paths:
+          type: array
+          items:
+            type: string
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 6
+
+    UserResponse:
+      type: object
+      required:
+        - id
+        - username
+        - role
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          example: operator1
+        email:
+          type: string
+          nullable: true
+          example: operator1@corp.local
+        role:
+          type: string
+          enum:
+            - inventory-admin
+            - viewer
+          example: viewer
+        allowed_vcenter_ids:
+          type: array
+          nullable: true
+          items:
+            type: string
+            format: uuid
+        allowed_folder_paths:
+          type: array
+          nullable: true
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    UserListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserResponse"
+
