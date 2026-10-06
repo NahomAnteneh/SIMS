@@ -67,9 +67,19 @@ securityContext:
 |:---|:---|:---|:---|
 | `PORT` | int | `8080` | HTTP API listen port |
 | `LOG_LEVEL` | string | `info` | Logging verbosity |
-| `DATABASE_URL` | string | **Required** | Read-only connection URL (`postgres://query_ro:pass@host:5432/sims?sslmode=verify-full`) |
-| `AUTH_ENABLED` | bool | `true` | Enforce JWT bearer authentication |
-| `JWT_PUBLIC_KEY` | string | Optional | PEM-encoded RSA/ECDSA public key or JWKS endpoint |
+| `DATABASE_URL` | string | **Required** | PostgreSQL connection URL |
+| `AUTH_ENABLED` | bool | `true` | Enforce authentication (local username/password, Bearer JWT, or OIDC) |
+| `JWT_SECRET` | string | Optional | HMAC-SHA256 signing secret for local JWT tokens |
+| `OIDC_ISSUER_URL` | string | Optional | Upstream OIDC provider URL (for Active Directory / enterprise SSO integration) |
+| `OIDC_AUDIENCE` | string | Optional | Expected JWT audience claim |
+
+### Default Credentials (Local Authentication Mode)
+When running without external Active Directory or OIDC integration, SIMS seeds a default bootstrap administrator account:
+- **Username:** `admin`
+- **Password:** `admin123`
+- **Role:** `inventory-admin`
+
+Passwords can be updated or new users provisioned via `POST /v1/users` and `PATCH /v1/users/{id}`.
 
 ---
 
