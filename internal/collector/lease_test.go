@@ -50,7 +50,7 @@ func createTestVCenterAndTarget(t *testing.T, pool *pgxpool.Pool) (uuid.UUID, uu
 	vcID := uuid.New()
 	targetID := uuid.New()
 
-	_, err := queries.CreateVCenter(ctx, db.CreateVCenterParams{
+	createdVC, err := queries.CreateVCenter(ctx, db.CreateVCenterParams{
 		Name:         fmt.Sprintf("vcenter-test-%s", vcID.String()[:8]),
 		ApiUrl:       fmt.Sprintf("https://vc-%s.local/sdk", vcID.String()[:8]),
 		Version:      "8.0.3",
@@ -69,15 +69,16 @@ func createTestVCenterAndTarget(t *testing.T, pool *pgxpool.Pool) (uuid.UUID, uu
 	var insertedTargetID pgtype.UUID
 	err = pool.QueryRow(ctx, `
 		INSERT INTO collector_targets (id, vcenter_id, enabled, priority)
-		VALUES ($1, (SELECT id FROM vcenters WHERE api_url = $2), true, 100)
+		VALUES ($1, $2, true, 100)
 		RETURNING id
-	`, pgtype.UUID{Bytes: targetID, Valid: true}, fmt.Sprintf("https://vc-%s.local/sdk", vcID.String()[:8])).Scan(&insertedTargetID)
+	`, pgtype.UUID{Bytes: targetID, Valid: true}, createdVC.ID).Scan(&insertedTargetID)
 	if err != nil {
 		t.Fatalf("failed to create test target: %v", err)
 	}
 
+	parsedVCID, _ := uuid.FromBytes(createdVC.ID.Bytes[:])
 	parsedTargetID, _ := uuid.FromBytes(insertedTargetID.Bytes[:])
-	return vcID, parsedTargetID
+	return parsedVCID, parsedTargetID
 }
 
 func cleanupTestTarget(pool *pgxpool.Pool, targetID uuid.UUID) {
