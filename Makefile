@@ -11,6 +11,7 @@ GOVULNCHECK := $(BIN_DIR)/govulncheck
 .PHONY: all help format lint test test-unit test-race build clean
 .PHONY: sqlc-generate sqlc-verify test-migration test-db-integration test-vcsim-integration
 .PHONY: test-gate-s4 test-scale-s4 demo-s4
+.PHONY: test-perf-query test-perf-ingest
 .PHONY: vulncheck container-build dev-up dev-down dev-reset tools
 
 all: help
@@ -91,6 +92,12 @@ test-gate-s4: tools ## Run Sprint 4 Test Gate (worker takeover, lease race, xvMo
 
 test-scale-s4: tools ## Run Sprint 4 Scale Suite (3, 5, 10 vCenters multi-target scale simulation)
 	$(GO) test -v -tags=integration ./tests/integration -run TestScaleS4
+
+test-perf-query: tools ## Run Sprint 5 Query Performance Gate (P99 <= 5ms target)
+	$(GO) test -v -tags=integration ./tests/integration -run TestQueryPerformanceGate
+
+test-perf-ingest: tools ## Run Sprint 5 Ingestion Performance Gate (batch write P95 <= 15ms, e2e P95 <= 250ms)
+	$(GO) test -v -tags=integration ./tests/integration -run TestIngestionPerformanceGate
 
 test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
 	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline

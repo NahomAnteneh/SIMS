@@ -589,7 +589,7 @@ func (r *WorkloadRunner) executeHTTPQuery(ctx context.Context, qType QueryType, 
 		reqBody, _ = json.Marshal(payload)
 	}
 
-	url := fmt.Sprintf("%s/v1/search", r.cfg.APIBaseURL)
+	url := fmt.Sprintf("%s/v1/vms/search", r.cfg.APIBaseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
 	if err != nil {
 		return err

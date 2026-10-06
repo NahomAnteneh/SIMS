@@ -152,29 +152,34 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 	for vcIdx := 0; vcIdx < g.cfg.VCenterCount; vcIdx++ {
 		vcID := uuid.New()
 		vcName := fmt.Sprintf("vcenter-perf-%02d.corp.local", vcIdx+1)
-		_, err := tx.Exec(ctx, `
+		var actualVCID uuid.UUID
+		err := tx.QueryRow(ctx, `
 			INSERT INTO vcenters (id, name, api_url, instance_uuid, version, build, product_version, api_version, credential_ref, status, enabled, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ASSIGNED', true, NOW(), NOW())
-			ON CONFLICT (id) DO NOTHING
-		`, vcID, vcName, fmt.Sprintf("https://%s/sdk", vcName), fmt.Sprintf("vc-uuid-%d", vcIdx+1), "8.0.3", "24022515", "8.0.3", "8.0.3.0", "ref-123")
+			ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+			RETURNING id
+		`, vcID, vcName, fmt.Sprintf("https://%s/sdk", vcName), fmt.Sprintf("vc-uuid-%d", vcIdx+1), "8.0.3", "24022515", "8.0.3", "8.0.3.0", "ref-123").Scan(&actualVCID)
 		if err != nil {
 			return nil, fmt.Errorf("failed inserting vcenter: %w", err)
 		}
-		meta.VCenterIDs = append(meta.VCenterIDs, vcID)
+		meta.VCenterIDs = append(meta.VCenterIDs, actualVCID)
 
 		// 2 Datacenters per vCenter
 		for dcIdx := 0; dcIdx < 2; dcIdx++ {
 			dcID := uuid.New()
 			dcMoRef := fmt.Sprintf("datacenter-%d-%d", vcIdx+1, dcIdx+1)
 			dcName := fmt.Sprintf("DC_%02d_%02d", vcIdx+1, dcIdx+1)
-			_, err := tx.Exec(ctx, `
+			var actualDCID uuid.UUID
+			err := tx.QueryRow(ctx, `
 				INSERT INTO datacenters (id, vcenter_id, moref, name, created_at, updated_at)
 				VALUES ($1, $2, $3, $4, NOW(), NOW())
-			`, dcID, vcID, dcMoRef, dcName)
+				ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
+				RETURNING id
+			`, dcID, actualVCID, dcMoRef, dcName).Scan(&actualDCID)
 			if err != nil {
 				return nil, fmt.Errorf("failed inserting datacenter: %w", err)
 			}
-			meta.DatacenterIDs = append(meta.DatacenterIDs, dcID)
+			meta.DatacenterIDs = append(meta.DatacenterIDs, actualDCID)
 
 			// Folder tree (ltree) - multiple tiers
 			folderTiers := []string{
@@ -194,26 +199,32 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 				fID := uuid.New()
 				fMoRef := fmt.Sprintf("group-v%d-%d-%d", vcIdx+1, dcIdx+1, fIdx+1)
 				fName := fPath[strings.LastIndex(fPath, ".")+1:]
-				_, err := tx.Exec(ctx, `
+				var actualFolderID uuid.UUID
+				err := tx.QueryRow(ctx, `
 					INSERT INTO inventory_folders (id, vcenter_id, moref, name, folder_type, parent_id, path, created_at, updated_at)
 					VALUES ($1, $2, $3, $4, 'vm', $5, $6::ltree, NOW(), NOW())
-				`, fID, vcID, fMoRef, fName, prevFolderID, fPath)
+					ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, path = EXCLUDED.path, updated_at = NOW()
+					RETURNING id
+				`, fID, actualVCID, fMoRef, fName, prevFolderID, fPath).Scan(&actualFolderID)
 				if err != nil {
 					return nil, fmt.Errorf("failed inserting folder %s: %w", fPath, err)
 				}
-				meta.FolderIDs = append(meta.FolderIDs, fID)
+				meta.FolderIDs = append(meta.FolderIDs, actualFolderID)
 				meta.FolderPaths = append(meta.FolderPaths, fPath)
-				folderCopy := fID
+				folderCopy := actualFolderID
 				prevFolderID = &folderCopy
 			}
 
 			// Distributed switch & portgroups
 			dvsID := uuid.New()
 			dvsMoRef := fmt.Sprintf("dvs-%d-%d", vcIdx+1, dcIdx+1)
-			_, err = tx.Exec(ctx, `
+			var actualDVSID uuid.UUID
+			err = tx.QueryRow(ctx, `
 				INSERT INTO distributed_switches (id, vcenter_id, datacenter_id, moref, name, created_at, updated_at)
 				VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-			`, dvsID, vcID, dcID, dvsMoRef, fmt.Sprintf("DVS-Core-%d-%d", vcIdx+1, dcIdx+1))
+				ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
+				RETURNING id
+			`, dvsID, actualVCID, actualDCID, dvsMoRef, fmt.Sprintf("DVS-Core-%d-%d", vcIdx+1, dcIdx+1)).Scan(&actualDVSID)
 			if err != nil {
 				return nil, fmt.Errorf("failed inserting dvs: %w", err)
 			}
@@ -228,28 +239,34 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 			for pgIdx, spec := range pgVLANSpecs {
 				pgID := uuid.New()
 				norm, _ := vlan.NormalizeSpec(spec)
-				_, err = tx.Exec(ctx, `
+				var actualPGID uuid.UUID
+				err = tx.QueryRow(ctx, `
 					INSERT INTO portgroups (id, vcenter_id, switch_id, moref, name, vlan_ids, created_at, updated_at)
 					VALUES ($1, $2, $3, $4, $5, $6::int4multirange, NOW(), NOW())
-				`, pgID, vcID, dvsID, fmt.Sprintf("dvportgroup-%d-%d-%d", vcIdx+1, dcIdx+1, pgIdx+1), fmt.Sprintf("PG-VLAN-%s", spec), norm)
+					ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, vlan_ids = EXCLUDED.vlan_ids, updated_at = NOW()
+					RETURNING id
+				`, pgID, actualVCID, actualDVSID, fmt.Sprintf("dvportgroup-%d-%d-%d", vcIdx+1, dcIdx+1, pgIdx+1), fmt.Sprintf("PG-VLAN-%s", spec), norm).Scan(&actualPGID)
 				if err != nil {
 					return nil, fmt.Errorf("failed inserting portgroup: %w", err)
 				}
-				meta.PortgroupIDs = append(meta.PortgroupIDs, pgID)
+				meta.PortgroupIDs = append(meta.PortgroupIDs, actualPGID)
 			}
 
 			// Networks
 			for netIdx := 0; netIdx < 2; netIdx++ {
 				netID := uuid.New()
 				norm, _ := vlan.NormalizeSpec("100-200")
-				_, err = tx.Exec(ctx, `
+				var actualNetID uuid.UUID
+				err = tx.QueryRow(ctx, `
 					INSERT INTO networks (id, vcenter_id, moref, name, vlan_ids, created_at, updated_at)
 					VALUES ($1, $2, $3, $4, $5::int4multirange, NOW(), NOW())
-				`, netID, vcID, fmt.Sprintf("network-%d-%d-%d", vcIdx+1, dcIdx+1, netIdx+1), fmt.Sprintf("VM-Network-%d-%d", dcIdx+1, netIdx+1), norm)
+					ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, vlan_ids = EXCLUDED.vlan_ids, updated_at = NOW()
+					RETURNING id
+				`, netID, actualVCID, fmt.Sprintf("network-%d-%d-%d", vcIdx+1, dcIdx+1, netIdx+1), fmt.Sprintf("VM-Network-%d-%d", dcIdx+1, netIdx+1), norm).Scan(&actualNetID)
 				if err != nil {
 					return nil, fmt.Errorf("failed inserting network: %w", err)
 				}
-				meta.NetworkIDs = append(meta.NetworkIDs, netID)
+				meta.NetworkIDs = append(meta.NetworkIDs, actualNetID)
 			}
 
 			// Datastores (fast NVMe, SAN, slow spinning)
@@ -257,14 +274,17 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 			for dsIdx, dsType := range dsTypes {
 				dsID := uuid.New()
 				dsMoRef := fmt.Sprintf("datastore-%d-%d-%d", vcIdx+1, dcIdx+1, dsIdx+1)
-				_, err = tx.Exec(ctx, `
+				var actualDSID uuid.UUID
+				err = tx.QueryRow(ctx, `
 					INSERT INTO datastores (id, vcenter_id, datacenter_id, moref, name, type, capacity_bytes, free_bytes, accessible, created_at, updated_at)
 					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
-				`, dsID, vcID, dcID, dsMoRef, fmt.Sprintf("DS-%s-%d-%d", dsType, dcIdx+1, dsIdx+1), dsType, int64(10995116277760), int64(5497558138880))
+					ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
+					RETURNING id
+				`, dsID, actualVCID, actualDCID, dsMoRef, fmt.Sprintf("DS-%s-%d-%d", dsType, dcIdx+1, dsIdx+1), dsType, int64(10995116277760), int64(5497558138880)).Scan(&actualDSID)
 				if err != nil {
 					return nil, fmt.Errorf("failed inserting datastore: %w", err)
 				}
-				meta.DatastoreIDs = append(meta.DatastoreIDs, dsID)
+				meta.DatastoreIDs = append(meta.DatastoreIDs, actualDSID)
 			}
 
 			// Clusters: 1 Large cluster + 2 Small clusters
@@ -280,15 +300,18 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 			for cIdx, cCfg := range clusterConfigs {
 				clusterID := uuid.New()
 				cMoRef := fmt.Sprintf("domain-c%d-%d-%d", vcIdx+1, dcIdx+1, cIdx+1)
-				_, err = tx.Exec(ctx, `
+				var actualClusterID uuid.UUID
+				err = tx.QueryRow(ctx, `
 					INSERT INTO clusters (id, vcenter_id, datacenter_id, moref, name, created_at, updated_at)
 					VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-				`, clusterID, vcID, dcID, cMoRef, cCfg.name)
+					ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
+					RETURNING id
+				`, clusterID, actualVCID, actualDCID, cMoRef, cCfg.name).Scan(&actualClusterID)
 				if err != nil {
 					return nil, fmt.Errorf("failed inserting cluster: %w", err)
 				}
-				meta.ClusterIDs = append(meta.ClusterIDs, clusterID)
-				meta.ClusterDatacenter[clusterID] = dcID
+				meta.ClusterIDs = append(meta.ClusterIDs, actualClusterID)
+				meta.ClusterDatacenter[actualClusterID] = actualDCID
 
 				// Hosts per cluster: 16 for large, 4 for small
 				hostCount := 4
@@ -299,16 +322,19 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 					hostID := uuid.New()
 					hMoRef := fmt.Sprintf("host-%d-%d-%d-%d", vcIdx+1, dcIdx+1, cIdx+1, hIdx+1)
 					hName := fmt.Sprintf("esxi-%02d-%02d-%02d.corp.local", dcIdx+1, cIdx+1, hIdx+1)
-					_, err = tx.Exec(ctx, `
+					var actualHostID uuid.UUID
+					err = tx.QueryRow(ctx, `
 						INSERT INTO hosts (id, vcenter_id, cluster_id, datacenter_id, moref, name, connection_state, power_state, created_at, updated_at)
 						VALUES ($1, $2, $3, $4, $5, $6, 'connected', 'poweredOn', NOW(), NOW())
-					`, hostID, vcID, clusterID, dcID, hMoRef, hName)
+						ON CONFLICT (vcenter_id, moref) DO UPDATE SET name = EXCLUDED.name, updated_at = NOW()
+						RETURNING id
+					`, hostID, actualVCID, actualClusterID, actualDCID, hMoRef, hName).Scan(&actualHostID)
 					if err != nil {
 						return nil, fmt.Errorf("failed inserting host: %w", err)
 					}
-					meta.HostIDs = append(meta.HostIDs, hostID)
-					meta.HostCluster[hostID] = clusterID
-					meta.HostDatacenter[hostID] = dcID
+					meta.HostIDs = append(meta.HostIDs, actualHostID)
+					meta.HostCluster[actualHostID] = actualClusterID
+					meta.HostDatacenter[actualHostID] = actualDCID
 				}
 			}
 		}
