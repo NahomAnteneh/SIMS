@@ -632,11 +632,26 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			}
 		}
 
-		// COPY network interfaces
+		// COPY network interfaces via staging table to support int4multirange cast
 		if len(nicList) > 0 {
+			_, err = tx.Exec(ctx, `
+				CREATE TEMP TABLE staging_nics (
+					vm_id UUID NOT NULL,
+					device_key INT NOT NULL,
+					mac_address TEXT NOT NULL,
+					ip_address inet,
+					network_id UUID,
+					portgroup_id UUID,
+					vlan_ids TEXT
+				) ON COMMIT DROP;
+			`)
+			if err != nil {
+				return 0, fmt.Errorf("failed creating staging_nics: %w", err)
+			}
+
 			_, err = tx.CopyFrom(
 				ctx,
-				pgx.Identifier{"vm_network_interfaces"},
+				pgx.Identifier{"staging_nics"},
 				[]string{"vm_id", "device_key", "mac_address", "ip_address", "network_id", "portgroup_id", "vlan_ids"},
 				pgx.CopyFromSlice(len(nicList), func(i int) ([]any, error) {
 					n := nicList[i]
@@ -644,7 +659,18 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 				}),
 			)
 			if err != nil {
-				return 0, fmt.Errorf("bulk copy vm_network_interfaces failed: %w", err)
+				return 0, fmt.Errorf("bulk copy staging_nics failed: %w", err)
+			}
+
+			_, err = tx.Exec(ctx, `
+				INSERT INTO vm_network_interfaces (vm_id, device_key, mac_address, ip_address, network_id, portgroup_id, vlan_ids, created_at, updated_at)
+				SELECT vm_id, device_key, mac_address, ip_address, network_id, portgroup_id,
+					CASE WHEN vlan_ids IS NOT NULL AND vlan_ids != '' THEN vlan_ids::int4multirange ELSE NULL END,
+					NOW(), NOW()
+				FROM staging_nics;
+			`)
+			if err != nil {
+				return 0, fmt.Errorf("insert into vm_network_interfaces from staging failed: %w", err)
 			}
 		}
 

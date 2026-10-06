@@ -48,6 +48,7 @@ build: ## Build collector and query-api binaries into bin/
 	$(GO) build -o $(BIN_DIR)/collector ./cmd/collector
 	$(GO) build -o $(BIN_DIR)/query-api ./cmd/query-api
 	$(GO) build -o $(BIN_DIR)/vcenter-spike ./cmd/vcenter-spike
+	$(GO) build -o $(BIN_DIR)/dataset-gen ./cmd/dataset-gen
 
 sqlc-generate: tools ## Generate type-safe Go database code with sqlc
 	$(SQLC) generate
@@ -112,4 +113,4 @@ dev-reset: ## Stop local stack and purge persistent database and telemetry volum
 	docker compose -f deploy/docker-compose.yml down -v --remove-orphans
 
 clean: ## Remove build artifacts and temporary files
-	rm -rf bin/collector bin/query-api bin/vcenter-spike dist/ build/ coverage.txt
+	rm -rf bin/collector bin/query-api bin/vcenter-spike bin/dataset-gen dist/ build/ coverage.txt
