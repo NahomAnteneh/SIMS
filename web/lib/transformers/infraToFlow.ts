@@ -7,185 +7,247 @@ export interface BuildFlowParams {
   vms?: any[];
 }
 
-export function transformInfraToFlow(
-  params: BuildFlowParams = {}
-): { nodes: Node[]; edges: Edge[] } {
-  // 1. Safe default fallbacks to prevent crash on initial API load
-  const { datacenters = [], clusters = [], hosts = [] } = params;
+/** Layout and spacing configuration */
+const LAYOUT = {
+  CARD_WIDTH: 220,
+  HOST_GAP: 24,
+  CLUSTER_GAP: 48,
+  LEVEL_Y_GAP: 120,
+  DC_VERTICAL_SPACING: 140,
+  START_X: 50,
+  START_Y: 50,
+} as const;
 
+/** Helper to construct consistent React Flow nodes */
+function createInfraNode(params: {
+  id: string;
+  label: string;
+  type: "datacenter" | "cluster" | "host";
+  status?: string;
+  position: { x: number; y: number };
+}): Node {
+  return {
+    id: params.id,
+    type: "infraNode",
+    position: params.position,
+    data: {
+      label: params.label,
+      type: params.type,
+      status: params.status || "healthy",
+    },
+    sourcePosition: Position.Bottom,
+    targetPosition: Position.Top,
+  };
+}
+
+/** Helper to construct consistent React Flow edges */
+function createInfraEdge(params: {
+  source: string;
+  target: string;
+  animated?: boolean;
+  dashed?: boolean;
+}): Edge {
+  return {
+    id: `edge-${params.source}-${params.target}`,
+    source: params.source,
+    target: params.target,
+    animated: params.animated,
+    style: {
+      stroke: params.animated ? "#52525b" : "#3f3f46",
+      strokeWidth: 2,
+      ...(params.dashed ? { strokeDasharray: "4 4" } : {}),
+    },
+  };
+}
+
+/** Calculates total horizontal width for a cluster based on host count */
+function getClusterWidth(hostCount: number): number {
+  if (hostCount === 0) return LAYOUT.CARD_WIDTH;
+  return hostCount * LAYOUT.CARD_WIDTH + (hostCount - 1) * LAYOUT.HOST_GAP;
+}
+
+interface SubtreeResult {
+  nodes: Node[];
+  edges: Edge[];
+  nextY: number;
+}
+
+/** Lays out a single Datacenter and its clusters and hosts */
+function layoutDatacenterSubtree(
+  dc: any,
+  allClusters: any[],
+  allHosts: any[],
+  startY: number
+): SubtreeResult {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+  const dcNodeId = `dc-${dc.id}`;
 
-  // Expanded Spacing Configuration to prevent subtree collisions
-  const DC_X_OFFSET = 900; // Expanded horizontal distance between East/West DCs
-  const CLUSTER_Y_OFFSET = 240; // Vertical gap to Clusters
-  const HOST_Y_OFFSET = 180; // Vertical gap between stacked Hosts
-  const X_BRANCH_GAP = 380; // Horizontal gap between sibling clusters
+  // 1. Filter child clusters and standalone hosts
+  const childClusters = allClusters.filter(
+    (c) => c.datacenterId === dc.id || c.datacenterId === dc.siteCode
+  );
+  const standaloneHosts = allHosts.filter(
+    (h) =>
+      (!h.clusterId || h.clusterId === "") &&
+      (h.datacenterId === dc.id || h.datacenterId === dc.siteCode)
+  );
 
-  datacenters.forEach((dc, dcIndex) => {
-    const dcNodeId = `dc-${dc.id}`;
+  // 2. Measure cluster subtrees
+  const clusterLayouts = childClusters.map((cluster) => {
+    const clusterHosts = allHosts.filter((h) => h.clusterId === cluster.id);
+    return {
+      cluster,
+      hosts: clusterHosts,
+      width: getClusterWidth(clusterHosts.length),
+    };
+  });
 
-    // Alternate Datacenters East (+) and West (-) from center origin (X = 0)
-    const direction = dcIndex % 2 === 0 ? 1 : -1;
-    const pairGroup = Math.floor(dcIndex / 2);
-    const dcXPosition = direction * (pairGroup + 0.5) * DC_X_OFFSET;
-    const dcYPosition = 50;
+  const standaloneWidth = getClusterWidth(standaloneHosts.length);
+  const totalClustersWidth =
+    clusterLayouts.reduce((acc, c) => acc + c.width, 0) +
+    Math.max(0, clusterLayouts.length - 1) * LAYOUT.CLUSTER_GAP;
 
-    // 1. Add Datacenter Node
-    nodes.push({
+  const totalDcWidth = Math.max(
+    LAYOUT.CARD_WIDTH,
+    totalClustersWidth +
+      (standaloneWidth > 0 && totalClustersWidth > 0 ? LAYOUT.CLUSTER_GAP : 0) +
+      standaloneWidth
+  );
+
+  // 3. Datacenter Node (centered above clusters)
+  const dcX = LAYOUT.START_X + (totalDcWidth - LAYOUT.CARD_WIDTH) / 2;
+  const dcY = startY;
+
+  nodes.push(
+    createInfraNode({
       id: dcNodeId,
-      type: "infraNode",
-      position: { x: dcXPosition, y: dcYPosition },
-      data: {
-        label: dc.displayName || dc.name || "Datacenter",
-        sublabel: dc.location || "Datacenter Site",
-        type: "datacenter",
-        status: dc.status || "healthy",
-        metrics: {
-          hosts: dc.hostCount ?? 0,
-          vms: dc.vmCount ?? 0,
-          cpu: `${dc.usedCpuGHz ?? 0} / ${dc.totalCpuGHz ?? 0} GHz`,
-        },
-      },
-      sourcePosition: Position.Bottom,
-      targetPosition: Position.Top,
-    });
+      label: dc.displayName || dc.name || "Datacenter",
+      type: "datacenter",
+      status: dc.status,
+      position: { x: dcX, y: dcY },
+    })
+  );
 
-    // 2. Filter Clusters belonging STRICTLY to this Datacenter
-    const childClusters = clusters.filter(
-      (c) => c.datacenterId === dc.id || c.datacenterId === dc.siteCode
+  const clusterY = dcY + LAYOUT.LEVEL_Y_GAP;
+  const hostY = clusterY + LAYOUT.LEVEL_Y_GAP;
+  let currentX = LAYOUT.START_X;
+  let hasHosts = standaloneHosts.length > 0;
+
+  // 4. Place Clusters and their Hosts
+  clusterLayouts.forEach(({ cluster, hosts: clusterHosts, width }) => {
+    const clusterNodeId = `cluster-${cluster.id}`;
+    const clusterX = currentX + (width - LAYOUT.CARD_WIDTH) / 2;
+
+    nodes.push(
+      createInfraNode({
+        id: clusterNodeId,
+        label: cluster.name,
+        type: "cluster",
+        status: cluster.status,
+        position: { x: clusterX, y: clusterY },
+      })
     );
 
-    childClusters.forEach((cluster, clusterIndex) => {
-      const clusterNodeId = `cluster-${cluster.id}`;
-
-      // Spread clusters horizontally under parent DC
-      const clusterX =
-        dcXPosition +
-        (clusterIndex - (childClusters.length - 1) / 2) * X_BRANCH_GAP;
-      const clusterY = dcYPosition + CLUSTER_Y_OFFSET;
-
-      nodes.push({
-        id: clusterNodeId,
-        type: "infraNode",
-        position: { x: clusterX, y: clusterY },
-        data: {
-          label: cluster.name,
-          sublabel: `HA: ${cluster.haEnabled ? "ON" : "OFF"} | DRS: ${
-            cluster.drsEnabled ? "ON" : "OFF"
-          }`,
-          type: "cluster",
-          status: cluster.status || "healthy",
-          metrics: {
-            hosts: cluster.hostCount ?? 0,
-            vms: cluster.vmCount ?? 0,
-          },
-        },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top,
-      });
-
-      // Edge: Datacenter -> Cluster
-      edges.push({
-        id: `edge-${dcNodeId}-${clusterNodeId}`,
+    edges.push(
+      createInfraEdge({
         source: dcNodeId,
         target: clusterNodeId,
         animated: true,
-        style: { stroke: "#52525b", strokeWidth: 2 },
-      });
-
-      // 3. Filter Hosts belonging STRICTLY to this Cluster
-      // FIX: Removed `|| h.datacenterId === dc.id` to prevent host duplication!
-      const clusterHosts = hosts.filter((h) => h.clusterId === cluster.id);
-
-      // Stack Hosts VERTICALLY beneath their parent cluster
-      clusterHosts.forEach((host, hostIndex) => {
-        const hostNodeId = `host-${host.id}`;
-        const hostX = clusterX; // Aligned directly beneath parent cluster
-        const hostY = clusterY + CLUSTER_Y_OFFSET + hostIndex * HOST_Y_OFFSET;
-
-        nodes.push({
-          id: hostNodeId,
-          type: "infraNode",
-          position: { x: hostX, y: hostY },
-          data: {
-            label: host.name,
-            sublabel: host.ipAddress || "ESXi Host",
-            type: "host",
-            status: host.status || "healthy",
-            metrics: {
-              vms: host.vmCount ?? 0,
-              cpu: `${host.usedCpuGHz ?? 0} GHz`,
-            },
-          },
-          sourcePosition: Position.Bottom,
-          targetPosition: Position.Top,
-        });
-
-        // Vertical chain: Cluster -> Host 1 -> Host 2 -> Host 3
-        const sourceId =
-          hostIndex === 0 ? clusterNodeId : `host-${clusterHosts[hostIndex - 1].id}`;
-
-        edges.push({
-          id: `edge-${sourceId}-${hostNodeId}`,
-          source: sourceId,
-          target: hostNodeId,
-          style: { stroke: "#3f3f46", strokeWidth: 2 },
-        });
-      });
-    });
-
-    // 4. Standalone Hosts (Hosts in this DC without a cluster)
-    const standaloneHosts = hosts.filter(
-      (h) =>
-        (!h.clusterId || h.clusterId === "") &&
-        (h.datacenterId === dc.id || h.datacenterId === dc.siteCode)
+      })
     );
 
-    if (standaloneHosts.length > 0) {
-      const standaloneX =
-        dcXPosition +
-        (childClusters.length > 0
-          ? ((childClusters.length + 1) / 2) * X_BRANCH_GAP
-          : 0);
-
-      standaloneHosts.forEach((host, hostIndex) => {
-        const hostNodeId = `host-${host.id}`;
-        const hostY =
-          dcYPosition + CLUSTER_Y_OFFSET + hostIndex * HOST_Y_OFFSET;
-
-        nodes.push({
-          id: hostNodeId,
-          type: "infraNode",
-          position: { x: standaloneX, y: hostY },
-          data: {
-            label: host.name,
-            sublabel: host.ipAddress || "Standalone Host",
-            type: "host",
-            status: host.status || "healthy",
-            metrics: {
-              vms: host.vmCount ?? 0,
-              cpu: `${host.usedCpuGHz ?? 0} GHz`,
-            },
-          },
-          sourcePosition: Position.Bottom,
-          targetPosition: Position.Top,
-        });
-
-        const sourceId =
-          hostIndex === 0
-            ? dcNodeId
-            : `host-${standaloneHosts[hostIndex - 1].id}`;
-
-        edges.push({
-          id: `edge-${sourceId}-${hostNodeId}`,
-          source: sourceId,
-          target: hostNodeId,
-          style: { stroke: "#3f3f46", strokeWidth: 2, strokeDasharray: "4 4" },
-        });
-      });
+    if (clusterHosts.length > 0) {
+      hasHosts = true;
     }
+
+    clusterHosts.forEach((host, hostIndex) => {
+      const hostNodeId = `host-${host.id}`;
+      const hostX = currentX + hostIndex * (LAYOUT.CARD_WIDTH + LAYOUT.HOST_GAP);
+
+      nodes.push(
+        createInfraNode({
+          id: hostNodeId,
+          label: host.name,
+          type: "host",
+          status: host.status,
+          position: { x: hostX, y: hostY },
+        })
+      );
+
+      edges.push(
+        createInfraEdge({
+          source: clusterNodeId,
+          target: hostNodeId,
+        })
+      );
+    });
+
+    currentX += width + LAYOUT.CLUSTER_GAP;
   });
 
-  return { nodes, edges };
+  // 5. Place Standalone Hosts (if any)
+  if (standaloneHosts.length > 0) {
+    standaloneHosts.forEach((host, hostIndex) => {
+      const hostNodeId = `host-${host.id}`;
+      const hostX = currentX + hostIndex * (LAYOUT.CARD_WIDTH + LAYOUT.HOST_GAP);
+
+      nodes.push(
+        createInfraNode({
+          id: hostNodeId,
+          label: host.name,
+          type: "host",
+          status: host.status,
+          position: { x: hostX, y: clusterY },
+        })
+      );
+
+      edges.push(
+        createInfraEdge({
+          source: dcNodeId,
+          target: hostNodeId,
+          dashed: true,
+        })
+      );
+    });
+  }
+
+  // 6. Compute vertical spacing for the next DC
+  const dcBottomY = hasHosts
+    ? hostY
+    : childClusters.length > 0
+    ? clusterY
+    : dcY;
+
+  return {
+    nodes,
+    edges,
+    nextY: dcBottomY + LAYOUT.DC_VERTICAL_SPACING,
+  };
+}
+
+/** Orchestrates infrastructure records into React Flow Nodes and Edges */
+export function transformInfraToFlow(
+  params: BuildFlowParams = {}
+): { nodes: Node[]; edges: Edge[] } {
+  const { datacenters = [], clusters = [], hosts = [] } = params;
+
+  const allNodes: Node[] = [];
+  const allEdges: Edge[] = [];
+  let currentY = LAYOUT.START_Y;
+
+  for (const dc of datacenters) {
+    const { nodes, edges, nextY } = layoutDatacenterSubtree(
+      dc,
+      clusters,
+      hosts,
+      currentY
+    );
+
+    allNodes.push(...nodes);
+    allEdges.push(...edges);
+    currentY = nextY;
+  }
+
+  return { nodes: allNodes, edges: allEdges };
 }

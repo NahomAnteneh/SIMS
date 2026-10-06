@@ -6,7 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { dcColumns, clusterColumns, storageColumns, netColumns, type Datacenter } from "./columns";
 import { DataTable } from "./data-table";
-import { DatacenterCard } from "./card";
+import { DatacenterCard } from "./datacenters/card";
+import { ClusterCard } from "./clusters/card";
+import { StorageCard } from "./storage/card";
+import { NetworkCard } from "./networking/card";
 
 import {
     InfraService
@@ -143,44 +146,50 @@ export default function DatacentersPage() {
             <TabsTrigger value="networking">Networking</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="datacenters">
+          <TabsContent value="datacenters" className="mt-4">
             {view === "table" ? (
-              <DataTable columns={dcColumns} data={datacenters} searchColumn={dcColumns[0].accessorKey}  />
+              <DataTable columns={dcColumns} data={datacenters} searchColumn="displayName" />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {/* {datacenters.map((dc) => (
-                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
-                ))} */}
+                {datacenters.map((dc) => (
+                  <DatacenterCard key={dc.id || dc.siteCode} datacenter={dc} />
+                ))}
               </div>
             )}
-          </TabsContent> <TabsContent value="custers&hosts">
+          </TabsContent>
+
+          <TabsContent value="custers&hosts" className="mt-4">
             {view === "table" ? (
-              <DataTable columns={clusterColumns} data={clusters} searchColumn={clusterColumns[0].accessorKey} />
+              <DataTable columns={clusterColumns} data={clusters} searchColumn="name" />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {/* {clusters.map((dc) => (
-                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
-                ))} */}
+                {clusters.map((cl) => (
+                  <ClusterCard key={cl.id} cluster={cl} />
+                ))}
               </div>
             )}
-          </TabsContent> <TabsContent value="storage">
+          </TabsContent>
+
+          <TabsContent value="storage" className="mt-4">
             {view === "table" ? (
-              <DataTable columns={storageColumns} data={storage} searchColumn={storageColumns[0].accessorKey} />
+              <DataTable columns={storageColumns} data={storage} searchColumn="name" />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {/* {storage.map((dc) => (
-                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
-                ))} */}
+                {storage.map((ds) => (
+                  <StorageCard key={ds.id} storage={ds} />
+                ))}
               </div>
             )}
-          </TabsContent> <TabsContent value="networking">
+          </TabsContent>
+
+          <TabsContent value="networking" className="mt-4">
             {view === "table" ? (
-              <DataTable columns={netColumns} data={networking} searchColumn={netColumns[0].accessorKey} />
+              <DataTable columns={netColumns} data={networking} searchColumn="name" />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {/* {networking.map((dc) => (
-                  <DatacenterCard key={dc.siteCode} datacenter={dc} />
-                ))} */}
+                {networking.map((net) => (
+                  <NetworkCard key={net.id} network={net} />
+                ))}
               </div>
             )}
           </TabsContent>

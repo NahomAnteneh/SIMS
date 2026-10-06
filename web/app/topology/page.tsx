@@ -56,14 +56,14 @@ export default function InfraCanvas() {
 
   if (loading) {
     return (
-      <div className="w-full h-[650px] bg-[#121110] rounded-2xl flex items-center justify-center text-zinc-500 text-sm">
+      <div className="w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-2xl flex items-center justify-center text-zinc-500 text-sm">
         Building Infrastructure Diagram...
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-[650px] bg-[#121110] rounded-2xl overflow-hidden border border-zinc-800/80 shadow-2xl">
+    <div className="relative w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-2xl overflow-hidden border border-zinc-800/80 shadow-2xl">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900/40 via-[#121110] to-[#0a0a09] pointer-events-none z-10" />
 
       <ReactFlow

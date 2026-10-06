@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { LayoutList, LayoutGrid } from "lucide-react";
 
 import { columns, type Datacenter } from "./columns";
 import { DataTable } from "./data-table";
 import { DatacenterCard } from "./card";
+import { InfraService } from "@/lib/services/infra";
 
 const sampleDatacenters: Datacenter[] = [
   {
@@ -56,6 +57,21 @@ const sampleDatacenters: Datacenter[] = [
 
 export default function DatacentersPage() {
   const [view, setView] = useState<"table" | "card">("table");
+  const [datacenters, setDatacenters] = useState<Datacenter[]>(sampleDatacenters);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await InfraService.getDatacenters();
+        if (data && data.length > 0) {
+          setDatacenters(data);
+        }
+      } catch (err) {
+        console.error("Failed to load datacenters", err);
+      }
+    }
+    loadData();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -97,11 +113,11 @@ export default function DatacentersPage() {
       </div>
 
       {view === "table" ? (
-        <DataTable columns={columns} data={sampleDatacenters} />
+        <DataTable columns={columns} data={datacenters} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {sampleDatacenters.map((dc) => (
-            <DatacenterCard key={dc.siteCode} datacenter={dc} />
+          {datacenters.map((dc) => (
+            <DatacenterCard key={dc.id || dc.siteCode} datacenter={dc} />
           ))}
         </div>
       )}

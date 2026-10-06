@@ -532,3 +532,150 @@ export const netColumns = [
     },
   }),
 ];
+
+export interface Host {
+  id: string;
+  name: string;
+  ip: string;
+  vcenterId: string;
+  clusterId: string;
+  datacenterId: string;
+  version: string;
+  model: string;
+  manufacturer: string;
+  cpuModel: string;
+  physicalCores: number;
+  logicalProcessors: number;
+  cpuGHz: number;
+  memoryGB: number;
+  cpuUsagePercent: number;
+  memoryUsagePercent: number;
+  vmCount: number;
+  status: "connected" | "disconnected" | "maintenance" | string;
+  uptimeDays: number;
+}
+
+const hostHelper = createColumnHelper<Host>();
+
+export const hostColumns = [
+  // Host Name & Model
+  hostHelper.accessor("name", {
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+      >
+        Host Name
+        <ArrowUpDown className="ml-2 h-4 w-4" />
+      </Button>
+    ),
+    cell: (info) => (
+      <div>
+        <div className="text-base font-bold text-zinc-50">{info.getValue()}</div>
+        <div className="text-zinc-400 text-xs font-medium mt-1 flex items-center gap-1.5">
+          <Server className="h-3.5 w-3.5" /> {info.row.original.model}
+        </div>
+      </div>
+    ),
+  }),
+
+  // Network & IP
+  hostHelper.accessor("ip", {
+    header: "IP & ESXi Version",
+    cell: (info) => (
+      <div>
+        <div className="text-sm font-mono font-bold text-zinc-100">{info.getValue()}</div>
+        <div className="text-zinc-400 text-xs font-medium mt-1">
+          ESXi v{info.row.original.version}
+        </div>
+      </div>
+    ),
+  }),
+
+  // Cluster & DC
+  hostHelper.accessor("clusterId", {
+    header: "Cluster & Site",
+    cell: (info) => (
+      <div>
+        <div className="text-sm font-bold text-zinc-100">{info.getValue()}</div>
+        <div className="text-zinc-400 text-xs font-medium mt-1">
+          {info.row.original.datacenterId}
+        </div>
+      </div>
+    ),
+  }),
+
+  // CPU Cores & Usage
+  hostHelper.accessor("cpuUsagePercent", {
+    header: "CPU Utilization",
+    cell: (info) => {
+      const percent = info.getValue();
+      const totalGHz = info.row.original.cpuGHz;
+      const cores = info.row.original.physicalCores;
+      return (
+        <div>
+          <div className="text-sm font-bold text-zinc-100 flex items-center gap-1.5">
+            <Cpu className="h-4 w-4 text-zinc-400" />
+            {totalGHz} GHz ({cores} cores)
+          </div>
+          <div className="text-zinc-400 text-xs font-medium mt-1">
+            {percent}% Allocated
+          </div>
+        </div>
+      );
+    },
+  }),
+
+  // Memory Usage
+  hostHelper.accessor("memoryUsagePercent", {
+    header: "Memory Utilization",
+    cell: (info) => {
+      const percent = info.getValue();
+      const totalGB = info.row.original.memoryGB;
+      return (
+        <div>
+          <div className="text-sm font-bold text-zinc-100 flex items-center gap-1.5">
+            <Database className="h-4 w-4 text-zinc-400" />
+            {totalGB} GB RAM
+          </div>
+          <div className="text-zinc-400 text-xs font-medium mt-1">
+            {percent}% Allocated
+          </div>
+        </div>
+      );
+    },
+  }),
+
+  // VMs
+  hostHelper.accessor("vmCount", {
+    header: "Workloads",
+    cell: (info) => (
+      <div>
+        <div className="text-sm font-bold text-zinc-100">{info.getValue()} VMs</div>
+        <div className="text-zinc-400 text-xs font-medium mt-1">
+          Uptime {info.row.original.uptimeDays}d
+        </div>
+      </div>
+    ),
+  }),
+
+  // Status Badge
+  hostHelper.accessor("status", {
+    header: "Status",
+    cell: (info) => {
+      const status = info.getValue();
+      const isConnected = status === "connected";
+      return (
+        <span
+          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+            isConnected
+              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+              : "bg-rose-500/15 text-rose-400 border-rose-500/30"
+          }`}
+        >
+          {status}
+        </span>
+      );
+    },
+  }),
+];
