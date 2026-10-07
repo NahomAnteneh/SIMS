@@ -85,6 +85,9 @@ func CompileVMQuery(filter *FilterNode, opts CompileOptions) (*CompiledQuery, er
 
 	// 3. User filter AST
 	if filter != nil {
+		if err := Validate(filter); err != nil {
+			return nil, err
+		}
 		filterSQL, err := c.compileNode(filter)
 		if err != nil {
 			return nil, err
@@ -189,7 +192,7 @@ func (c *Compiler) compileScope(scope *ScopeConstraint) (string, error) {
 	}
 
 	if len(scopeParts) == 0 {
-		return "", nil
+		return "1 = 0", nil
 	}
 	return strings.Join(scopeParts, " AND "), nil
 }

@@ -16,12 +16,16 @@ import (
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/infrastructure/sims/internal/vsphere"
+	"github.com/vmware/govmomi/view"
+	"github.com/vmware/govmomi/vim25/types"
 )
 
 // Persister defines the contract for persisting topology and inventory batches
 type Persister interface {
 	PersistTopology(ctx context.Context, snap *TopologySnapshot) error
 	PersistVMBatch(ctx context.Context, batch []domain.VMRecord) (int, error)
+	ApplyVMIncrementalUpdate(ctx context.Context, vcenterID, moref string, mask VMFieldMask) error
+	ApplyVMLeave(ctx context.Context, vcenterID, moref string) error
 }
 
 // FleetConfig configures the Multi-Target Fleet Manager (S4.5)
@@ -35,6 +39,7 @@ type FleetConfig struct {
 	DefaultVCenterUsername  string
 	DefaultVCenterPassword  string
 	DefaultInsecureTLS      bool
+	StreamerWaitSeconds     int32
 }
 
 func (c *FleetConfig) defaults() {
@@ -383,13 +388,111 @@ func (fm *FleetManager) runPipeline(ctx context.Context, rt *runningTarget) {
 		slog.String("vcenter_id", vcenterIDStr),
 	)
 
+	// Setup pipeline streaming components
+	pipelineCtx, cancelPipeline := context.WithCancel(ctx)
+	defer cancelPipeline()
+
+	reg := NewCleanupRegistry(fm.logger, 5*time.Second)
+	defer func() {
+		_ = reg.Teardown(context.Background())
+	}()
+
+	viewMgr := view.NewManager(client.Client)
+	cv, err := viewMgr.CreateContainerView(pipelineCtx, client.ServiceContent.RootFolder, []string{"VirtualMachine"}, true)
+	if err != nil {
+		fm.logger.Warn("failed to create container view", slog.String("vcenter_id", vcenterIDStr), slog.String("error", err.Error()))
+		_ = fm.targetFSM.Transition(ctx, targetID, TargetStateDegraded, err.Error())
+		return
+	}
+	reg.RegisterContainerView(cv.Destroy)
+
+	spec := BuildVMPropertyFilterSpec(cv.Reference())
+	streamerCfg := DefaultStreamerConfig(vcenterIDStr)
+	if fm.cfg.StreamerWaitSeconds > 0 {
+		streamerCfg.MaxWaitSeconds = fm.cfg.StreamerWaitSeconds
+	}
+	govmomiPC := vsphere.NewGovmomiPropertyCollector(client)
+	propStreamer := NewPropertyStreamer(govmomiPC, spec, streamerCfg, fm.metrics, fm.logger, reg)
+	if err := propStreamer.InitFilter(pipelineCtx); err != nil {
+		fm.logger.Warn("failed to init property filter", slog.String("vcenter_id", vcenterIDStr), slog.String("error", err.Error()))
+		_ = fm.targetFSM.Transition(ctx, targetID, TargetStateDegraded, err.Error())
+		return
+	}
+
+	queue := NewBoundedQueue[types.ObjectUpdate](vcenterIDStr, 1000, fm.metrics)
+	applier := NewIncrementalApplier(persister, snap, fm.logger)
+	batcherCfg := BatcherConfig{
+		VCenterID:     vcenterIDStr,
+		MaxBatchSize:  100,
+		FlushInterval: 100 * time.Millisecond,
+		DrainTimeout:  5 * time.Second,
+	}
+	batcher := NewStreamBatcher(batcherCfg, queue, applier, fm.metrics, fm.logger, reg)
+
+	var streamWg sync.WaitGroup
+
+	// Run StreamBatcher consumer
+	streamWg.Add(1)
+	go func() {
+		defer streamWg.Done()
+		_ = batcher.Run(pipelineCtx)
+	}()
+
+	// Run PropertyStreamer producer
+	streamWg.Add(1)
+	go func() {
+		defer streamWg.Done()
+		_ = propStreamer.Run(pipelineCtx, func(pCtx context.Context, updates []types.ObjectUpdate) error {
+			return queue.PushAll(pCtx, updates)
+		})
+	}()
+
+	// Run EventStreamer if persister supports events
+	if eventPersister, ok := persister.(EventPersister); ok {
+		eventMgr := vsphere.NewGovmomiEventManager(client)
+		eventStreamer := NewEventStreamer(eventMgr, eventPersister, DefaultEventStreamerConfig(vcenterIDStr), fm.metrics, fm.logger, reg)
+		streamWg.Add(1)
+		go func() {
+			defer streamWg.Done()
+			_ = eventStreamer.Run(pipelineCtx)
+		}()
+	}
+
+	// Run DifferentialReconciler on periodic baseline
+	scanner := NewGovmomiReferenceScanner(client.Client)
+	reconciler := NewDifferentialReconciler(fm.pool, fm.queries, func(_ context.Context, _ uuid.UUID, _ []string) error {
+		return nil
+	}, fm.logger)
+	streamWg.Add(1)
+	go func() {
+		defer streamWg.Done()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pipelineCtx.Done():
+				return
+			case <-ticker.C:
+				_, _ = reconciler.Reconcile(pipelineCtx, vcenterID, scanner)
+			}
+		}
+	}()
+
 	// Pipeline event wait loop: runs until ctx is canceled or lease is lost
 	select {
-	case <-ctx.Done():
+	case <-pipelineCtx.Done():
 		fm.logger.Info("target pipeline context canceled; stopping", slog.String("target_id", targetID.String()))
 	case <-rt.lease.LostChan:
 		fm.logger.Warn("lease lost for target; terminating pipeline", slog.String("target_id", targetID.String()))
 	}
+
+	// Stop streamers and wait for goroutines to exit before teardown
+	cancelPipeline()
+	streamWg.Wait()
+
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = batcher.Drain(drainCtx)
+	cancelDrain()
 
 	// 5. Transition to REASSIGNING
 	_ = fm.targetFSM.Transition(context.Background(), targetID, TargetStateReassigning, "pipeline shutdown")
@@ -470,4 +573,11 @@ func (fm *FleetManager) ActiveTargetCount() int {
 	fm.mu.RLock()
 	defer fm.mu.RUnlock()
 	return len(fm.targets)
+}
+
+// IsRunning reports whether the fleet manager is actively running.
+func (fm *FleetManager) IsRunning() bool {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+	return fm.running
 }

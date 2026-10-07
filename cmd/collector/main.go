@@ -2,34 +2,52 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/collector"
 	"github.com/infrastructure/sims/internal/config"
+	"github.com/infrastructure/sims/internal/database"
 	"github.com/infrastructure/sims/internal/logging"
 	"github.com/infrastructure/sims/internal/persistence"
 	"github.com/infrastructure/sims/internal/server"
 	"github.com/infrastructure/sims/internal/vsphere"
 )
 
-const version = "0.2.0"
+const version = "1.0.0"
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	versionFlag := flag.Bool("version", false, "print service version and exit")
+	flag.BoolVar(versionFlag, "v", false, "print service version and exit (shorthand)")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("sims-collector v%s\n", version)
+		return nil
+	}
+
 	cfg := config.LoadCollectorConfig()
 	logger := logging.DefaultLogger(cfg.LogLevel)
 
 	logger.Info("initializing vSphere collector service",
 		slog.String("version", version),
 		slog.String("port", cfg.Port),
-		slog.String("vcenter_url", cfg.VCenterURL),
+		slog.String("vcenter_url", logging.RedactURL(cfg.VCenterURL)),
 		slog.String("vcenter_username", cfg.VCenterUsername),
-		slog.String("vcenter_password", cfg.VCenterPassword), // Redacted by slog handler
 		slog.Bool("insecure_tls", cfg.InsecureTLS),
 	)
 
@@ -37,21 +55,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
-	if err != nil {
-		logger.Error("failed to parse database configuration", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	poolCfg.MaxConns = 10
-	poolCfg.MinConns = 2
-	poolCfg.MaxConnLifetime = time.Hour
-	poolCfg.MaxConnIdleTime = 15 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	pool, err := database.NewBudgetedPool(ctx, cfg.DatabaseURL, database.PoolCollectorRW)
 	if err != nil {
 		logger.Error("failed to connect to database", slog.String("error", err.Error()))
-		os.Exit(1)
+		return err
 	}
 	defer pool.Close()
 
@@ -103,12 +110,18 @@ func main() {
 	)
 
 	srv.AddReadinessCheck("fleet_coordinator", func(_ context.Context) error {
+		if !fleet.IsRunning() {
+			return fmt.Errorf("fleet manager is not running")
+		}
 		return nil
 	})
 
+	var bootstrapWG sync.WaitGroup
 	// Bootstrap single-vCenter configuration if provided in environment
 	if cfg.VCenterURL != "" {
+		bootstrapWG.Add(1)
 		go func() {
+			defer bootstrapWG.Done()
 			sessCfg := vsphere.SessionConfig{
 				URL:            cfg.VCenterURL,
 				Username:       cfg.VCenterUsername,
@@ -136,36 +149,40 @@ func main() {
 			}()
 
 			about := session.Client().ServiceContent.About
-			var vcenterID string
-			err = pool.QueryRow(ctx, `
-				INSERT INTO vcenters (name, api_url, instance_uuid, product_version, api_version, build)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (api_url) DO UPDATE
-				SET name = EXCLUDED.name, instance_uuid = EXCLUDED.instance_uuid, updated_at = NOW()
-				RETURNING id::text
-			`, about.FullName, cfg.VCenterURL, about.InstanceUuid, about.Version, about.ApiVersion, about.Build).Scan(&vcenterID)
+			bootstrapVC, err := queries.UpsertBootstrapVCenter(ctx, db.UpsertBootstrapVCenterParams{
+				Name:           about.FullName,
+				ApiUrl:         cfg.VCenterURL,
+				InstanceUuid:   pgtype.Text{String: about.InstanceUuid, Valid: about.InstanceUuid != ""},
+				ProductVersion: about.Version,
+				ApiVersion:     about.ApiVersion,
+				Build:          about.Build,
+			})
 			if err != nil {
 				logger.Warn("failed to upsert bootstrap vcenter record", slog.String("error", err.Error()))
 				return
 			}
 
-			_, err = pool.Exec(ctx, `
-				INSERT INTO collector_targets (vcenter_id, enabled)
-				VALUES ($1::uuid, true)
-				ON CONFLICT (vcenter_id) DO NOTHING
-			`, vcenterID)
+			_, err = queries.InsertCollectorTarget(ctx, db.InsertCollectorTargetParams{
+				VcenterID: bootstrapVC.ID,
+				Enabled:   true,
+			})
 			if err != nil {
 				logger.Warn("failed to insert bootstrap collector target", slog.String("error", err.Error()))
 				return
 			}
-			logger.Info("bootstrap vCenter target registered in target registry", slog.String("vcenter_id", vcenterID))
+			vcenterIDStr := uuid.UUID(bootstrapVC.ID.Bytes).String()
+			logger.Info("bootstrap vCenter target registered in target registry", slog.String("vcenter_id", vcenterIDStr))
 		}()
 	}
+	defer func() {
+		cancel()
+		bootstrapWG.Wait()
+	}()
 
 	// Start Fleet Manager
 	if err := fleet.Start(ctx); err != nil {
 		logger.Error("failed to start fleet manager", slog.String("error", err.Error()))
-		os.Exit(1)
+		return err
 	}
 	defer func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -175,6 +192,7 @@ func main() {
 
 	if err := srv.Run(); err != nil {
 		logger.Error("collector encountered fatal error", slog.String("error", err.Error()))
-		os.Exit(1)
+		return err
 	}
+	return nil
 }

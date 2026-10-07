@@ -28,7 +28,7 @@ func TestVMIdentityConstraints(t *testing.T) {
 	err = db.QueryRowContext(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-identity-test', 'https://vc-identity-test.local/sdk', 'vc-uuid-test-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestVMIdentityConstraints(t *testing.T) {
 		err = db.QueryRowContext(ctx, `
 			INSERT INTO vcenters (name, api_url, instance_uuid)
 			VALUES ('vc-target-test-2', 'https://vc-target-test-2.local/sdk', 'vc-uuid-test-02')
-			ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+			ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 			RETURNING id::text
 		`).Scan(&vcenterID2)
 		if err != nil {

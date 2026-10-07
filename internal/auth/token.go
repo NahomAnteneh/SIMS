@@ -101,6 +101,20 @@ func (s *TokenSigner) VerifyToken(tokenStr string) (*Identity, error) {
 		return nil, ErrTokenInvalid
 	}
 
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return nil, ErrTokenInvalid
+	}
+	var header struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		return nil, ErrTokenInvalid
+	}
+	if header.Alg != "HS256" {
+		return nil, ErrTokenInvalid
+	}
+
 	unsigned := parts[0] + "." + parts[1]
 	providedSig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
@@ -125,14 +139,21 @@ func (s *TokenSigner) VerifyToken(tokenStr string) (*Identity, error) {
 		return nil, ErrTokenInvalid
 	}
 
-	if time.Now().Unix() > claims.ExpiresAt {
+	if claims.ExpiresAt <= 0 || time.Now().Unix() > claims.ExpiresAt {
 		return nil, ErrTokenExpired
+	}
+
+	role := claims.Role
+	if role == "inventory-admin" {
+		role = RoleAdmin
+	} else if role == "viewer" {
+		role = RoleUser
 	}
 
 	return &Identity{
 		Subject:            claims.Subject,
 		Email:              claims.Email,
-		Role:               claims.Role,
+		Role:               role,
 		AllowedVCenterIDs:  claims.AllowedVCenterIDs,
 		AllowedFolderPaths: claims.AllowedFolderPaths,
 	}, nil

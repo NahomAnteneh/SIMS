@@ -155,7 +155,7 @@ func (s *CursorSigner) Decode(raw string, expectedQueryHash string) (*Cursor, er
 	}
 
 	// 3. Validate expiration
-	if c.ExpiresAt > 0 && time.Now().Unix() > c.ExpiresAt {
+	if c.ExpiresAt <= 0 || time.Now().Unix() > c.ExpiresAt {
 		return nil, ErrCursorExpired
 	}
 

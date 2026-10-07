@@ -53,13 +53,23 @@ func NewBoundedQueue[T any](vcenterID string, capacity int, metrics *telemetry.M
 
 // Push appends an item to the queue. If the queue is at capacity, it BLOCKS until
 // space becomes available, context is canceled, or the queue is closed.
-func (q *BoundedQueue[T]) Push(ctx context.Context, item T) error {
+func (q *BoundedQueue[T]) Push(ctx context.Context, item T) (err error) {
 	if q.isClosed.Load() {
 		return ErrQueueClosed
 	}
 
-	// Fast path: try non-blocking send
+	defer func() {
+		if r := recover(); r != nil {
+			err = ErrQueueClosed
+		}
+	}()
+
+	// Fast path: try non-blocking send unless closed
 	select {
+	case <-q.closed:
+		return ErrQueueClosed
+	case <-ctx.Done():
+		return ctx.Err()
 	case q.ch <- item:
 		q.updateMetrics()
 		return nil
@@ -103,20 +113,14 @@ func (q *BoundedQueue[T]) Pop(ctx context.Context) (T, error) {
 	case <-q.closed:
 		// Drain remaining items from buffer before reporting closed
 		select {
-		case item, ok := <-q.ch:
-			if ok {
-				q.updateMetrics()
-				return item, nil
-			}
+		case item := <-q.ch:
+			q.updateMetrics()
+			return item, nil
 		default:
-		}
-		var zero T
-		return zero, ErrQueueClosed
-	case item, ok := <-q.ch:
-		if !ok {
 			var zero T
 			return zero, ErrQueueClosed
 		}
+	case item := <-q.ch:
 		q.updateMetrics()
 		return item, nil
 	}
@@ -152,11 +156,19 @@ func (q *BoundedQueue[T]) PopBatch(ctx context.Context, maxBatch int, timeout ti
 		case <-timer.C:
 			q.updateMetrics()
 			return batch, nil
-		case item, ok := <-q.ch:
-			if !ok {
-				q.updateMetrics()
-				return batch, nil
+		case <-q.closed:
+			for len(batch) < maxBatch {
+				select {
+				case item := <-q.ch:
+					batch = append(batch, item)
+				default:
+					q.updateMetrics()
+					return batch, nil
+				}
 			}
+			q.updateMetrics()
+			return batch, nil
+		case item := <-q.ch:
 			batch = append(batch, item)
 		}
 	}
@@ -193,7 +205,6 @@ func (q *BoundedQueue[T]) Close() {
 	q.closeOnce.Do(func() {
 		q.isClosed.Store(true)
 		close(q.closed)
-		close(q.ch)
 		q.updateMetrics()
 	})
 }

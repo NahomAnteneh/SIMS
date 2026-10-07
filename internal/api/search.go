@@ -274,21 +274,15 @@ func (h *Handler) executeSearch(w http.ResponseWriter, r *http.Request, filter *
 }
 
 func (h *Handler) lookupVMIDsByMAC(ctx context.Context, mac string) ([]uuid.UUID, error) {
-	rows, err := h.pool.Query(ctx, "SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE mac_address = $1", mac)
+	pgUUIDs, err := h.queries.GetVMIDsByMACAddress(ctx, mac)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var ids []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	ids := make([]uuid.UUID, len(pgUUIDs))
+	for i, u := range pgUUIDs {
+		ids[i] = u.Bytes
 	}
-	return ids, rows.Err()
+	return ids, nil
 }
 
 // scanVMListItemDirect scans VM columns directly without reflection.

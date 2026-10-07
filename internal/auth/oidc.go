@@ -220,7 +220,7 @@ func (a *Authenticator) AuthenticateToken(ctx context.Context, tokenStr string) 
 		return &Identity{
 			Subject: "dev-admin@sims.local",
 			Email:   "dev-admin@sims.local",
-			Role:    RoleInventoryAdmin,
+			Role:    RoleAdmin,
 		}, nil
 	}
 
@@ -324,24 +324,24 @@ func (a *Authenticator) AuthenticateToken(ctx context.Context, tokenStr string) 
 		}
 	}
 
-	// Validate expiry (1 min leeway)
-	if claims.Exp > 0 && time.Now().Unix() > claims.Exp+60 {
+	// Validate expiry (required; 1 min leeway)
+	if claims.Exp <= 0 || time.Now().Unix() > claims.Exp+60 {
 		return nil, ErrExpiredToken
 	}
 
-	// Determine Role
-	role := RoleViewer
-	if strings.EqualFold(claims.Role, "inventory-admin") {
-		role = RoleInventoryAdmin
+	// Determine Role: default to RoleUser, grant RoleAdmin for admin or inventory-admin
+	role := RoleUser
+	if strings.EqualFold(claims.Role, "admin") || strings.EqualFold(claims.Role, "inventory-admin") {
+		role = RoleAdmin
 	}
 	for _, r := range claims.Roles {
-		if strings.EqualFold(r, "inventory-admin") {
-			role = RoleInventoryAdmin
+		if strings.EqualFold(r, "admin") || strings.EqualFold(r, "inventory-admin") {
+			role = RoleAdmin
 		}
 	}
 	for _, g := range claims.Groups {
-		if strings.EqualFold(g, "inventory-admin") {
-			role = RoleInventoryAdmin
+		if strings.EqualFold(g, "admin") || strings.EqualFold(g, "inventory-admin") {
+			role = RoleAdmin
 		}
 	}
 

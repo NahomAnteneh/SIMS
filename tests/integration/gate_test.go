@@ -106,7 +106,7 @@ func TestGate_5000VMHydration(t *testing.T) {
 	err = rwPool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-gate-5000', $1, 'vc-gate-5000-uuid')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`, simServer.URL.String()).Scan(&vcenterID)
 	if err != nil {
@@ -282,7 +282,7 @@ func TestGate_50000RowSyntheticLoadAndExplain(t *testing.T) {
 	err = rwPool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-synthetic-50k', 'https://vc-synthetic-50k.local/sdk', 'vc-synthetic-50k-uuid')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {

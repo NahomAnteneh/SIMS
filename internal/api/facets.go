@@ -115,7 +115,7 @@ func buildScopeWhere(scope *search.ScopeConstraint) (string, []any) {
 	}
 
 	if len(parts) == 0 {
-		return "", nil
+		return " AND 1 = 0", nil
 	}
 	return " AND " + strings.Join(parts, " AND "), args
 }

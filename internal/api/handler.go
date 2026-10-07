@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/auth"
+	"github.com/infrastructure/sims/internal/logging"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -135,18 +136,23 @@ func (h *Handler) writeProblem(w http.ResponseWriter, status int, title, detail,
 func (h *Handler) writeProblemWithDetails(w http.ResponseWriter, status int, title, detail, code string, details map[string]any) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
+	redactedDetail := logging.RedactString(detail)
 	payload := map[string]any{
 		"type":       "about:blank",
 		"title":      title,
 		"status":     status,
-		"detail":     detail,
+		"detail":     redactedDetail,
 		"code":       status,
 		"error_code": code,
 		"error":      title,
-		"message":    detail,
+		"message":    redactedDetail,
 	}
 	for k, v := range details {
-		payload[k] = v
+		if s, ok := v.(string); ok {
+			payload[k] = logging.RedactString(s)
+		} else {
+			payload[k] = v
+		}
 	}
 	_ = json.NewEncoder(w).Encode(payload)
 }
@@ -222,6 +228,29 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nameFilter := strings.TrimSpace(q.Get("name"))
+
+	// Enforce tenant boundary scoping
+	callerID, hasAuth := auth.FromContext(r.Context())
+	if hasAuth && callerID != nil {
+		if vcenterID.Valid {
+			vcUUID, _ := uuid.FromBytes(vcenterID.Bytes[:])
+			if !callerID.CanAccessVCenter(vcUUID) {
+				h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested vCenter denied", "forbidden")
+				return
+			}
+		} else if !callerID.HasRole(auth.RoleAdmin) {
+			if len(callerID.AllowedVCenterIDs) == 0 {
+				h.writeJSON(w, http.StatusOK, ListVMsResponse{
+					Items:      []VMListItem{},
+					Pagination: PaginationMeta{Limit: limit, HasMore: false},
+				})
+				return
+			}
+			if len(callerID.AllowedVCenterIDs) == 1 && len(callerID.AllowedFolderPaths) == 0 {
+				vcenterID = pgtype.UUID{Bytes: callerID.AllowedVCenterIDs[0], Valid: true}
+			}
+		}
+	}
 
 	// 3. Parse opaque cursor
 	rawCursor := q.Get("cursor")
@@ -370,6 +399,32 @@ func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("failed to query VM by ID", slog.String("id", idStr), slog.String("error", err.Error()))
 		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "database query failed")
 		return
+	}
+
+	// Enforce tenant scope checking to eliminate BOLA/IDOR vulnerability
+	if id, ok := auth.FromContext(r.Context()); ok && id != nil {
+		vcUUID, err := uuid.FromBytes(vm.VcenterID.Bytes[:])
+		if err == nil && !id.CanAccessVCenter(vcUUID) {
+			h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested virtual machine denied", "forbidden")
+			return
+		}
+		if len(id.AllowedFolderPaths) > 0 {
+			if !vm.FolderPath.Valid || vm.FolderPath.String == "" {
+				h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested virtual machine folder denied", "forbidden")
+				return
+			}
+			allowed := false
+			for _, p := range id.AllowedFolderPaths {
+				if vm.FolderPath.String == p || strings.HasPrefix(vm.FolderPath.String, p+".") {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested virtual machine folder denied", "forbidden")
+				return
+			}
+		}
 	}
 
 	// Retrieve attached datastores

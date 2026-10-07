@@ -27,7 +27,7 @@ func getTestPool(t *testing.T) *pgxpool.Pool {
 	if port == "" {
 		port = "5433"
 	}
-	connStr := fmt.Sprintf("postgres://postgres:postgres@%s:%s/sims?sslmode=disable", host, port)
+	connStr := fmt.Sprintf("postgres://sims:sims_password@%s:%s/sims?sslmode=disable", host, port)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -44,15 +44,24 @@ func getTestPool(t *testing.T) *pgxpool.Pool {
 }
 
 func createTestVCenterAndTarget(t *testing.T, pool *pgxpool.Pool) (uuid.UUID, uuid.UUID) {
+	return createTestVCenterAndTargetWithURL(t, pool, "")
+}
+
+func createTestVCenterAndTargetWithURL(t *testing.T, pool *pgxpool.Pool, customURL string) (uuid.UUID, uuid.UUID) {
 	ctx := context.Background()
 	queries := db.New(pool)
 
 	vcID := uuid.New()
 	targetID := uuid.New()
 
+	apiURL := customURL
+	if apiURL == "" {
+		apiURL = fmt.Sprintf("https://vc-%s.local/sdk", vcID.String()[:8])
+	}
+
 	createdVC, err := queries.CreateVCenter(ctx, db.CreateVCenterParams{
 		Name:         fmt.Sprintf("vcenter-test-%s", vcID.String()[:8]),
-		ApiUrl:       fmt.Sprintf("https://vc-%s.local/sdk", vcID.String()[:8]),
+		ApiUrl:       apiURL,
 		Version:      "8.0.3",
 		Build:        "24000000",
 		Status:       "AVAILABLE",
@@ -202,6 +211,7 @@ func TestLeaseCoordinator_ConcurrencyRace(t *testing.T) {
 	var wg sync.WaitGroup
 	winners := make([]string, 0)
 	var winMu sync.Mutex
+	var winnerCoord *LeaseCoordinator
 
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
@@ -212,20 +222,25 @@ func TestLeaseCoordinator_ConcurrencyRace(t *testing.T) {
 			HeartbeatInterval: 1 * time.Second,
 		}, nil)
 
-		go func() {
+		go func(c *LeaseCoordinator, wid string) {
 			defer wg.Done()
-			al, err := coord.Acquire(ctx, targetID)
+			al, err := c.Acquire(ctx, targetID)
 			if err == nil && al != nil {
 				winMu.Lock()
-				winners = append(winners, workerID)
+				winners = append(winners, wid)
+				winnerCoord = c
 				winMu.Unlock()
 			}
-		}()
+		}(coord, workerID)
 	}
 
 	wg.Wait()
 
 	if len(winners) != 1 {
 		t.Fatalf("expected strictly 1 race winner, got %d (%v)", len(winners), winners)
+	}
+
+	if winnerCoord != nil {
+		_ = winnerCoord.Release(ctx, targetID)
 	}
 }

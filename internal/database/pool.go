@@ -49,7 +49,7 @@ func DefaultBudgets() map[PoolType]PoolBudget {
 			MaxConnIdleTime:   15 * time.Minute,
 			HealthCheckPeriod: 30 * time.Second,
 			ApplicationName:   "sims_query_ro",
-			DefaultUser:       "query_ro",
+			DefaultUser:       "sims",
 		},
 		PoolCollectorRW: {
 			MaxConns:          15,
@@ -58,7 +58,7 @@ func DefaultBudgets() map[PoolType]PoolBudget {
 			MaxConnIdleTime:   15 * time.Minute,
 			HealthCheckPeriod: 30 * time.Second,
 			ApplicationName:   "sims_collector_rw",
-			DefaultUser:       "collector_rw",
+			DefaultUser:       "sims",
 		},
 		PoolReconciliation: {
 			MaxConns:          5,
@@ -67,7 +67,7 @@ func DefaultBudgets() map[PoolType]PoolBudget {
 			MaxConnIdleTime:   5 * time.Minute,
 			HealthCheckPeriod: 30 * time.Second,
 			ApplicationName:   "sims_reconciler",
-			DefaultUser:       "collector_rw",
+			DefaultUser:       "sims",
 		},
 		PoolAdminAudit: {
 			MaxConns:          5,
@@ -76,7 +76,7 @@ func DefaultBudgets() map[PoolType]PoolBudget {
 			MaxConnIdleTime:   5 * time.Minute,
 			HealthCheckPeriod: 30 * time.Second,
 			ApplicationName:   "sims_admin",
-			DefaultUser:       "postgres",
+			DefaultUser:       "sims",
 		},
 	}
 }

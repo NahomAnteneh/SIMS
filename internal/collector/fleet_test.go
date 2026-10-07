@@ -10,6 +10,8 @@ import (
 
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/domain"
+	"github.com/infrastructure/sims/internal/vsphere"
+	"github.com/vmware/govmomi/simulator"
 )
 
 type dummyPersister struct{}
@@ -22,6 +24,14 @@ func (dp *dummyPersister) PersistVMBatch(ctx context.Context, batch []domain.VMR
 	return len(batch), nil
 }
 
+func (dp *dummyPersister) ApplyVMIncrementalUpdate(ctx context.Context, vcenterID, moref string, mask VMFieldMask) error {
+	return nil
+}
+
+func (dp *dummyPersister) ApplyVMLeave(ctx context.Context, vcenterID, moref string) error {
+	return nil
+}
+
 func TestFleetManager_LifecycleAndDiscovery(t *testing.T) {
 	pool := getTestPool(t)
 	defer pool.Close()
@@ -29,7 +39,20 @@ func TestFleetManager_LifecycleAndDiscovery(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, targetID := createTestVCenterAndTarget(t, pool)
+	model := simulator.VPX()
+	vsphere.ConfigureTestVPX(model)
+	defer model.Remove()
+	if err := model.Create(); err != nil {
+		t.Fatalf("failed to create vcsim model: %v", err)
+	}
+
+	server := model.Service.NewServer()
+	defer func() {
+		server.CloseClientConnections()
+		server.Close()
+	}()
+
+	_, targetID := createTestVCenterAndTargetWithURL(t, pool, server.URL.String())
 	defer cleanupTestTarget(pool, targetID)
 
 	queries := db.New(pool)
@@ -53,8 +76,12 @@ func TestFleetManager_LifecycleAndDiscovery(t *testing.T) {
 		limiter,
 		&dummyPersister{},
 		FleetConfig{
-			WorkerID:           workerID,
-			TargetEvalInterval: 100 * time.Millisecond,
+			WorkerID:               workerID,
+			TargetEvalInterval:     100 * time.Millisecond,
+			DefaultVCenterUsername: "user",
+			DefaultVCenterPassword: "pass",
+			DefaultInsecureTLS:     true,
+			StreamerWaitSeconds:    1,
 		},
 		nil,
 		nil,

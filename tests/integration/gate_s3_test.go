@@ -222,7 +222,7 @@ func TestGateS3_SQLInjectionPenetration(t *testing.T) {
 	defer rwPool.Close()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New("sims-query-api", "0.2.0", "8080", logger)
+	srv := server.New("sims-query-api", "1.0.0", "8080", logger)
 	handler := api.NewHandler(rwPool, logger)
 	handler.RegisterRoutes(srv.Mux)
 
@@ -293,7 +293,7 @@ func TestGateS3_ScopeBypassNegative(t *testing.T) {
 		INSERT INTO vcenters (id, name, api_url, status)
 		VALUES ($1, 'vc-tenant-a', 'https://vc-a:443/sdk', 'READY'),
 		       ($2, 'vc-tenant-b', 'https://vc-b:443/sdk', 'READY')
-		ON CONFLICT (api_url) DO NOTHING
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO NOTHING
 	`, tenantA, tenantB)
 
 	vmA := uuid.New()
@@ -427,7 +427,7 @@ func TestGateS3_CredentialLeakScanner(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New("sims-query-api", "0.2.0", "8080", logger)
+	srv := server.New("sims-query-api", "1.0.0", "8080", logger)
 	handler := api.NewHandler(rwPool, logger)
 	handler.RegisterRoutes(srv.Mux)
 

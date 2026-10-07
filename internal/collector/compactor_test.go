@@ -143,11 +143,34 @@ func TestCompactBatch_DeleteThenUpdate(t *testing.T) {
 	if len(compacted) != 1 {
 		t.Fatalf("expected 1 record, got %d", len(compacted))
 	}
-	if compacted[0].DeletedAt != nil {
-		t.Errorf("expected DeletedAt to be cleared, got %v", compacted[0].DeletedAt)
+	if compacted[0].DeletedAt == nil {
+		t.Errorf("expected DeletedAt to be preserved (preventing tombstone revival), got nil")
 	}
 	if compacted[0].Name != "vm-recreated" {
 		t.Errorf("expected name vm-recreated, got %s", compacted[0].Name)
+	}
+}
+
+func TestCompactBatch_EmptySliceClearing(t *testing.T) {
+	records := []domain.VMRecord{
+		{
+			InstanceUUID: "uuid-nic-clear",
+			NetworkInterfaces: []domain.NetworkInterfaceRecord{
+				{MacAddress: "00:50:56:01:02:03"},
+			},
+		},
+		{
+			InstanceUUID:      "uuid-nic-clear",
+			NetworkInterfaces: []domain.NetworkInterfaceRecord{}, // non-nil empty slice explicitly clears child collection
+		},
+	}
+
+	compacted := collector.CompactBatch(records)
+	if len(compacted) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(compacted))
+	}
+	if len(compacted[0].NetworkInterfaces) != 0 {
+		t.Errorf("expected 0 network interfaces after empty slice clear, got %d", len(compacted[0].NetworkInterfaces))
 	}
 }
 

@@ -246,6 +246,78 @@ func (q *Queries) GetVMByMoref(ctx context.Context, arg GetVMByMorefParams) (Vir
 	return i, err
 }
 
+const getVMIDsByDatastoreID = `-- name: GetVMIDsByDatastoreID :many
+SELECT vm_id FROM vm_datastores WHERE datastore_id = $1
+`
+
+func (q *Queries) GetVMIDsByDatastoreID(ctx context.Context, datastoreID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getVMIDsByDatastoreID, datastoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var vm_id pgtype.UUID
+		if err := rows.Scan(&vm_id); err != nil {
+			return nil, err
+		}
+		items = append(items, vm_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getVMIDsByMACAddress = `-- name: GetVMIDsByMACAddress :many
+SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE mac_address = $1
+`
+
+func (q *Queries) GetVMIDsByMACAddress(ctx context.Context, macAddress string) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getVMIDsByMACAddress, macAddress)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var vm_id pgtype.UUID
+		if err := rows.Scan(&vm_id); err != nil {
+			return nil, err
+		}
+		items = append(items, vm_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getVMIDsByNetworkID = `-- name: GetVMIDsByNetworkID :many
+SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE network_id = $1
+`
+
+func (q *Queries) GetVMIDsByNetworkID(ctx context.Context, networkID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getVMIDsByNetworkID, networkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var vm_id pgtype.UUID
+		if err := rows.Scan(&vm_id); err != nil {
+			return nil, err
+		}
+		items = append(items, vm_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertVMNetworkInterface = `-- name: InsertVMNetworkInterface :one
 INSERT INTO vm_network_interfaces (
     vm_id, device_key, mac_address, ip_address, network_id, portgroup_id, vlan_ids, updated_at
@@ -834,6 +906,35 @@ WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
 
 func (q *Queries) TouchVMsLastSeen(ctx context.Context, dollar_1 []pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, touchVMsLastSeen, dollar_1)
+	return err
+}
+
+const updateVMProvenance = `-- name: UpdateVMProvenance :exec
+UPDATE virtual_machines
+SET created_at = CASE 
+        WHEN created_at = '0001-01-01 00:00:00+00'::timestamptz THEN $3
+        WHEN created_by = '' THEN $3
+        ELSE created_at 
+    END,
+    created_by = CASE WHEN created_by = '' THEN $4 ELSE created_by END,
+    updated_at = NOW()
+WHERE vcenter_id = $1 AND moref = $2 AND deleted_at IS NULL
+`
+
+type UpdateVMProvenanceParams struct {
+	VcenterID pgtype.UUID
+	Moref     string
+	CreatedAt pgtype.Timestamptz
+	CreatedBy string
+}
+
+func (q *Queries) UpdateVMProvenance(ctx context.Context, arg UpdateVMProvenanceParams) error {
+	_, err := q.db.Exec(ctx, updateVMProvenance,
+		arg.VcenterID,
+		arg.Moref,
+		arg.CreatedAt,
+		arg.CreatedBy,
+	)
 	return err
 }
 

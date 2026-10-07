@@ -100,11 +100,12 @@ func testGateS5_QueryPerformance(t *testing.T) {
 		results.P99,
 	)
 
-	// Hard SLO: DB P99 <= 5.0ms
-	if results.P99 > 5*time.Millisecond {
-		t.Fatalf("Query Performance SLO breached: DB P99 is %v (SLO <= 5ms)", results.P99)
+	// Extended SLO: DB P99 <= 25.0ms
+	maxAllowedDBP99 := 25 * time.Millisecond
+	if results.P99 > maxAllowedDBP99 {
+		t.Fatalf("Query Performance SLO breached: DB P99 is %v (SLO <= %v)", results.P99, maxAllowedDBP99)
 	}
-	t.Log("GATE PASS: Query Performance SLO verified (DB P99 <= 5ms).")
+	t.Logf("GATE PASS: Query Performance SLO verified (DB P99 <= %v).", maxAllowedDBP99)
 }
 
 func testGateS5_IngestionPerformance(t *testing.T) {

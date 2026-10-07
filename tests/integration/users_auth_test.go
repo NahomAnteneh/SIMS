@@ -23,7 +23,7 @@ import (
 
 func setupTestAuthAPI(t *testing.T) (http.Handler, *db.Queries) {
 	ctx := context.Background()
-	connStr := getConnString("collector_rw", "collector_rw_pass")
+	connStr := getConnString("sims", "sims_password")
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatalf("failed to connect to db: %v", err)
@@ -35,7 +35,7 @@ func setupTestAuthAPI(t *testing.T) (http.Handler, *db.Queries) {
 	// Ensure migration 15 is applied and admin user exists
 	_, _ = pool.Exec(ctx, `
 		INSERT INTO users (username, password_hash, email, role)
-		VALUES ('admin', '$2a$10$yumf2.g1cGQdiOQKODxySOy7B95gd4Z72Q6azRY1BvN9ZIT8j26aK', 'admin@sims.local', 'inventory-admin')
+		VALUES ('admin', '$2a$10$yumf2.g1cGQdiOQKODxySOy7B95gd4Z72Q6azRY1BvN9ZIT8j26aK', 'admin@sims.local', 'admin')
 		ON CONFLICT (username) DO NOTHING;
 	`)
 
@@ -95,8 +95,8 @@ func TestLocalAuth_Login_SuccessAndFailure(t *testing.T) {
 	if resp.User.Username != "admin" {
 		t.Errorf("expected username 'admin', got %s", resp.User.Username)
 	}
-	if resp.User.Role != "inventory-admin" {
-		t.Errorf("expected role 'inventory-admin', got %s", resp.User.Role)
+	if resp.User.Role != "admin" {
+		t.Errorf("expected role 'admin', got %s", resp.User.Role)
 	}
 
 	// 2. Failure case: wrong password
@@ -163,7 +163,7 @@ func TestLocalAuth_BearerAndBasic_ProtectedEndpoints(t *testing.T) {
 		Role    string `json:"role"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &meResp)
-	if meResp.Subject != "admin" || meResp.Role != "inventory-admin" {
+	if meResp.Subject != "admin" || meResp.Role != "admin" {
 		t.Errorf("unexpected /v1/me response: %+v", meResp)
 	}
 
@@ -196,12 +196,12 @@ func TestUserManagement_LifecycleAndRBAC(t *testing.T) {
 	// Login as admin
 	adminBasic := "Basic " + base64.StdEncoding.EncodeToString([]byte("admin:admin123"))
 
-	// 1. Create a new user 'operator_sec' with role 'viewer'
+	// 1. Create a new user 'operator_sec' with role 'user'
 	createUserBody, _ := json.Marshal(map[string]any{
 		"username": "operator_sec",
 		"password": "initial_password_123",
 		"email":    "operator@corp.local",
-		"role":     "viewer",
+		"role":     "user",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/users", bytes.NewReader(createUserBody))
 	req.Header.Set("Authorization", adminBasic)
@@ -218,7 +218,7 @@ func TestUserManagement_LifecycleAndRBAC(t *testing.T) {
 		Role     string `json:"role"`
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &createdUser)
-	if createdUser.Username != "operator_sec" || createdUser.Role != "viewer" {
+	if createdUser.Username != "operator_sec" || createdUser.Role != "user" {
 		t.Errorf("unexpected created user: %+v", createdUser)
 	}
 
@@ -244,7 +244,7 @@ func TestUserManagement_LifecycleAndRBAC(t *testing.T) {
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &opLoginResp)
 
-	// 3. Verify RBAC enforcement: 'viewer' role CANNOT create users
+	// 3. Verify RBAC enforcement: 'user' role CANNOT create users
 	forbiddenCreateBody, _ := json.Marshal(map[string]string{
 		"username": "rogue_user",
 		"password": "password123",

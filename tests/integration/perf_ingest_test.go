@@ -39,7 +39,7 @@ func TestIngestionPerformanceGate(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO vcenters (id, name, api_url, instance_uuid, version, build, credential_ref, status, enabled)
 		VALUES ($1::uuid, 'vc-ingest-perf', 'https://vc-ingest.local/sdk', 'vc-ingest-uuid', '8.0.3', '24022515', 'ref', 'ASSIGNED', true)
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`, uuid.New()).Scan(&vcenterID)
 	if err != nil {
