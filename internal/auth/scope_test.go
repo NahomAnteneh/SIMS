@@ -130,3 +130,53 @@ func TestNegativeScopeBypass_Penetration(t *testing.T) {
 		})
 	}
 }
+
+func TestIdentity_CanAccessVCenter(t *testing.T) {
+	vc1 := uuid.MustParse("a0000000-0000-0000-0000-000000000001")
+	vc2 := uuid.MustParse("b0000000-0000-0000-0000-000000000002")
+
+	// 1. Admin without restrictions: access all
+	adminAll := &Identity{Role: RoleAdmin}
+	if !adminAll.CanAccessVCenter(vc1) || !adminAll.CanAccessVCenter(vc2) {
+		t.Errorf("admin without restrictions should access any vCenter")
+	}
+
+	// 2. Admin with restrictions: access only restricted
+	adminRestricted := &Identity{Role: RoleAdmin, AllowedVCenterIDs: []uuid.UUID{vc1}}
+	if !adminRestricted.CanAccessVCenter(vc1) {
+		t.Errorf("restricted admin should access vc1")
+	}
+	if adminRestricted.CanAccessVCenter(vc2) {
+		t.Errorf("restricted admin should NOT access vc2")
+	}
+
+	// 3. User with empty allowed list: FAIL CLOSED (must not allow access)
+	userEmpty := &Identity{Role: RoleUser, AllowedVCenterIDs: []uuid.UUID{}}
+	if userEmpty.CanAccessVCenter(vc1) {
+		t.Errorf("user with empty AllowedVCenterIDs must NOT access vc1 (fail closed)")
+	}
+
+	// 4. User with allowed list
+	userRestricted := &Identity{Role: RoleUser, AllowedVCenterIDs: []uuid.UUID{vc1}}
+	if !userRestricted.CanAccessVCenter(vc1) {
+		t.Errorf("user should access vc1")
+	}
+	if userRestricted.CanAccessVCenter(vc2) {
+		t.Errorf("user should NOT access vc2")
+	}
+}
+
+func TestIdentity_HasRole(t *testing.T) {
+	admin := &Identity{Role: RoleAdmin}
+	if !admin.HasRole(RoleAdmin) || !admin.HasRole(RoleInventoryAdmin) || !admin.HasRole(RoleUser) || !admin.HasRole(RoleViewer) {
+		t.Errorf("admin should satisfy all role checks")
+	}
+
+	user := &Identity{Role: RoleUser}
+	if user.HasRole(RoleAdmin) || user.HasRole(RoleInventoryAdmin) {
+		t.Errorf("user should not satisfy admin role")
+	}
+	if !user.HasRole(RoleUser) || !user.HasRole(RoleViewer) {
+		t.Errorf("user should satisfy user and viewer roles")
+	}
+}

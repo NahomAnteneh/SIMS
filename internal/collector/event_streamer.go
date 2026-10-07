@@ -30,16 +30,17 @@ var V1EventTypes = []string{
 
 // EventRecord represents a normalized vSphere inventory event for ingestion.
 type EventRecord struct {
-	EventKey    int64
-	ChainID     int64
-	EventType   string
-	EntityMoref string
-	EntityName  string
-	EntityType  string
-	UserName    string
-	Message     string
-	CreatedTime time.Time
-	Payload     []byte
+	EventKey       int64
+	ChainID        int64
+	EventType      string
+	EntityMoref    string
+	EntityName     string
+	EntityType     string
+	VMInstanceUUID string
+	UserName       string
+	Message        string
+	CreatedTime    time.Time
+	Payload        []byte
 }
 
 // EventPersister defines the database contract required by EventStreamer.

@@ -129,10 +129,17 @@ func (s *TokenSigner) VerifyToken(tokenStr string) (*Identity, error) {
 		return nil, ErrTokenExpired
 	}
 
+	role := claims.Role
+	if role == "inventory-admin" {
+		role = RoleAdmin
+	} else if role == "viewer" {
+		role = RoleUser
+	}
+
 	return &Identity{
 		Subject:            claims.Subject,
 		Email:              claims.Email,
-		Role:               claims.Role,
+		Role:               role,
 		AllowedVCenterIDs:  claims.AllowedVCenterIDs,
 		AllowedFolderPaths: claims.AllowedFolderPaths,
 	}, nil

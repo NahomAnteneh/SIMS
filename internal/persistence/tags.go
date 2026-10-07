@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ListActiveVMMorefs returns all active (non-soft-deleted) VM morefs for a vCenter.
@@ -18,25 +20,7 @@ func (p *BulkPersister) ListActiveVMMorefs(ctx context.Context, vcenterID string
 		return nil, fmt.Errorf("invalid vcenter uuid %q: %w", vcenterID, err)
 	}
 
-	rows, err := p.pool.Query(ctx, `
-		SELECT moref FROM virtual_machines
-		WHERE vcenter_id = $1 AND deleted_at IS NULL
-		ORDER BY moref ASC
-	`, vcUUID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query active vm morefs: %w", err)
-	}
-	defer rows.Close()
-
-	var morefs []string
-	for rows.Next() {
-		var m string
-		if err := rows.Scan(&m); err != nil {
-			return nil, err
-		}
-		morefs = append(morefs, m)
-	}
-	return morefs, rows.Err()
+	return p.queries.ListActiveVMMorefs(ctx, pgtype.UUID{Bytes: vcUUID, Valid: true})
 }
 
 // GetVMTags returns a map of moref -> []domain.TagRecord for all active VMs in a vCenter.
@@ -46,31 +30,20 @@ func (p *BulkPersister) GetVMTags(ctx context.Context, vcenterID string) (map[st
 		return nil, fmt.Errorf("invalid vcenter uuid %q: %w", vcenterID, err)
 	}
 
-	rows, err := p.pool.Query(ctx, `
-		SELECT vm.moref, vt.tag_id, vt.category_name, vt.tag_name
-		FROM vm_tags vt
-		JOIN virtual_machines vm ON vt.vm_id = vm.id
-		WHERE vm.vcenter_id = $1 AND vm.deleted_at IS NULL
-		ORDER BY vm.moref ASC, vt.category_name ASC, vt.tag_name ASC
-	`, vcUUID)
+	rows, err := p.queries.ListAllVMTags(ctx, pgtype.UUID{Bytes: vcUUID, Valid: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vm tags: %w", err)
 	}
-	defer rows.Close()
 
 	res := make(map[string][]domain.TagRecord)
-	for rows.Next() {
-		var moref, tagID, catName, tagName string
-		if err := rows.Scan(&moref, &tagID, &catName, &tagName); err != nil {
-			return nil, err
-		}
-		res[moref] = append(res[moref], domain.TagRecord{
-			TagID:        tagID,
-			CategoryName: catName,
-			TagName:      tagName,
+	for _, r := range rows {
+		res[r.Moref] = append(res[r.Moref], domain.TagRecord{
+			TagID:        r.TagID,
+			CategoryName: r.CategoryName,
+			TagName:      r.TagName,
 		})
 	}
-	return res, rows.Err()
+	return res, nil
 }
 
 // UpdateVMTags updates the tags assigned to a specific VM using atomic replace-set semantics.
@@ -130,14 +103,16 @@ func (p *BulkPersister) UpdateTagsState(ctx context.Context, vcenterID string, s
 		return fmt.Errorf("invalid vcenter uuid %q: %w", vcenterID, err)
 	}
 
-	_, err = p.pool.Exec(ctx, `
-		INSERT INTO collector_state (vcenter_id, tags_state, tags_last_synced_at, updated_at)
-		VALUES ($1, $2, $3, NOW())
-		ON CONFLICT (vcenter_id) WHERE vcenter_id IS NOT NULL DO UPDATE
-		SET tags_state = EXCLUDED.tags_state,
-		    tags_last_synced_at = EXCLUDED.tags_last_synced_at,
-		    updated_at = NOW()
-	`, vcUUID, state, lastSyncedAt)
+	var synced pgtype.Timestamptz
+	if lastSyncedAt != nil {
+		synced = pgtype.Timestamptz{Time: *lastSyncedAt, Valid: true}
+	}
+
+	err = p.queries.UpsertTagsState(ctx, db.UpsertTagsStateParams{
+		VcenterID:        pgtype.UUID{Bytes: vcUUID, Valid: true},
+		TagsState:        state,
+		TagsLastSyncedAt: synced,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to update tags state: %w", err)
 	}
@@ -151,14 +126,7 @@ func (p *BulkPersister) GetTagsState(ctx context.Context, vcenterID string) (str
 		return "", nil, fmt.Errorf("invalid vcenter uuid %q: %w", vcenterID, err)
 	}
 
-	var state string
-	var lastSynced *time.Time
-
-	err = p.pool.QueryRow(ctx, `
-		SELECT tags_state, tags_last_synced_at
-		FROM collector_state
-		WHERE vcenter_id = $1
-	`, vcUUID).Scan(&state, &lastSynced)
+	row, err := p.queries.GetTagsState(ctx, pgtype.UUID{Bytes: vcUUID, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "unavailable", nil, nil
@@ -166,5 +134,11 @@ func (p *BulkPersister) GetTagsState(ctx context.Context, vcenterID string) (str
 		return "", nil, fmt.Errorf("failed to query tags state: %w", err)
 	}
 
-	return state, lastSynced, nil
+	var lastSynced *time.Time
+	if row.TagsLastSyncedAt.Valid {
+		t := row.TagsLastSyncedAt.Time
+		lastSynced = &t
+	}
+
+	return row.TagsState, lastSynced, nil
 }

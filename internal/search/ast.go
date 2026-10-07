@@ -237,15 +237,39 @@ var AllowedFields = map[string]FieldDef{
 	},
 }
 
+const (
+	MaxASTDepth = 10
+	MaxASTNodes = 50
+)
+
 // ltreeLabelRegex ensures valid PostgreSQL ltree label format: alphanumeric and underscore.
 var ltreePathRegex = regexp.MustCompile(`^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$`)
 
 // Validate checks the semantic correctness of a FilterNode tree against the allow-list.
 func Validate(node *FilterNode) error {
+	nodeCount := 0
+	return validateWithLimit(node, 1, &nodeCount)
+}
+
+func validateWithLimit(node *FilterNode, depth int, nodeCount *int) error {
 	if node == nil {
 		return &ValidationError{
 			Code:    "invalid_filter",
 			Message: "filter node cannot be nil",
+		}
+	}
+
+	*nodeCount++
+	if depth > MaxASTDepth {
+		return &ValidationError{
+			Code:    "query_too_complex",
+			Message: fmt.Sprintf("maximum AST depth %d exceeded", MaxASTDepth),
+		}
+	}
+	if *nodeCount > MaxASTNodes {
+		return &ValidationError{
+			Code:    "query_too_complex",
+			Message: fmt.Sprintf("maximum AST node count %d exceeded", MaxASTNodes),
 		}
 	}
 
@@ -258,7 +282,7 @@ func Validate(node *FilterNode) error {
 			}
 		}
 		for _, child := range node.Operands {
-			if err := Validate(child); err != nil {
+			if err := validateWithLimit(child, depth+1, nodeCount); err != nil {
 				return err
 			}
 		}
@@ -275,7 +299,7 @@ func Validate(node *FilterNode) error {
 				}
 			}
 		}
-		return Validate(node.Operand)
+		return validateWithLimit(node.Operand, depth+1, nodeCount)
 
 	case OpHasTag:
 		cat := strings.TrimSpace(node.Category)

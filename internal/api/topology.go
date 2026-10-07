@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/search"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // TopologyItem represents a general topology entity.
@@ -272,37 +273,25 @@ func (h *Handler) handleListTopologyVMs(topologyType string) http.HandlerFunc {
 }
 
 func (h *Handler) lookupVMIDsByDatastore(ctx context.Context, dsID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := h.pool.Query(ctx, "SELECT vm_id FROM vm_datastores WHERE datastore_id = $1", dsID)
+	pgUUIDs, err := h.queries.GetVMIDsByDatastoreID(ctx, pgtype.UUID{Bytes: dsID, Valid: true})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var ids []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	ids := make([]uuid.UUID, len(pgUUIDs))
+	for i, u := range pgUUIDs {
+		ids[i] = u.Bytes
 	}
-	return ids, rows.Err()
+	return ids, nil
 }
 
 func (h *Handler) lookupVMIDsByNetwork(ctx context.Context, netID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := h.pool.Query(ctx, "SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE network_id = $1", netID)
+	pgUUIDs, err := h.queries.GetVMIDsByNetworkID(ctx, pgtype.UUID{Bytes: netID, Valid: true})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var ids []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
+	ids := make([]uuid.UUID, len(pgUUIDs))
+	for i, u := range pgUUIDs {
+		ids[i] = u.Bytes
 	}
-	return ids, rows.Err()
+	return ids, nil
 }

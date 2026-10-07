@@ -12,8 +12,12 @@ import (
 type Role string
 
 const (
-	RoleViewer         Role = "viewer"
-	RoleInventoryAdmin Role = "inventory-admin"
+	RoleUser  Role = "user"
+	RoleAdmin Role = "admin"
+
+	// Backward-compatibility aliases for legacy tokens
+	RoleViewer         Role = RoleUser
+	RoleInventoryAdmin Role = RoleAdmin
 )
 
 // Identity represents the authenticated caller and their tenant authorization boundaries.
@@ -27,23 +31,29 @@ type Identity struct {
 
 // HasRole checks if identity has the specified role or higher.
 func (id *Identity) HasRole(r Role) bool {
-	if id.Role == RoleInventoryAdmin {
+	if id.Role == RoleAdmin || id.Role == RoleInventoryAdmin {
 		return true
 	}
-	return id.Role == r
+	return id.Role == r || (id.Role == RoleUser && r == RoleViewer)
 }
 
 // CanAccessVCenter returns true if the vcenter is allowed for this identity.
 func (id *Identity) CanAccessVCenter(vcenterID uuid.UUID) bool {
-	if id.Role == RoleInventoryAdmin || len(id.AllowedVCenterIDs) == 0 {
-		return true
+	if id.Role == RoleAdmin || id.Role == RoleInventoryAdmin {
+		if len(id.AllowedVCenterIDs) == 0 {
+			return true
+		}
+		return slices.Contains(id.AllowedVCenterIDs, vcenterID)
+	}
+	if len(id.AllowedVCenterIDs) == 0 {
+		return false
 	}
 	return slices.Contains(id.AllowedVCenterIDs, vcenterID)
 }
 
 // ToScopeConstraint builds the tenant boundary for search compiler injection.
 func (id *Identity) ToScopeConstraint() *search.ScopeConstraint {
-	if id.Role == RoleInventoryAdmin && len(id.AllowedVCenterIDs) == 0 && len(id.AllowedFolderPaths) == 0 {
+	if (id.Role == RoleAdmin || id.Role == RoleInventoryAdmin) && len(id.AllowedVCenterIDs) == 0 && len(id.AllowedFolderPaths) == 0 {
 		// Admin with no restrictions
 		return nil
 	}

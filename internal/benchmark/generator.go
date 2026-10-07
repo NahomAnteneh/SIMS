@@ -156,7 +156,7 @@ func (g *Generator) SeedTopology(ctx context.Context) (*TopologyMetadata, error)
 		err := tx.QueryRow(ctx, `
 			INSERT INTO vcenters (id, name, api_url, instance_uuid, version, build, product_version, api_version, credential_ref, status, enabled, created_at, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'ASSIGNED', true, NOW(), NOW())
-			ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+			ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 			RETURNING id
 		`, vcID, vcName, fmt.Sprintf("https://%s/sdk", vcName), fmt.Sprintf("vc-uuid-%d", vcIdx+1), "8.0.3", "24022515", "8.0.3", "8.0.3.0", "ref-123").Scan(&actualVCID)
 		if err != nil {

@@ -51,7 +51,7 @@ func TestQueryPlanRegression(t *testing.T) {
 	err = db.QueryRowContext(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-query-plan', 'https://vc-query-plan.local/sdk', 'uuid-query-plan-vc')
-		ON CONFLICT (api_url) DO UPDATE SET name = EXCLUDED.name
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET name = EXCLUDED.name
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {

@@ -188,6 +188,32 @@ func TestFilterASTValidation(t *testing.T) {
 			wantErr: true,
 			errCode: "invalid_filter",
 		},
+		{
+			name: "recursion depth exceeds MaxASTDepth",
+			node: func() *FilterNode {
+				root := &FilterNode{Op: OpEQ, Field: "power_state", Value: "poweredOn"}
+				// Nest 12 NOT nodes deep
+				curr := root
+				for i := 0; i < 12; i++ {
+					curr = &FilterNode{Op: OpNot, Operand: curr}
+				}
+				return curr
+			}(),
+			wantErr: true,
+			errCode: "query_too_complex",
+		},
+		{
+			name: "node count exceeds MaxASTNodes",
+			node: func() *FilterNode {
+				operands := make([]*FilterNode, 60)
+				for i := 0; i < 60; i++ {
+					operands[i] = &FilterNode{Op: OpEQ, Field: "power_state", Value: "poweredOn"}
+				}
+				return &FilterNode{Op: OpOr, Operands: operands}
+			}(),
+			wantErr: true,
+			errCode: "query_too_complex",
+		},
 	}
 
 	for _, tt := range tests {

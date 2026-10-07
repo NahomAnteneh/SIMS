@@ -407,10 +407,64 @@ func (q *Queries) UpdateVCenter(ctx context.Context, arg UpdateVCenterParams) (V
 	return i, err
 }
 
+const upsertBootstrapVCenter = `-- name: UpsertBootstrapVCenter :one
+INSERT INTO vcenters (name, api_url, instance_uuid, product_version, api_version, build, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
+ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE
+SET name = EXCLUDED.name,
+    instance_uuid = EXCLUDED.instance_uuid,
+    product_version = EXCLUDED.product_version,
+    api_version = EXCLUDED.api_version,
+    build = EXCLUDED.build,
+    updated_at = NOW()
+RETURNING id, name, api_url, instance_uuid, version, build, created_at, updated_at, product_version, api_version, capabilities, tls_settings, credential_ref, status, priority, enabled, deleted_at
+`
+
+type UpsertBootstrapVCenterParams struct {
+	Name           string
+	ApiUrl         string
+	InstanceUuid   pgtype.Text
+	ProductVersion string
+	ApiVersion     string
+	Build          string
+}
+
+func (q *Queries) UpsertBootstrapVCenter(ctx context.Context, arg UpsertBootstrapVCenterParams) (Vcenter, error) {
+	row := q.db.QueryRow(ctx, upsertBootstrapVCenter,
+		arg.Name,
+		arg.ApiUrl,
+		arg.InstanceUuid,
+		arg.ProductVersion,
+		arg.ApiVersion,
+		arg.Build,
+	)
+	var i Vcenter
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ApiUrl,
+		&i.InstanceUuid,
+		&i.Version,
+		&i.Build,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ProductVersion,
+		&i.ApiVersion,
+		&i.Capabilities,
+		&i.TlsSettings,
+		&i.CredentialRef,
+		&i.Status,
+		&i.Priority,
+		&i.Enabled,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const upsertVCenter = `-- name: UpsertVCenter :one
 INSERT INTO vcenters (name, api_url, instance_uuid, version, build, updated_at)
 VALUES ($1, $2, $3, $4, $5, NOW())
-ON CONFLICT (api_url) DO UPDATE
+ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE
 SET name = EXCLUDED.name,
     instance_uuid = EXCLUDED.instance_uuid,
     version = EXCLUDED.version,

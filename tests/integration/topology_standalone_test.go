@@ -38,7 +38,7 @@ func TestTopology_StandaloneHostUnderComputeResource(t *testing.T) {
 	err = db.QueryRowContext(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-standalone-test', 'https://vc-standalone.local/sdk', 'vc-standalone-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestTopology_StandardSwitchPortgroupVLANExtraction(t *testing.T) {
 	err = db.QueryRowContext(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-vlan-test', 'https://vc-vlan.local/sdk', 'vc-vlan-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -306,7 +306,7 @@ func TestTopology_DatacenterTableAndForeignKeys(t *testing.T) {
 	err = adminDB.QueryRowContext(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-dc-fk-test', 'https://vc-dc-fk.local/sdk', 'vc-dc-fk-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {

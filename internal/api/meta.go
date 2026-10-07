@@ -145,7 +145,7 @@ func (h *Handler) handleListCustomAttributes(w http.ResponseWriter, r *http.Requ
 	}
 	scopeSQL, scopeArgs := buildScopeWhere(scope)
 
-	query := `SELECT vca.name, count(DISTINCT vca.vm_id), array_agg(DISTINCT vca.value)
+	query := `SELECT vca.name, count(DISTINCT vca.vm_id), (array_agg(DISTINCT vca.value))[1:5]
 		FROM vm_custom_attributes vca
 		JOIN virtual_machines vm ON vca.vm_id = vm.id
 		WHERE vm.deleted_at IS NULL` + scopeSQL
@@ -176,7 +176,9 @@ func (h *Handler) handleListCustomAttributes(w http.ResponseWriter, r *http.Requ
 			h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
 			return
 		}
-		if len(rawValues) > 5 {
+		if rawValues == nil {
+			rawValues = []string{}
+		} else if len(rawValues) > 5 {
 			rawValues = rawValues[:5]
 		}
 		item.SampleValues = rawValues

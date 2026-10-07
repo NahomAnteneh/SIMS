@@ -92,7 +92,7 @@ func TestOIDC_DevBypassGuardrails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected bypass token success, got %v", err)
 	}
-	if id.Role != RoleInventoryAdmin {
+	if id.Role != RoleAdmin {
 		t.Errorf("expected dev admin role, got %s", id.Role)
 	}
 }
@@ -152,7 +152,7 @@ func TestOIDC_DiscoveryAndTokenVerification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected valid token authentication, got: %v", err)
 	}
-	if id.Subject != "user-123" || id.Role != RoleInventoryAdmin {
+	if id.Subject != "user-123" || id.Role != RoleAdmin {
 		t.Errorf("unexpected identity: %+v", id)
 	}
 	if len(id.AllowedVCenterIDs) != 1 || len(id.AllowedFolderPaths) != 1 {
@@ -170,6 +170,18 @@ func TestOIDC_DiscoveryAndTokenVerification(t *testing.T) {
 	_, err = auth.AuthenticateToken(ctx, expiredToken)
 	if err != ErrExpiredToken {
 		t.Errorf("expected ErrExpiredToken, got %v", err)
+	}
+
+	// 2b. Missing exp claim (must be rejected)
+	noExpClaims := map[string]any{
+		"iss": serverURL,
+		"aud": "sims-api",
+		"sub": "user-no-exp",
+	}
+	noExpToken := signJWT(t, key1, kid1, noExpClaims)
+	_, err = auth.AuthenticateToken(ctx, noExpToken)
+	if err != ErrExpiredToken {
+		t.Errorf("expected ErrExpiredToken for missing exp claim, got %v", err)
 	}
 
 	// 3. Issuer mismatch

@@ -202,6 +202,9 @@ func (lc *LeaseCoordinator) Renew(ctx context.Context, al *ActiveLease) error {
 }
 
 func (lc *LeaseCoordinator) runHeartbeat(ctx context.Context, al *ActiveLease) {
+	consecutiveFailures := 0
+	const maxRenewalFailures = 3
+
 	for {
 		// Calculate jittered heartbeat interval: interval +/- jitter
 		jitterRange := int64(lc.cfg.HeartbeatJitter) * 2
@@ -226,20 +229,31 @@ func (lc *LeaseCoordinator) runHeartbeat(ctx context.Context, al *ActiveLease) {
 		cancel()
 
 		if err != nil {
-			lc.logger.Warn("heartbeat lease renewal failed; marking lease lost",
+			consecutiveFailures++
+			lc.logger.Warn("heartbeat lease renewal failed",
 				slog.String("target_id", al.TargetID.String()),
+				slog.Int("consecutive_failures", consecutiveFailures),
+				slog.Int("threshold", maxRenewalFailures),
 				slog.String("error", err.Error()),
 			)
-			lc.mu.Lock()
-			select {
-			case <-al.LostChan:
-			default:
-				close(al.LostChan)
+			if errors.Is(err, ErrLeaseLost) || consecutiveFailures >= maxRenewalFailures {
+				lc.logger.Warn("heartbeat lease renewal failures exceeded threshold; marking lease lost",
+					slog.String("target_id", al.TargetID.String()),
+				)
+				lc.mu.Lock()
+				select {
+				case <-al.LostChan:
+				default:
+					close(al.LostChan)
+				}
+				delete(lc.leases, al.TargetID)
+				lc.mu.Unlock()
+				return
 			}
-			delete(lc.leases, al.TargetID)
-			lc.mu.Unlock()
-			return
+			continue
 		}
+
+		consecutiveFailures = 0
 
 		lc.logger.Debug("heartbeat lease renewed successfully",
 			slog.String("target_id", al.TargetID.String()),

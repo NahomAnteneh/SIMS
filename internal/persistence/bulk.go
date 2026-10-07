@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/collector"
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/infrastructure/sims/internal/telemetry"
@@ -28,6 +29,7 @@ type WriterConfig struct {
 // BulkPersister executes high-throughput bulk persistence using COPY + staging table + set-based merge.
 type BulkPersister struct {
 	pool    *pgxpool.Pool
+	queries *db.Queries
 	cfg     WriterConfig
 	metrics *telemetry.Metrics
 }
@@ -42,6 +44,7 @@ func NewBulkPersister(pool *pgxpool.Pool, cfg WriterConfig, metrics *telemetry.M
 	}
 	return &BulkPersister{
 		pool:    pool,
+		queries: db.New(pool),
 		cfg:     cfg,
 		metrics: metrics,
 	}

@@ -89,6 +89,11 @@ func (p *BulkPersister) PersistEvent(ctx context.Context, vcenterID string, even
 		entityType = "VirtualMachine"
 	}
 
+	var vmInstanceUUID *string
+	if event.VMInstanceUUID != "" {
+		vmInstanceUUID = &event.VMInstanceUUID
+	}
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO inventory_events (
 			vcenter_id, event_key, chain_id, event_type, vm_moref, vm_instance_uuid,
@@ -101,7 +106,7 @@ func (p *BulkPersister) PersistEvent(ctx context.Context, vcenterID string, even
 		)
 		ON CONFLICT (vcenter_id, event_key) DO NOTHING
 	`,
-		vcUUID, event.EventKey, event.ChainID, event.EventType, event.EntityMoref, nil,
+		vcUUID, event.EventKey, event.ChainID, event.EventType, event.EntityMoref, vmInstanceUUID,
 		event.UserName, entityType, event.EntityMoref, event.EntityName, payload, event.Message,
 		event.CreatedTime,
 	)

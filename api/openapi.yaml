@@ -680,7 +680,7 @@ paths:
   /v1/users:
     get:
       summary: List provisioned users
-      description: Returns a list of provisioned users. Requires inventory-admin role.
+      description: Returns a list of provisioned users. Requires admin role.
       operationId: listUsers
       responses:
         "200":
@@ -696,14 +696,14 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
         "403":
-          description: Insufficient privileges (requires inventory-admin)
+          description: Insufficient privileges (requires admin)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
     post:
       summary: Create a new user
-      description: Provisions a new local user with specified role and optional tenant scoping. Requires inventory-admin role.
+      description: Provisions a new local user with specified role and optional tenant scoping. Requires admin role.
       operationId: createUser
       requestBody:
         required: true
@@ -746,7 +746,7 @@ paths:
   /v1/users/{id}:
     get:
       summary: Get user details
-      description: Retrieve details for a specific user. Requires inventory-admin role.
+      description: Retrieve details for a specific user. Requires admin role.
       operationId: getUser
       parameters:
         - name: id
@@ -783,7 +783,7 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
     patch:
       summary: Update user password or metadata
-      description: Updates credentials for an existing user. Requires inventory-admin role.
+      description: Updates credentials for an existing user. Requires admin role.
       operationId: updateUser
       parameters:
         - name: id
@@ -832,7 +832,7 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
     delete:
       summary: Delete user
-      description: Deletes an existing user account. Requires inventory-admin role. Self-deletion is prevented.
+      description: Deletes an existing user account. Requires admin role. Self-deletion is prevented.
       operationId: deleteUser
       parameters:
         - name: id
@@ -1583,8 +1583,8 @@ components:
           example: "user@corp.local"
         role:
           type: string
-          enum: [viewer, inventory-admin]
-          example: "viewer"
+          enum: [user, admin]
+          example: "user"
         vcenter_ids:
           type: array
           items:
@@ -1842,9 +1842,9 @@ components:
         role:
           type: string
           enum:
-            - inventory-admin
-            - viewer
-          default: viewer
+            - admin
+            - user
+          default: user
         allowed_vcenter_ids:
           type: array
           items:
@@ -1885,9 +1885,9 @@ components:
         role:
           type: string
           enum:
-            - inventory-admin
-            - viewer
-          example: viewer
+            - admin
+            - user
+          example: user
         allowed_vcenter_ids:
           type: array
           nullable: true

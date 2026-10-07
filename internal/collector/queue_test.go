@@ -261,3 +261,27 @@ func TestBoundedQueue_CloseDrainsRemaining(t *testing.T) {
 		t.Fatalf("expected ErrQueueClosed on empty pop, got: %v", err)
 	}
 }
+
+func TestBoundedQueue_PushConcurrentCloseNoPanic(t *testing.T) {
+	metrics := telemetry.NewMetrics("test", "0.1.0")
+	for iter := 0; iter < 100; iter++ {
+		q := collector.NewBoundedQueue[int]("vc-panic-test", 1, metrics)
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				_ = q.Push(context.Background(), i)
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			time.Sleep(time.Duration(iter%5) * time.Millisecond)
+			q.Close()
+		}()
+
+		wg.Wait()
+	}
+}

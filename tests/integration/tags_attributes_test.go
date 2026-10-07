@@ -37,7 +37,7 @@ func TestTagsAndCustomAttributesPersistenceAndReplaceSet(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-tags-test', 'https://vc-tags-test.local/sdk', 'vc-tags-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -209,8 +209,8 @@ func TestTagsAndCustomAttributesPersistenceAndReplaceSet(t *testing.T) {
 			ConnectionState:  "connected",
 			CPUCores:         4,
 			MemoryMB:         8192,
-			Tags:             nil,
-			CustomAttributes: nil,
+			Tags:             []domain.TagRecord{},
+			CustomAttributes: []domain.CustomAttributeRecord{},
 		},
 	}
 	_, err = persister.PersistVMBatch(ctx, emptyBatch)
@@ -248,7 +248,7 @@ func TestTagsAndCustomAttributesAPI_DetailEndpoint(t *testing.T) {
 	err = rwPool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-api-tags-test', 'https://vc-api-tags.local/sdk', 'vc-api-tags-uuid')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -367,7 +367,7 @@ func TestTagsAndCustomAttributes_ExplainQueryPlan(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-explain-test', 'https://vc-explain.local/sdk', 'vc-explain-uuid')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {

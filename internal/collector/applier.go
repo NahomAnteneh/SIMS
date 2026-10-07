@@ -17,6 +17,8 @@ import (
 // Only non-nil fields are updated in the database, guaranteeing that single-field
 // modifications never overwrite or zero out untouched columns.
 type VMFieldMask struct {
+	InstanceUUID    *string
+	BiosUUID        *string
 	Name            *string
 	PowerState      *string
 	ConnectionState *string
@@ -141,6 +143,9 @@ func (a *IncrementalApplier) handleEnter(ctx context.Context, vcenterID, moref s
 	}
 
 	instanceUUID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(vcenterID+":"+moref)).String()
+	if mask.InstanceUUID != nil && *mask.InstanceUUID != "" {
+		instanceUUID = *mask.InstanceUUID
+	}
 
 	vm := domain.VMRecord{
 		VCenterID:         vcenterID,
@@ -153,6 +158,9 @@ func (a *IncrementalApplier) handleEnter(ctx context.Context, vcenterID, moref s
 		DatastoreMoRefs:   []string{},
 		NetworkInterfaces: mask.NetworkInterfaces,
 		CustomAttributes:  mask.CustomAttributes,
+	}
+	if mask.BiosUUID != nil && *mask.BiosUUID != "" {
+		vm.BiosUUID = *mask.BiosUUID
 	}
 	if mask.FolderID != nil {
 		vm.FolderID = *mask.FolderID
@@ -257,8 +265,34 @@ func (a *IncrementalApplier) parseChangeSetToMask(vcenterID, moref string, chang
 				}
 			}
 
+		case "config.instanceUuid":
+			if s, ok := c.Val.(string); ok && s != "" {
+				mask.InstanceUUID = &s
+			}
+
+		case "summary.config.instanceUuid":
+			if s, ok := c.Val.(string); ok && s != "" {
+				mask.InstanceUUID = &s
+			}
+
+		case "config.uuid":
+			if s, ok := c.Val.(string); ok && s != "" {
+				mask.BiosUUID = &s
+			}
+
+		case "summary.config.uuid":
+			if s, ok := c.Val.(string); ok && s != "" {
+				mask.BiosUUID = &s
+			}
+
 		case "summary.config":
 			if sc, ok := c.Val.(types.VirtualMachineConfigSummary); ok {
+				if sc.InstanceUuid != "" {
+					mask.InstanceUUID = &sc.InstanceUuid
+				}
+				if sc.Uuid != "" {
+					mask.BiosUUID = &sc.Uuid
+				}
 				if sc.Name != "" {
 					mask.Name = &sc.Name
 				}

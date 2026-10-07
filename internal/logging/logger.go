@@ -10,7 +10,11 @@ import (
 	"strings"
 )
 
-var sensitiveKeyPattern = regexp.MustCompile(`(?i)(password|secret|token|auth|credential|apikey|api_key|private_key)`)
+var (
+	sensitiveKeyPattern = regexp.MustCompile(`(?i)(password|passwd|secret|token|auth|credential|apikey|api_key|access_key|private_key)`)
+	bearerPattern       = regexp.MustCompile(`(?i)(bearer\s+)[A-Za-z0-9\-._~+/]+=*`)
+	kvSecretPattern     = regexp.MustCompile(`(?i)(password|passwd|secret|token|apikey|api_key|access_key|private_key)\s*[:=]\s*["']?([^\s"',;]+)["']?`)
+)
 
 // RedactionHandler wraps an slog.Handler and redacts values for keys matching sensitive patterns.
 type RedactionHandler struct {
@@ -72,6 +76,8 @@ func RedactString(s string) string {
 	if strings.Contains(s, "://") && strings.Contains(s, "@") {
 		s = RedactURL(s)
 	}
+	s = bearerPattern.ReplaceAllString(s, "${1}[REDACTED]")
+	s = kvSecretPattern.ReplaceAllString(s, "${1}=[REDACTED]")
 	return s
 }
 

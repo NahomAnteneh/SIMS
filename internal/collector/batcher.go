@@ -223,8 +223,16 @@ func (b *StreamBatcher) Drain(ctx context.Context) error {
 		slog.Int("queue_depth", b.queue.Depth()),
 	)
 
-	// Close queue to unblock any pending producers and prevent new inputs
+	// Stop background consumer loop and wait for it to exit before draining
+	b.Stop()
 	b.queue.Close()
+	if b.running.Load() {
+		select {
+		case <-b.doneCh:
+		case <-drainCtx.Done():
+			return fmt.Errorf("timed out waiting for batcher consumer loop to exit during drain: %w", drainCtx.Err())
+		}
+	}
 
 	// Drain remaining items
 	for b.queue.Depth() > 0 {
@@ -248,6 +256,5 @@ func (b *StreamBatcher) Drain(ctx context.Context) error {
 		}
 	}
 
-	b.Stop()
 	return nil
 }
