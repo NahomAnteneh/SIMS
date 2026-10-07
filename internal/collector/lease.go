@@ -15,6 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/infrastructure/sims/generated/db"
+	"github.com/infrastructure/sims/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -66,6 +69,13 @@ func (al *ActiveLease) IsLost() bool {
 	}
 }
 
+// Close stops the background heartbeat renewal loop for this lease
+func (al *ActiveLease) Close() {
+	if al.cancelFunc != nil {
+		al.cancelFunc()
+	}
+}
+
 // LeaseCoordinator manages transactional lease claims, renewals, and failover (S4.2)
 type LeaseCoordinator struct {
 	workerID string
@@ -110,17 +120,27 @@ func (lc *LeaseCoordinator) Acquire(ctx context.Context, targetID uuid.UUID) (*A
 	pgTargetID := pgtype.UUID{Bytes: targetID, Valid: true}
 	leaseUntil := time.Now().Add(lc.cfg.LeaseTTL)
 
+	_, span := telemetry.StartSpan(ctx, "lease.acquire",
+		trace.WithAttributes(
+			attribute.String("target.id", targetID.String()),
+			attribute.String("worker.id", lc.workerID),
+		),
+	)
 	row, err := lc.queries.AcquireLease(ctx, db.AcquireLeaseParams{
 		TargetID:   pgTargetID,
 		HolderID:   lc.workerID,
 		LeaseUntil: pgtype.Timestamptz{Time: leaseUntil, Valid: true},
 	})
 	if err != nil {
+		telemetry.RecordSafeError(span, err)
+		span.End()
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrLeaseHeld
 		}
 		return nil, fmt.Errorf("failed to acquire lease: %w", err)
 	}
+	span.SetAttributes(attribute.Int64("lease.version", row.Version))
+	span.End()
 
 	heartbeatCtx, cancel := context.WithCancel(context.Background())
 	al := &ActiveLease{
@@ -154,6 +174,13 @@ func (lc *LeaseCoordinator) Renew(ctx context.Context, al *ActiveLease) error {
 	pgTargetID := pgtype.UUID{Bytes: al.TargetID, Valid: true}
 	newUntil := time.Now().Add(lc.cfg.LeaseTTL)
 
+	_, span := telemetry.StartSpan(ctx, "lease.renew",
+		trace.WithAttributes(
+			attribute.String("target.id", al.TargetID.String()),
+			attribute.String("worker.id", lc.workerID),
+			attribute.Int64("lease.version", al.Version),
+		),
+	)
 	row, err := lc.queries.RenewLease(ctx, db.RenewLeaseParams{
 		TargetID:   pgTargetID,
 		HolderID:   lc.workerID,
@@ -161,11 +188,14 @@ func (lc *LeaseCoordinator) Renew(ctx context.Context, al *ActiveLease) error {
 		Version:    al.Version,
 	})
 	if err != nil {
+		telemetry.RecordSafeError(span, err)
+		span.End()
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrLeaseLost
 		}
 		return fmt.Errorf("renew query failed: %w", err)
 	}
+	span.End()
 
 	al.LeaseUntil = row.LeaseUntil.Time
 	return nil
@@ -237,11 +267,20 @@ func (lc *LeaseCoordinator) Release(ctx context.Context, targetID uuid.UUID) err
 	}
 
 	pgTargetID := pgtype.UUID{Bytes: targetID, Valid: true}
+	_, span := telemetry.StartSpan(ctx, "lease.release",
+		trace.WithAttributes(
+			attribute.String("target.id", targetID.String()),
+			attribute.String("worker.id", lc.workerID),
+		),
+	)
+	defer span.End()
+
 	err := lc.queries.ReleaseLease(ctx, db.ReleaseLeaseParams{
 		TargetID: pgTargetID,
 		HolderID: lc.workerID,
 	})
 	if err != nil {
+		telemetry.RecordSafeError(span, err)
 		lc.logger.Warn("failed to release lease in database",
 			slog.String("target_id", targetID.String()),
 			slog.String("error", err.Error()),

@@ -15,6 +15,8 @@ import (
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -151,6 +153,14 @@ func (f *RestTagFetcher) FetchTagsForObjects(
 		return nil, ErrTaggingUnavailable
 	}
 
+	ctx, span := telemetry.StartSpan(ctx, "vapi.fetch_tags",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", f.vcenterID),
+			attribute.Int("objects.count", len(refs)),
+		),
+	)
+	defer span.End()
+
 	start := time.Now()
 	res := make(map[string][]domain.TagRecord)
 	if len(refs) == 0 {
@@ -174,6 +184,7 @@ func (f *RestTagFetcher) FetchTagsForObjects(
 		attached, err := f.manager.ListAttachedTagsOnObjects(callCtx, moRefs)
 		cancel()
 		if err != nil {
+			telemetry.RecordSafeError(span, err)
 			if f.metrics != nil {
 				f.metrics.TagFetchFailures.WithLabelValues(f.vcenterID).Inc()
 			}

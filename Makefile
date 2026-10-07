@@ -11,6 +11,7 @@ GOVULNCHECK := $(BIN_DIR)/govulncheck
 .PHONY: all help format lint test test-unit test-race build clean
 .PHONY: sqlc-generate sqlc-verify test-migration test-db-integration test-vcsim-integration
 .PHONY: test-gate-s4 test-scale-s4 demo-s4
+.PHONY: test-perf-query test-perf-ingest
 .PHONY: vulncheck container-build dev-up dev-down dev-reset tools
 
 all: help
@@ -38,16 +39,18 @@ lint: tools ## Run golangci-lint on backend code
 test: test-unit ## Alias for test-unit
 
 test-unit: ## Run unit tests with standard timeout
-	$(GO) test -v -short ./internal/... ./cmd/...
+	$(GO) test -v ./internal/... ./cmd/...
 
 test-race: ## Run unit tests with data race detector enabled
-	$(GO) test -v -race -short ./internal/... ./cmd/...
+	$(GO) test -v -race ./internal/... ./cmd/...
 
 build: ## Build collector and query-api binaries into bin/
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN_DIR)/collector ./cmd/collector
 	$(GO) build -o $(BIN_DIR)/query-api ./cmd/query-api
 	$(GO) build -o $(BIN_DIR)/vcenter-spike ./cmd/vcenter-spike
+	$(GO) build -o $(BIN_DIR)/dataset-gen ./cmd/dataset-gen
+	$(GO) build -o $(BIN_DIR)/vcsim ./cmd/vcsim
 
 sqlc-generate: tools ## Generate type-safe Go database code with sqlc
 	$(SQLC) generate
@@ -65,7 +68,7 @@ test-vcsim-integration: ## Run vcsim simulator integration tests
 	$(GO) test -v -tags=integration ./tests/integration -run TestVCSim
 
 test-integration: tools ## Run all integration tests (database, identity, topology, network, API)
-	$(GO) test -v -tags=integration ./tests/integration -run 'Test(Migrations|Identity|Topology|Network|VLAN|BulkPersistence|API|OpenAPI|VCSim)'
+	$(GO) test -v -tags=integration ./tests/integration -run 'Test(Migrations|RolePrivileges|Identity|Topology|Network|VLAN|BulkPersistence|API|OpenAPI|VCSim|LocalAuth|UserManagement|Security|Telemetry)'
 
 test-gate: tools ## Run Sprint 1 Test Gate (5,000-VM vcsim hydration & 50,000 synthetic DB load)
 	$(GO) test -v -tags=integration -timeout 10m ./tests/integration -run TestGate
@@ -88,8 +91,26 @@ demo-s4: tools ## Run Sprint 4 end-to-end demo (leases, takeover, xvMotion, reco
 test-gate-s4: tools ## Run Sprint 4 Test Gate (worker takeover, lease race, xvMotion, differential reconciliation, tags, purger)
 	$(GO) test -v -tags=integration ./tests/integration -run TestGateS4
 
+test-gate-s5: tools ## Run Sprint 5 Release Candidate Test Gate (v1.0.0 criteria)
+	$(GO) test -v -tags=integration ./tests/integration -run TestGateS5
+
+demo-s5: tools ## Run Sprint 5 End-to-End Demo Script
+	./scripts/demo-s5.sh
+
 test-scale-s4: tools ## Run Sprint 4 Scale Suite (3, 5, 10 vCenters multi-target scale simulation)
 	$(GO) test -v -tags=integration ./tests/integration -run TestScaleS4
+
+test-perf-query: tools ## Run Sprint 5 Query Performance Gate (P99 <= 5ms target)
+	$(GO) test -v -tags=integration ./tests/integration -run TestQueryPerformanceGate
+
+test-perf-ingest: tools ## Run Sprint 5 Ingestion Performance Gate (batch write P95 <= 15ms, e2e P95 <= 250ms)
+	$(GO) test -v -tags=integration ./tests/integration -run TestIngestionPerformanceGate
+
+test-chaos: tools ## Run Sprint 5 Chaos Resilience Suite (9 fault injection scenarios)
+	$(GO) test -v -tags=integration ./tests/integration -run TestChaos_
+
+test-soak: tools ## Run Sprint 5 Soak Test Harness (continuous ingestion, query, leak detection)
+	$(GO) test -v -tags=integration ./tests/soak -run TestSoak_ContinuousWorkload
 
 test-churn: tools ## Run Sprint 2 real-time pipeline churn test (configure CHURN_DURATION env)
 	$(GO) test -v -tags=integration ./tests/integration -run TestChurn_RealtimePipeline
@@ -98,9 +119,12 @@ vulncheck: tools ## Scan Go dependencies for known vulnerabilities
 	$(GOVULNCHECK) ./...
 
 container-build: ## Build production multi-stage container images for all services
-	docker build -f deploy/Dockerfile.collector -t sims-collector:0.1.0 .
-	docker build -f deploy/Dockerfile.query-api -t sims-query-api:0.1.0 .
-	docker build -f deploy/Dockerfile.web -t sims-web:0.1.0 ./web
+	docker build -f deploy/Dockerfile.collector -t sims-collector:1.0.0 .
+	docker build -f deploy/Dockerfile.query-api -t sims-query-api:1.0.0 .
+	docker build -f deploy/Dockerfile.migration -t sims-migration:1.0.0 .
+	docker build -f deploy/Dockerfile.vcsim -t sims-vcsim:1.0.0 .
+	docker build -f deploy/Dockerfile.web -t sims-web:1.0.0 ./web
+
 
 dev-up: ## Start the full local development stack with Docker Compose
 	docker compose -f deploy/docker-compose.yml up -d --build
@@ -112,4 +136,4 @@ dev-reset: ## Stop local stack and purge persistent database and telemetry volum
 	docker compose -f deploy/docker-compose.yml down -v --remove-orphans
 
 clean: ## Remove build artifacts and temporary files
-	rm -rf bin/collector bin/query-api bin/vcenter-spike dist/ build/ coverage.txt
+	rm -rf bin/collector bin/query-api bin/vcenter-spike bin/dataset-gen bin/vcsim dist/ build/ coverage.txt

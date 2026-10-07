@@ -13,12 +13,15 @@ import (
 	"time"
 
 	"github.com/infrastructure/sims/internal/logging"
+	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/session"
 	"github.com/vmware/govmomi/vim25"
 	"github.com/vmware/govmomi/vim25/methods"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -156,11 +159,19 @@ func (sm *SessionManager) connectLocked(ctx context.Context) error {
 
 // Login authenticates an active session with vCenter using configured credentials.
 func (sm *SessionManager) Login(ctx context.Context) error {
+	ctx, span := telemetry.StartSpan(ctx, "vCenter.login",
+		trace.WithAttributes(
+			attribute.String("vcenter.endpoint", logging.RedactURL(sm.cfg.URL)),
+		),
+	)
+	defer span.End()
+
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	if sm.client == nil {
 		if err := sm.connectLocked(ctx); err != nil {
+			telemetry.RecordSafeError(span, err)
 			return err
 		}
 	}
@@ -174,7 +185,9 @@ func (sm *SessionManager) Login(ctx context.Context) error {
 
 	err := sm.client.Login(timeoutCtx, sm.user)
 	if err != nil {
-		return sm.classifyError(err)
+		cErr := sm.classifyError(err)
+		telemetry.RecordSafeError(span, cErr)
+		return cErr
 	}
 	return nil
 }

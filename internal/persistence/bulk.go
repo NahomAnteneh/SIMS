@@ -15,6 +15,8 @@ import (
 	"github.com/infrastructure/sims/internal/vlan"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // WriterConfig defines tuning parameters for the bulk persistence pipeline.
@@ -244,6 +246,15 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	compactedCount := len(compacted)
 
 	vcenterID := records[0].VCenterID
+	ctx, flushSpan := telemetry.StartSpan(ctx, "persistence.batch_flush",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+			attribute.Int("batch.raw_count", rawCount),
+			attribute.Int("batch.compacted_count", compactedCount),
+		),
+	)
+	defer flushSpan.End()
+
 	if p.metrics != nil && rawCount > 0 {
 		ratio := float64(rawCount-compactedCount) / float64(rawCount)
 		p.metrics.CompactionRatio.WithLabelValues(vcenterID).Observe(ratio)
@@ -253,6 +264,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	// 2. Begin single database transaction
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
+		telemetry.RecordSafeError(flushSpan, err)
 		return 0, fmt.Errorf("failed to begin persistence transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
@@ -260,7 +272,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	// 3. Create unlogged/temporary staging table without foreign keys or indexes.
 	// folder_path is typed as TEXT to allow native string streaming via CopyFrom without ltree binary framing.
 	_, err = tx.Exec(ctx, `
-		CREATE TEMP TABLE staging_vms (
+		CREATE TEMP TABLE IF NOT EXISTS staging_vms (
 			vcenter_id UUID NOT NULL,
 			moref TEXT NOT NULL,
 			instance_uuid TEXT NOT NULL,
@@ -280,7 +292,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_ip_address inet,
 			annotation TEXT NOT NULL,
 			deleted_at TIMESTAMPTZ
-		) ON COMMIT DROP;
+		) ON COMMIT DELETE ROWS;
 	`)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create staging table: %w", err)
@@ -309,6 +321,12 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	}
 
 	// 4. COPY FROM STDIN into staging table
+	_, copySpan := telemetry.StartSpan(ctx, "persistence.binary_copy",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+			attribute.Int("records.count", len(compacted)),
+		),
+	)
 	copyStart := time.Now()
 	_, err = tx.CopyFrom(
 		ctx,
@@ -384,8 +402,11 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		}),
 	)
 	if err != nil {
+		telemetry.RecordSafeError(copySpan, err)
+		copySpan.End()
 		return 0, fmt.Errorf("binary CopyFrom to staging failed: %w", err)
 	}
+	copySpan.End()
 
 	copyDuration := time.Since(copyStart)
 	if p.metrics != nil {
@@ -393,24 +414,38 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 	}
 
 	// 5. Set-based upsert merge into virtual_machines
+	_, mergeSpan := telemetry.StartSpan(ctx, "persistence.merge_transaction",
+		trace.WithAttributes(
+			attribute.String("vcenter.id", vcenterID),
+		),
+	)
+	defer mergeSpan.End()
 	mergeStart := time.Now()
 
 	// 5a. Soft-delete any existing active VMs marked deleted in staging
-	_, err = tx.Exec(ctx, `
-		UPDATE virtual_machines v
-		SET deleted_at = s.deleted_at, updated_at = NOW()
-		FROM staging_vms s
-		WHERE v.vcenter_id = s.vcenter_id
-		  AND v.moref = s.moref
-		  AND v.deleted_at IS NULL
-		  AND s.deleted_at IS NOT NULL;
-	`)
-	if err != nil {
-		return 0, fmt.Errorf("soft-delete merge failed: %w", err)
+	hasDeletes := false
+	for _, r := range compacted {
+		if r.DeletedAt != nil {
+			hasDeletes = true
+			break
+		}
+	}
+	if hasDeletes {
+		_, err = tx.Exec(ctx, `
+			UPDATE virtual_machines v
+			SET deleted_at = s.deleted_at, updated_at = NOW()
+			FROM staging_vms s
+			WHERE v.vcenter_id = s.vcenter_id
+			  AND v.moref = s.moref
+			  AND v.deleted_at IS NULL
+			  AND s.deleted_at IS NOT NULL;
+		`)
+		if err != nil {
+			return 0, fmt.Errorf("soft-delete merge failed: %w", err)
+		}
 	}
 
 	// 5a-2. Cross-vCenter migration (xvMotion):
-	// Transfer ownership to new vcenter_id and moref in place, preserving synthetic ID and first_seen_at.
 	_, err = tx.Exec(ctx, `
 		UPDATE virtual_machines v
 		SET vcenter_id = s.vcenter_id,
@@ -493,25 +528,49 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 
 	// 6. Bulk attach Datastores & Network Interfaces for affected VMs
 	if len(affectedVMIDs) > 0 {
-		// Clean stale child associations for the affected VMs
-		_, err = tx.Exec(ctx, `DELETE FROM vm_datastores WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale datastore attachments: %w", err)
+		var deleteDSVMIDs []string
+		var deleteNICVMIDs []string
+		var deleteTagVMIDs []string
+		var deleteAttrVMIDs []string
+
+		for _, r := range compacted {
+			vmID, ok := morefToVMID[r.MoRef]
+			if !ok {
+				continue
+			}
+			if r.DatastoreIDs != nil {
+				deleteDSVMIDs = append(deleteDSVMIDs, vmID)
+			}
+			if r.NetworkInterfaces != nil {
+				deleteNICVMIDs = append(deleteNICVMIDs, vmID)
+			}
+			if r.Tags != nil {
+				deleteTagVMIDs = append(deleteTagVMIDs, vmID)
+			}
+			if r.CustomAttributes != nil {
+				deleteAttrVMIDs = append(deleteAttrVMIDs, vmID)
+			}
 		}
 
-		_, err = tx.Exec(ctx, `DELETE FROM vm_network_interfaces WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale NICs: %w", err)
+		// Pipeline stale child deletes in a single network round-trip using pgx.Batch
+		batch := &pgx.Batch{}
+		if len(deleteDSVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_datastores WHERE vm_id = ANY($1::uuid[])`, deleteDSVMIDs)
 		}
-
-		_, err = tx.Exec(ctx, `DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale tags: %w", err)
+		if len(deleteNICVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_network_interfaces WHERE vm_id = ANY($1::uuid[])`, deleteNICVMIDs)
 		}
-
-		_, err = tx.Exec(ctx, `DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, affectedVMIDs)
-		if err != nil {
-			return 0, fmt.Errorf("failed to clear stale custom attributes: %w", err)
+		if len(deleteTagVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_tags WHERE vm_id = ANY($1::uuid[])`, deleteTagVMIDs)
+		}
+		if len(deleteAttrVMIDs) > 0 {
+			batch.Queue(`DELETE FROM vm_custom_attributes WHERE vm_id = ANY($1::uuid[])`, deleteAttrVMIDs)
+		}
+		if batch.Len() > 0 {
+			br := tx.SendBatch(ctx, batch)
+			if err := br.Close(); err != nil {
+				return 0, fmt.Errorf("failed to clear stale child records: %w", err)
+			}
 		}
 
 		// Prepare bulk datastore attachments
@@ -553,66 +612,74 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 				continue
 			}
 
-			for _, dsID := range r.DatastoreIDs {
-				if dsID != "" {
-					dsList = append(dsList, dsAttach{vmID: vmID, dsID: dsID})
+			if r.DatastoreIDs != nil {
+				for _, dsID := range r.DatastoreIDs {
+					if dsID != "" {
+						dsList = append(dsList, dsAttach{vmID: vmID, dsID: dsID})
+					}
 				}
 			}
 
-			for _, nic := range r.NetworkInterfaces {
-				var parsedIP any
-				if nic.IPAddress != "" {
-					addrStr := strings.TrimSpace(nic.IPAddress)
-					if idx := strings.Index(addrStr, "%"); idx != -1 {
-						addrStr = addrStr[:idx]
+			if r.NetworkInterfaces != nil {
+				for _, nic := range r.NetworkInterfaces {
+					var parsedIP any
+					if nic.IPAddress != "" {
+						addrStr := strings.TrimSpace(nic.IPAddress)
+						if idx := strings.Index(addrStr, "%"); idx != -1 {
+							addrStr = addrStr[:idx]
+						}
+						if ip, err := netip.ParseAddr(addrStr); err == nil {
+							parsedIP = ip.WithZone("")
+						}
 					}
-					if ip, err := netip.ParseAddr(addrStr); err == nil {
-						parsedIP = ip.WithZone("")
+					var netID, pgID any
+					if nic.NetworkID != "" {
+						netID = nic.NetworkID
 					}
-				}
-				var netID, pgID any
-				if nic.NetworkID != "" {
-					netID = nic.NetworkID
-				}
-				if nic.PortgroupID != "" {
-					pgID = nic.PortgroupID
-				}
-				var vlanLit any
-				if nic.VLANSpec != "" {
-					if norm, err := vlan.NormalizeSpec(nic.VLANSpec); err == nil {
-						vlanLit = norm
+					if nic.PortgroupID != "" {
+						pgID = nic.PortgroupID
 					}
-				}
+					var vlanLit any
+					if nic.VLANSpec != "" {
+						if norm, err := vlan.NormalizeSpec(nic.VLANSpec); err == nil {
+							vlanLit = norm
+						}
+					}
 
-				nicList = append(nicList, nicAttach{
-					vmID:      vmID,
-					devKey:    nic.DeviceKey,
-					mac:       nic.MacAddress,
-					ip:        parsedIP,
-					netID:     netID,
-					pgID:      pgID,
-					vlanRange: vlanLit,
-				})
-			}
-
-			for _, tag := range r.Tags {
-				if tag.TagID != "" && tag.TagName != "" {
-					tagList = append(tagList, tagAttach{
-						vmID:         vmID,
-						tagID:        tag.TagID,
-						categoryName: tag.CategoryName,
-						tagName:      tag.TagName,
+					nicList = append(nicList, nicAttach{
+						vmID:      vmID,
+						devKey:    nic.DeviceKey,
+						mac:       nic.MacAddress,
+						ip:        parsedIP,
+						netID:     netID,
+						pgID:      pgID,
+						vlanRange: vlanLit,
 					})
 				}
 			}
 
-			for _, attr := range r.CustomAttributes {
-				if attr.Name != "" {
-					attrList = append(attrList, customAttrAttach{
-						vmID:  vmID,
-						name:  attr.Name,
-						value: attr.Value,
-					})
+			if r.Tags != nil {
+				for _, tag := range r.Tags {
+					if tag.TagID != "" && tag.TagName != "" {
+						tagList = append(tagList, tagAttach{
+							vmID:         vmID,
+							tagID:        tag.TagID,
+							categoryName: tag.CategoryName,
+							tagName:      tag.TagName,
+						})
+					}
+				}
+			}
+
+			if r.CustomAttributes != nil {
+				for _, attr := range r.CustomAttributes {
+					if attr.Name != "" {
+						attrList = append(attrList, customAttrAttach{
+							vmID:  vmID,
+							name:  attr.Name,
+							value: attr.Value,
+						})
+					}
 				}
 			}
 		}
@@ -632,11 +699,26 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			}
 		}
 
-		// COPY network interfaces
+		// COPY network interfaces via staging table to support int4multirange cast
 		if len(nicList) > 0 {
+			_, err = tx.Exec(ctx, `
+				CREATE TEMP TABLE IF NOT EXISTS staging_nics (
+					vm_id UUID NOT NULL,
+					device_key INT NOT NULL,
+					mac_address TEXT NOT NULL,
+					ip_address inet,
+					network_id UUID,
+					portgroup_id UUID,
+					vlan_ids TEXT
+				) ON COMMIT DELETE ROWS;
+			`)
+			if err != nil {
+				return 0, fmt.Errorf("failed creating staging_nics: %w", err)
+			}
+
 			_, err = tx.CopyFrom(
 				ctx,
-				pgx.Identifier{"vm_network_interfaces"},
+				pgx.Identifier{"staging_nics"},
 				[]string{"vm_id", "device_key", "mac_address", "ip_address", "network_id", "portgroup_id", "vlan_ids"},
 				pgx.CopyFromSlice(len(nicList), func(i int) ([]any, error) {
 					n := nicList[i]
@@ -644,7 +726,18 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 				}),
 			)
 			if err != nil {
-				return 0, fmt.Errorf("bulk copy vm_network_interfaces failed: %w", err)
+				return 0, fmt.Errorf("bulk copy staging_nics failed: %w", err)
+			}
+
+			_, err = tx.Exec(ctx, `
+				INSERT INTO vm_network_interfaces (vm_id, device_key, mac_address, ip_address, network_id, portgroup_id, vlan_ids, created_at, updated_at)
+				SELECT vm_id, device_key, mac_address, ip_address, network_id, portgroup_id,
+					CASE WHEN vlan_ids IS NOT NULL AND vlan_ids != '' THEN vlan_ids::int4multirange ELSE NULL END,
+					NOW(), NOW()
+				FROM staging_nics;
+			`)
+			if err != nil {
+				return 0, fmt.Errorf("insert into vm_network_interfaces from staging failed: %w", err)
 			}
 		}
 
@@ -694,6 +787,7 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 
 	// 7. Commit transaction
 	if err := tx.Commit(ctx); err != nil {
+		telemetry.RecordSafeError(mergeSpan, err)
 		return 0, fmt.Errorf("transaction commit failed: %w", err)
 	}
 
