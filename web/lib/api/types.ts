@@ -105,16 +105,52 @@ export interface SearchVMsResponse {
   hasMore: boolean;
 }
 
-export interface FacetCount {
+export interface FacetBucket {
   value: string;
   count: number;
 }
 
 export interface VMFacetsResponse {
-  power_states?: FacetCount[];
-  guest_os?: FacetCount[];
-  vcenters?: FacetCount[];
-  clusters?: FacetCount[];
+  facets: Record<string, FacetBucket[]>;
+}
+
+export interface TagMetadataItem {
+  category_name: string;
+  tag_name: string;
+  vm_count: number;
+}
+
+export interface TagMetadataListResponse {
+  items: TagMetadataItem[];
+}
+
+export interface CustomAttributeMetadataItem {
+  name: string;
+  vm_count: number;
+  sample_values?: string[];
+}
+
+export interface CustomAttributeMetadataListResponse {
+  items: CustomAttributeMetadataItem[];
+}
+
+export interface VMFieldMeta {
+  name: string;
+  type: string;
+  allowed_operators: string[];
+  description: string;
+}
+
+export interface VMFieldsMetaResponse {
+  fields: VMFieldMeta[];
+}
+
+export interface UpdateUserRequest {
+  email?: string;
+  role?: string;
+  password?: string;
+  allowed_vcenter_ids?: string[];
+  allowed_folder_paths?: string[];
 }
 
 export interface TopologyItem {

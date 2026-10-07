@@ -20,15 +20,23 @@ export default function ClustersPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const [rawClusters, rawHosts] = await Promise.all([
+        const [rawClusters, rawHosts, facetsRes] = await Promise.all([
           simsApi.listClusters(),
           simsApi.listHosts(),
+          simsApi.getVMFacets("cluster").catch(() => null),
         ]);
 
         const hostCountByCluster: Record<string, number> = {};
         for (const h of rawHosts) {
           if (h.cluster_id) {
             hostCountByCluster[h.cluster_id] = (hostCountByCluster[h.cluster_id] || 0) + 1;
+          }
+        }
+
+        const vmCountByCluster: Record<string, number> = {};
+        if (facetsRes && facetsRes.facets) {
+          for (const b of facetsRes.facets.cluster || []) {
+            vmCountByCluster[b.value] = b.count;
           }
         }
 
@@ -41,7 +49,7 @@ export default function ClustersPage() {
           drsEnabled: true,
           status: "healthy",
           hostCount: hostCountByCluster[cl.id] || 0,
-          vmCount: 0,
+          vmCount: vmCountByCluster[cl.name] || 0,
           totalCpuGHz: 0,
           usedCpuGHz: 0,
           totalMemoryGB: 0,

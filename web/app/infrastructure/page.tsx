@@ -26,17 +26,41 @@ export default function DatacentersPage() {
     async function fetchData() {
       setLoading(true);
       try {
-        const [rawDcs, rawCls, rawDss, rawNets] = await Promise.all([
+        const [rawDcs, rawCls, rawHosts, rawDss, rawNets, facetsRes] = await Promise.all([
           simsApi.listDatacenters(),
           simsApi.listClusters(),
+          simsApi.listHosts(),
           simsApi.listDatastores(),
           simsApi.listNetworks(),
+          simsApi.getVMFacets("datacenter,cluster").catch(() => null),
         ]);
 
         const clusterCountByDc: Record<string, number> = {};
         for (const cl of rawCls) {
           if (cl.datacenter_id) {
             clusterCountByDc[cl.datacenter_id] = (clusterCountByDc[cl.datacenter_id] || 0) + 1;
+          }
+        }
+
+        const hostCountByDc: Record<string, number> = {};
+        const hostCountByCluster: Record<string, number> = {};
+        for (const h of rawHosts) {
+          if (h.datacenter_id) {
+            hostCountByDc[h.datacenter_id] = (hostCountByDc[h.datacenter_id] || 0) + 1;
+          }
+          if (h.cluster_id) {
+            hostCountByCluster[h.cluster_id] = (hostCountByCluster[h.cluster_id] || 0) + 1;
+          }
+        }
+
+        const vmCountByDc: Record<string, number> = {};
+        const vmCountByCluster: Record<string, number> = {};
+        if (facetsRes && facetsRes.facets) {
+          for (const b of facetsRes.facets.datacenter || []) {
+            vmCountByDc[b.value] = b.count;
+          }
+          for (const b of facetsRes.facets.cluster || []) {
+            vmCountByCluster[b.value] = b.count;
           }
         }
 
@@ -51,8 +75,8 @@ export default function DatacentersPage() {
           status: "healthy",
           vcenterCount: 1,
           clusterCount: clusterCountByDc[dc.id] || 0,
-          hostCount: 0,
-          vmCount: 0,
+          hostCount: hostCountByDc[dc.id] || 0,
+          vmCount: vmCountByDc[dc.name] || 0,
           applicationCount: 0,
           clientCount: 1,
           totalCpuGHz: 0,
@@ -71,8 +95,8 @@ export default function DatacentersPage() {
           haEnabled: true,
           drsEnabled: true,
           status: "healthy",
-          hostCount: 0,
-          vmCount: 0,
+          hostCount: hostCountByCluster[cl.id] || 0,
+          vmCount: vmCountByCluster[cl.name] || 0,
           totalCpuGHz: 0,
           usedCpuGHz: 0,
           totalMemoryGB: 0,
@@ -170,7 +194,7 @@ export default function DatacentersPage() {
           <Tabs defaultValue="datacenters" className="w-full">
             <TabsList variant={"line"}>
               <TabsTrigger value="datacenters">Datacenters</TabsTrigger>
-              <TabsTrigger value="custers&hosts">Clusters & Hosts</TabsTrigger>
+              <TabsTrigger value="clusters&hosts">Clusters & Hosts</TabsTrigger>
               <TabsTrigger value="storage">Storage</TabsTrigger>
               <TabsTrigger value="networking">Networking</TabsTrigger>
             </TabsList>
@@ -187,7 +211,7 @@ export default function DatacentersPage() {
               )}
             </TabsContent>
 
-            <TabsContent value="custers&hosts" className="mt-4">
+            <TabsContent value="clusters&hosts" className="mt-4">
               {view === "table" ? (
                 <DataTable columns={clusterColumns} data={clusters} searchColumn="name" />
               ) : (

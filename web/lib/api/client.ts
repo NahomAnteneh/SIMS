@@ -3,10 +3,17 @@ import {
   LoginResponse,
   UserResponse,
   UserListResponse,
+  UpdateUserRequest,
   ListVMsResponse,
   VMDetailResponse,
   SearchVMsResponse,
   VMFacetsResponse,
+  TagMetadataItem,
+  TagMetadataListResponse,
+  CustomAttributeMetadataItem,
+  CustomAttributeMetadataListResponse,
+  VMFieldMeta,
+  VMFieldsMetaResponse,
   TopologyItem,
   TopologyListResponse,
   FolderItem,
@@ -174,6 +181,17 @@ export const simsApi = {
     });
   },
 
+  async getUser(id: string): Promise<UserResponse> {
+    return request<UserResponse>(`/v1/users/${id}`);
+  },
+
+  async updateUser(id: string, payload: UpdateUserRequest): Promise<UserResponse> {
+    return request<UserResponse>(`/v1/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async deleteUser(id: string): Promise<void> {
     return request<void>(`/v1/users/${id}`, {
       method: "DELETE",
@@ -208,8 +226,27 @@ export const simsApi = {
     return request<SearchVMsResponse>(`/v1/search/vms?${sp.toString()}`);
   },
 
-  async getVMFacets(): Promise<VMFacetsResponse> {
-    return request<VMFacetsResponse>("/v1/vms/facets");
+  async getVMFacets(fields?: string, limit?: number): Promise<VMFacetsResponse> {
+    const sp = new URLSearchParams();
+    if (fields) sp.set("fields", fields);
+    if (limit) sp.set("limit", limit.toString());
+    const qs = sp.toString();
+    return request<VMFacetsResponse>(`/v1/vms/facets${qs ? `?${qs}` : ""}`);
+  },
+
+  async listTags(): Promise<TagMetadataItem[]> {
+    const res = await request<TagMetadataListResponse>("/v1/tags");
+    return res.items || [];
+  },
+
+  async listCustomAttributes(): Promise<CustomAttributeMetadataItem[]> {
+    const res = await request<CustomAttributeMetadataListResponse>("/v1/custom-attributes");
+    return res.items || [];
+  },
+
+  async getVMFields(): Promise<VMFieldMeta[]> {
+    const res = await request<VMFieldsMetaResponse>("/v1/meta/vm-fields");
+    return res.fields || [];
   },
 
   // Infrastructure Topology
@@ -218,9 +255,17 @@ export const simsApi = {
     return res.items || [];
   },
 
+  async getDatacenter(id: string): Promise<TopologyItem> {
+    return request<TopologyItem>(`/v1/datacenters/${id}`);
+  },
+
   async listClusters(): Promise<TopologyItem[]> {
     const res = await request<TopologyListResponse>("/v1/clusters");
     return res.items || [];
+  },
+
+  async getCluster(id: string): Promise<TopologyItem> {
+    return request<TopologyItem>(`/v1/clusters/${id}`);
   },
 
   async listHosts(): Promise<TopologyItem[]> {
@@ -228,9 +273,17 @@ export const simsApi = {
     return res.items || [];
   },
 
+  async getHost(id: string): Promise<TopologyItem> {
+    return request<TopologyItem>(`/v1/hosts/${id}`);
+  },
+
   async listDatastores(): Promise<TopologyItem[]> {
     const res = await request<TopologyListResponse>("/v1/datastores");
     return res.items || [];
+  },
+
+  async getDatastore(id: string): Promise<TopologyItem> {
+    return request<TopologyItem>(`/v1/datastores/${id}`);
   },
 
   async listNetworks(): Promise<TopologyItem[]> {
@@ -238,9 +291,17 @@ export const simsApi = {
     return res.items || [];
   },
 
+  async getNetwork(id: string): Promise<TopologyItem> {
+    return request<TopologyItem>(`/v1/networks/${id}`);
+  },
+
   async listFolders(): Promise<FolderItem[]> {
     const res = await request<FolderListResponse>("/v1/folders");
     return res.items || [];
+  },
+
+  async getFolder(id: string): Promise<FolderItem> {
+    return request<FolderItem>(`/v1/folders/${id}`);
   },
 
   async listTopologyVMs(
@@ -255,6 +316,10 @@ export const simsApi = {
   async listVCenters(): Promise<VCenterResponse[]> {
     const res = await request<VCenterListResponse>("/v1/vcenters");
     return res.items || [];
+  },
+
+  async getVCenter(id: string): Promise<VCenterResponse> {
+    return request<VCenterResponse>(`/v1/vcenters/${id}`);
   },
 
   async testVCenterConnection(payload: {

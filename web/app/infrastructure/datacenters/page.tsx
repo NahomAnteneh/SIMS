@@ -17,10 +17,11 @@ export default function DatacentersPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const [datacenters, clusters, hosts] = await Promise.all([
+        const [datacenters, clusters, hosts, facetsRes] = await Promise.all([
           simsApi.listDatacenters(),
           simsApi.listClusters(),
           simsApi.listHosts(),
+          simsApi.getVMFacets("datacenter").catch(() => null),
         ]);
 
         const clusterCountByDc: Record<string, number> = {};
@@ -37,6 +38,13 @@ export default function DatacentersPage() {
           }
         }
 
+        const vmCountByDc: Record<string, number> = {};
+        if (facetsRes && facetsRes.facets) {
+          for (const b of facetsRes.facets.datacenter || []) {
+            vmCountByDc[b.value] = b.count;
+          }
+        }
+
         const mapped: Datacenter[] = datacenters.map((dc) => ({
           id: dc.id,
           name: dc.name,
@@ -49,7 +57,7 @@ export default function DatacentersPage() {
           vcenterCount: 1,
           clusterCount: clusterCountByDc[dc.id] || 0,
           hostCount: hostCountByDc[dc.id] || 0,
-          vmCount: 0,
+          vmCount: vmCountByDc[dc.name] || 0,
           applicationCount: 0,
           clientCount: 1,
           totalCpuGHz: 0,
