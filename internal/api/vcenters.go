@@ -76,12 +76,16 @@ func getCallerKey(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func requireInventoryAdmin(r *http.Request) bool {
+func requireAdmin(r *http.Request) bool {
 	id, ok := auth.FromContext(r.Context())
-	if !ok {
-		return true // dev mode / auth not enabled
+	if !ok || id == nil {
+		return false // Fail closed
 	}
-	return id.Role == auth.RoleInventoryAdmin
+	return id.Role == auth.RoleAdmin || id.Role == auth.RoleInventoryAdmin
+}
+
+func requireInventoryAdmin(r *http.Request) bool {
+	return requireAdmin(r)
 }
 
 // Request and Response schemas
@@ -220,6 +224,11 @@ func (h *Handler) notifyVCenterEvent(ctx context.Context, vcenterID, action stri
 
 // POST /v1/vcenters/test-connection
 func (h *Handler) handleTestVCenterConnection(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(r) {
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Administrative privileges required", "forbidden")
+		return
+	}
+
 	callerKey := getCallerKey(r)
 	if !vcenterRateLimiter.allow(callerKey, 30, time.Minute) {
 		h.writeProblem(w, http.StatusTooManyRequests, "Too Many Requests", "Rate limit exceeded for test-connection", "rate_limited")
@@ -296,7 +305,7 @@ func (h *Handler) handleTestVCenterConnection(w http.ResponseWriter, r *http.Req
 // POST /v1/vcenters
 func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Registration requires inventory-admin role", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Registration requires admin role", "forbidden")
 		return
 	}
 
@@ -543,7 +552,7 @@ func (h *Handler) handleGetVCenter(w http.ResponseWriter, r *http.Request) {
 // PATCH /v1/vcenters/{id}
 func (h *Handler) handleUpdateVCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Update requires inventory-admin role", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Update requires admin role", "forbidden")
 		return
 	}
 
@@ -641,7 +650,7 @@ func (h *Handler) handleUpdateVCenter(w http.ResponseWriter, r *http.Request) {
 // DELETE /v1/vcenters/{id}
 func (h *Handler) handleDeleteVCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Decommission requires inventory-admin role", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Decommission requires admin role", "forbidden")
 		return
 	}
 
@@ -676,7 +685,7 @@ func (h *Handler) handleDeleteVCenter(w http.ResponseWriter, r *http.Request) {
 // POST /v1/vcenters/{id}/resync
 func (h *Handler) handleResyncVCenter(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Resync requires inventory-admin role", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Resync requires admin role", "forbidden")
 		return
 	}
 
@@ -723,7 +732,7 @@ func uuidFromPg(u pgtype.UUID) string {
 // GET /v1/audit-events
 func (h *Handler) handleListAuditEvents(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Audit logs require inventory-admin role", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Audit logs require admin role", "forbidden")
 		return
 	}
 

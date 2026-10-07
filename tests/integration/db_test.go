@@ -323,3 +323,34 @@ func TestAllApplicationTablesRolePrivileges(t *testing.T) {
 		})
 	}
 }
+
+func TestSimsUserPermissions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	simsConnStr := getConnString("sims", "sims_password")
+	simsDB, err := sql.Open("pgx", simsConnStr)
+	if err != nil {
+		t.Fatalf("failed to connect as sims user: %v", err)
+	}
+	defer simsDB.Close()
+
+	if err := simsDB.PingContext(ctx); err != nil {
+		t.Fatalf("sims user ping failed: %v", err)
+	}
+
+	tables := []string{
+		"vcenters",
+		"virtual_machines",
+		"users",
+		"collector_targets",
+		"inventory_events",
+	}
+	for _, tbl := range tables {
+		var count int
+		err := simsDB.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tbl)).Scan(&count)
+		if err != nil {
+			t.Errorf("sims user failed to SELECT from %s: %v", tbl, err)
+		}
+	}
+}

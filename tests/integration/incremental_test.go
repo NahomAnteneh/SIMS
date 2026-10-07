@@ -32,7 +32,7 @@ func createTestVCenter(t *testing.T, ctx context.Context, pool *pgxpool.Pool, na
 	err := pool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`, name, fmt.Sprintf("https://%s-%s.local/sdk", name, uuid.New().String()[:8]), uuid.New().String()).Scan(&vcenterID)
 	if err != nil {

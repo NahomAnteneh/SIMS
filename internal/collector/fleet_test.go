@@ -22,6 +22,14 @@ func (dp *dummyPersister) PersistVMBatch(ctx context.Context, batch []domain.VMR
 	return len(batch), nil
 }
 
+func (dp *dummyPersister) ApplyVMIncrementalUpdate(ctx context.Context, vcenterID, moref string, mask VMFieldMask) error {
+	return nil
+}
+
+func (dp *dummyPersister) ApplyVMLeave(ctx context.Context, vcenterID, moref string) error {
+	return nil
+}
+
 func TestFleetManager_LifecycleAndDiscovery(t *testing.T) {
 	pool := getTestPool(t)
 	defer pool.Close()

@@ -135,7 +135,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "inventory-admin role required to create users", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "admin role required to create users", "forbidden")
 		return
 	}
 
@@ -156,10 +156,13 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Role == "" {
-		req.Role = string(auth.RoleViewer)
-	} else if req.Role != string(auth.RoleInventoryAdmin) && req.Role != string(auth.RoleViewer) {
-		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be either 'inventory-admin' or 'viewer'", "invalid_role")
+	normRole := strings.ToLower(strings.TrimSpace(req.Role))
+	if normRole == "" || normRole == "user" || normRole == "viewer" {
+		req.Role = string(auth.RoleUser)
+	} else if normRole == "admin" || normRole == "inventory-admin" {
+		req.Role = string(auth.RoleAdmin)
+	} else {
+		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be either 'admin' or 'user'", "invalid_role")
 		return
 	}
 
@@ -228,7 +231,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "inventory-admin role required to list users", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "admin role required to list users", "forbidden")
 		return
 	}
 
@@ -270,7 +273,7 @@ func (h *Handler) handleListUsers(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "inventory-admin role required", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "admin role required", "forbidden")
 		return
 	}
 
@@ -319,7 +322,7 @@ func (h *Handler) handleGetUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "inventory-admin role required to delete users", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "admin role required to delete users", "forbidden")
 		return
 	}
 
@@ -353,7 +356,7 @@ func (h *Handler) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if !requireInventoryAdmin(r) {
-		h.writeProblem(w, http.StatusForbidden, "Forbidden", "inventory-admin role required", "forbidden")
+		h.writeProblem(w, http.StatusForbidden, "Forbidden", "admin role required", "forbidden")
 		return
 	}
 

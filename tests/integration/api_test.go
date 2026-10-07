@@ -76,7 +76,7 @@ func setupAPITestData(t *testing.T, ctx context.Context) (string, []string, func
 	err = rwPool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('api-test-vc', 'https://api-test-vc.local/sdk', 'api-test-vc-uuid')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {

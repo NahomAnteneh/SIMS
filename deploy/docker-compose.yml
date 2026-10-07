@@ -74,7 +74,7 @@ services:
       VCENTER_USER: "user"
       VCENTER_PASSWORD: "pass"
       VCENTER_INSECURE: "true"
-      DATABASE_URL: "postgres://collector_rw:collector_rw_pass@postgres:5432/sims?sslmode=disable"
+      DATABASE_URL: "postgres://sims:${POSTGRES_PASSWORD:-sims_password}@postgres:5432/sims?sslmode=disable"
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,7 +91,7 @@ services:
     environment:
       PORT: "8080"
       LOG_LEVEL: "debug"
-      DATABASE_URL: "postgres://collector_rw:collector_rw_pass@postgres:5432/sims?sslmode=disable"
+      DATABASE_URL: "postgres://sims:${POSTGRES_PASSWORD:-sims_password}@postgres:5432/sims?sslmode=disable"
     depends_on:
       postgres:
         condition: service_healthy

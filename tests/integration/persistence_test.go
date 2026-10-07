@@ -30,7 +30,7 @@ func TestBulkPersistenceIdempotency(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-persistence-test', 'https://vc-persistence-test.local/sdk', 'vc-pers-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -162,7 +162,7 @@ func TestStreamFlusher(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-flusher-test', 'https://vc-flusher-test.local/sdk', 'vc-flush-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {
@@ -224,7 +224,7 @@ func TestBulkPersistence_EmptyUUIDAndIPv6ZoneFallback(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO vcenters (name, api_url, instance_uuid)
 		VALUES ('vc-real-edge-test', 'https://vc-real-edge.local/sdk', 'vc-real-edge-uuid-01')
-		ON CONFLICT (api_url) DO UPDATE SET updated_at = NOW()
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
 		RETURNING id::text
 	`).Scan(&vcenterID)
 	if err != nil {

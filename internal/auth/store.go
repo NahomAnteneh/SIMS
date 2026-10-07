@@ -40,10 +40,15 @@ func (s *DBUserStore) AuthenticateUser(ctx context.Context, username, password s
 		}
 	}
 
+	role := RoleUser
+	if user.Role == "admin" || user.Role == "inventory-admin" {
+		role = RoleAdmin
+	}
+
 	return &Identity{
 		Subject:            user.Username,
 		Email:              user.Email.String,
-		Role:               Role(user.Role),
+		Role:               role,
 		AllowedVCenterIDs:  vcenterIDs,
 		AllowedFolderPaths: user.AllowedFolderPaths,
 	}, nil

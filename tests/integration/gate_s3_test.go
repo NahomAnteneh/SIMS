@@ -293,7 +293,7 @@ func TestGateS3_ScopeBypassNegative(t *testing.T) {
 		INSERT INTO vcenters (id, name, api_url, status)
 		VALUES ($1, 'vc-tenant-a', 'https://vc-a:443/sdk', 'READY'),
 		       ($2, 'vc-tenant-b', 'https://vc-b:443/sdk', 'READY')
-		ON CONFLICT (api_url) DO NOTHING
+		ON CONFLICT (api_url) WHERE deleted_at IS NULL DO NOTHING
 	`, tenantA, tenantB)
 
 	vmA := uuid.New()

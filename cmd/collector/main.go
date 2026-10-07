@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/infrastructure/sims/generated/db"
@@ -29,7 +31,6 @@ func main() {
 		slog.String("port", cfg.Port),
 		slog.String("vcenter_url", cfg.VCenterURL),
 		slog.String("vcenter_username", cfg.VCenterUsername),
-		slog.String("vcenter_password", cfg.VCenterPassword), // Redacted by slog handler
 		slog.Bool("insecure_tls", cfg.InsecureTLS),
 	)
 
@@ -136,29 +137,29 @@ func main() {
 			}()
 
 			about := session.Client().ServiceContent.About
-			var vcenterID string
-			err = pool.QueryRow(ctx, `
-				INSERT INTO vcenters (name, api_url, instance_uuid, product_version, api_version, build)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (api_url) DO UPDATE
-				SET name = EXCLUDED.name, instance_uuid = EXCLUDED.instance_uuid, updated_at = NOW()
-				RETURNING id::text
-			`, about.FullName, cfg.VCenterURL, about.InstanceUuid, about.Version, about.ApiVersion, about.Build).Scan(&vcenterID)
+			bootstrapVC, err := queries.UpsertBootstrapVCenter(ctx, db.UpsertBootstrapVCenterParams{
+				Name:           about.FullName,
+				ApiUrl:         cfg.VCenterURL,
+				InstanceUuid:   pgtype.Text{String: about.InstanceUuid, Valid: about.InstanceUuid != ""},
+				ProductVersion: about.Version,
+				ApiVersion:     about.ApiVersion,
+				Build:          about.Build,
+			})
 			if err != nil {
 				logger.Warn("failed to upsert bootstrap vcenter record", slog.String("error", err.Error()))
 				return
 			}
 
-			_, err = pool.Exec(ctx, `
-				INSERT INTO collector_targets (vcenter_id, enabled)
-				VALUES ($1::uuid, true)
-				ON CONFLICT (vcenter_id) DO NOTHING
-			`, vcenterID)
+			_, err = queries.InsertCollectorTarget(ctx, db.InsertCollectorTargetParams{
+				VcenterID: bootstrapVC.ID,
+				Enabled:   true,
+			})
 			if err != nil {
 				logger.Warn("failed to insert bootstrap collector target", slog.String("error", err.Error()))
 				return
 			}
-			logger.Info("bootstrap vCenter target registered in target registry", slog.String("vcenter_id", vcenterID))
+			vcenterIDStr := uuid.UUID(bootstrapVC.ID.Bytes).String()
+			logger.Info("bootstrap vCenter target registered in target registry", slog.String("vcenter_id", vcenterIDStr))
 		}()
 	}
 

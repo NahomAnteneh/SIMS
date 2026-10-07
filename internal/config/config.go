@@ -42,10 +42,10 @@ func LoadCollectorConfig() CollectorConfig {
 			Port:     getEnv("PORT", "8081"),
 			LogLevel: getEnv("LOG_LEVEL", "info"),
 		},
-		DatabaseURL:            getEnv("DATABASE_URL", "postgres://collector_rw:collector_rw_pass@localhost:5432/sims?sslmode=disable"),
+		DatabaseURL:            getEnv("DATABASE_URL", "postgres://sims:sims_password@localhost:5432/sims?sslmode=disable"),
 		VCenterURL:             getEnv("VCENTER_URL", "https://localhost:8989/sdk"),
 		VCenterUsername:        getEnv("VCENTER_USER", "user"),
-		VCenterPassword:        getEnv("VCENTER_PASSWORD", "pass"),
+		VCenterPassword:        getEnv("VCENTER_PASSWORD", ""),
 		InsecureTLS:            getEnvBool("VCENTER_INSECURE", true),
 		SyncInterval:           getEnvDuration("SYNC_INTERVAL", 30*time.Second),
 		KeepaliveInterval:      getEnvDuration("SIMS_COLLECTOR_KEEPALIVE_INTERVAL", 60*time.Second),
@@ -62,7 +62,7 @@ func LoadQueryAPIConfig() QueryAPIConfig {
 			Port:     getEnv("PORT", "8080"),
 			LogLevel: getEnv("LOG_LEVEL", "info"),
 		},
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://query_ro:query_ro_pass@localhost:5432/sims?sslmode=disable"),
+		DatabaseURL:        getEnv("DATABASE_URL", "postgres://sims:sims_password@localhost:5432/sims?sslmode=disable"),
 		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
 	}
 }

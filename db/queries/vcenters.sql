@@ -1,10 +1,22 @@
 -- name: UpsertVCenter :one
 INSERT INTO vcenters (name, api_url, instance_uuid, version, build, updated_at)
 VALUES ($1, $2, $3, $4, $5, NOW())
-ON CONFLICT (api_url) DO UPDATE
+ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE
 SET name = EXCLUDED.name,
     instance_uuid = EXCLUDED.instance_uuid,
     version = EXCLUDED.version,
+    build = EXCLUDED.build,
+    updated_at = NOW()
+RETURNING *;
+
+-- name: UpsertBootstrapVCenter :one
+INSERT INTO vcenters (name, api_url, instance_uuid, product_version, api_version, build, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
+ON CONFLICT (api_url) WHERE deleted_at IS NULL DO UPDATE
+SET name = EXCLUDED.name,
+    instance_uuid = EXCLUDED.instance_uuid,
+    product_version = EXCLUDED.product_version,
+    api_version = EXCLUDED.api_version,
     build = EXCLUDED.build,
     updated_at = NOW()
 RETURNING *;

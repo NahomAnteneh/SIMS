@@ -64,12 +64,11 @@ func CompactBatch(records []domain.VMRecord) []domain.VMRecord {
 func mergeRecords(existing, incoming domain.VMRecord) domain.VMRecord {
 	out := existing
 
-	// Lifecycle / Deletion precedence
+	// Lifecycle / Deletion precedence: once tombstoned, preserve DeletedAt (prevent tombstone revival)
 	if incoming.DeletedAt != nil {
 		out.DeletedAt = incoming.DeletedAt
-	} else if existing.DeletedAt != nil && incoming.DeletedAt == nil {
-		// Recreated or undeleted VM in same batch
-		out.DeletedAt = nil
+	} else if existing.DeletedAt != nil {
+		out.DeletedAt = existing.DeletedAt
 	}
 
 	// Always take latest vCenter / MoRef (handles xvMotion identity migrations)
@@ -125,12 +124,12 @@ func mergeRecords(existing, incoming domain.VMRecord) domain.VMRecord {
 		out.DatacenterID = incoming.DatacenterID
 	}
 
-	// Associations: replace with newest set if non-empty
-	if len(incoming.DatastoreMoRefs) > 0 {
+	// Associations: replace with newest set if non-nil (nil = absence; empty slice = clear per AGENTS.md §5)
+	if incoming.DatastoreMoRefs != nil {
 		out.DatastoreMoRefs = incoming.DatastoreMoRefs
 		out.DatastoreIDs = incoming.DatastoreIDs
 	}
-	if len(incoming.NetworkInterfaces) > 0 {
+	if incoming.NetworkInterfaces != nil {
 		out.NetworkInterfaces = incoming.NetworkInterfaces
 	}
 	if incoming.Tags != nil {
