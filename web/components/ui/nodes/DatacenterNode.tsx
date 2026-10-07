@@ -27,7 +27,7 @@ export const CustomInfraNode = memo(({ data, selected }: NodeProps<any>) => {
 
   return (
     <div
-      className={`group relative bg-[#1c1b1a] text-[#e6e4e0] rounded-xl p-4 border transition-all duration-200 min-w-[220px] shadow-xl ${
+      className={`group relative bg-[#1c1b1a] text-[#e6e4e0] rounded-none p-4 border transition-all duration-200 min-w-[220px] shadow-xl ${
         selected ? "border-amber-500/80 ring-2 ring-amber-500/20" : "border-zinc-800 hover:border-zinc-700"
       }`}
     >
@@ -41,7 +41,7 @@ export const CustomInfraNode = memo(({ data, selected }: NodeProps<any>) => {
       {/* Header Row */}
       <div className="flex items-center justify-between gap-3 pb-2 border-b border-zinc-800/80">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300">
+          <div className="p-1.5 rounded-none bg-zinc-900 border border-zinc-800 text-zinc-300">
             <Icon className="h-4 w-4" />
           </div>
           <div>
@@ -57,7 +57,7 @@ export const CustomInfraNode = memo(({ data, selected }: NodeProps<any>) => {
         {/* Status Dot */}
         {data.status && (
           <div
-            className={`w-2.5 h-2.5 rounded-full ${
+            className={`w-2.5 h-2.5 rounded-none ${
               isHealthy
                 ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"
                 : isWarning

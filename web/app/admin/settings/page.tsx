@@ -38,16 +38,15 @@ export default function SettingsPage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto p-2 md:p-4">
+    <div className="space-y-4 w-full">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-100 flex items-center gap-2.5">
-          <Settings className="h-6 w-6 text-yellow-500" />
-          System Settings & Platform Diagnostics
-        </h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          Active session identity, security parameters, API Gateway configuration, and engine diagnostics.
-        </p>
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
+        <div className="flex items-center gap-2">
+          <Settings className="h-5 w-5 text-yellow-500" />
+          <h1 className="text-xl font-bold tracking-tight text-zinc-100">
+            System Settings & Platform Diagnostics
+          </h1>
+        </div>
       </div>
 
       {loading ? (
@@ -56,97 +55,97 @@ export default function SettingsPage() {
           <span className="text-sm">Reading platform diagnostic parameters...</span>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4 w-full">
           {/* User Session Card */}
-          <div className="border border-zinc-800/80 rounded-xl bg-[#0a0a0a] p-5 shadow-lg space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <User className="h-4 w-4 text-yellow-500" />
+          <div className="border border-zinc-800 bg-[#0a0a0a] p-4 rounded-none space-y-3">
+            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-2">
+              <User className="h-3.5 w-3.5 text-yellow-500" />
               Active Operator Identity
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="p-3 rounded-lg bg-zinc-900/50 border border-zinc-850">
-                <div className="text-zinc-500 mb-1">Username</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 rounded-none bg-zinc-900/60 border border-zinc-800">
+                <div className="text-[11px] font-mono text-zinc-500 mb-1 uppercase">Username</div>
                 <div className="font-mono text-zinc-200 font-semibold text-sm">
                   {user?.username || "admin"}
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-zinc-900/50 border border-zinc-850">
-                <div className="text-zinc-500 mb-1">Role / Privilege Level</div>
+              <div className="p-3 rounded-none bg-zinc-900/60 border border-zinc-800">
+                <div className="text-[11px] font-mono text-zinc-500 mb-1 uppercase">Role / Privilege</div>
                 <div className="flex items-center gap-2">
                   <span className="capitalize font-semibold text-zinc-200">
                     {user?.role || "admin"}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-yellow-600/20 text-yellow-500 border border-yellow-600/30">
+                  <span className="px-1.5 py-0.2 rounded-none text-[10px] font-mono font-bold uppercase tracking-wider bg-yellow-600/20 text-yellow-500 border border-yellow-600/30">
                     Full Access
                   </span>
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-zinc-900/50 border border-zinc-850">
-                <div className="text-zinc-500 mb-1">Email</div>
+              <div className="p-3 rounded-none bg-zinc-900/60 border border-zinc-800">
+                <div className="text-[11px] font-mono text-zinc-500 mb-1 uppercase">Email</div>
                 <div className="text-zinc-300 font-mono">
                   {user?.email || "admin@sims.local"}
                 </div>
               </div>
 
-              <div className="p-3 rounded-lg bg-zinc-900/50 border border-zinc-850">
-                <div className="text-zinc-500 mb-1">Tenant Scope Restriction</div>
+              <div className="p-3 rounded-none bg-zinc-900/60 border border-zinc-800">
+                <div className="text-[11px] font-mono text-zinc-500 mb-1 uppercase">Tenant Scope</div>
                 <div className="text-emerald-400 font-medium flex items-center gap-1.5">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  Unrestricted Global Inventory
+                  Global Unrestricted
                 </div>
               </div>
             </div>
           </div>
 
           {/* Engine & Service Diagnostics */}
-          <div className="border border-zinc-800/80 rounded-xl bg-[#0a0a0a] p-5 shadow-lg space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <Server className="h-4 w-4 text-blue-400" />
-              SIMS Platform Architecture
+          <div className="border border-zinc-800 bg-[#0a0a0a] p-4 rounded-none space-y-3">
+            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-2">
+              <Server className="h-3.5 w-3.5 text-blue-400" />
+              SIMS Platform Architecture & Port Topology
             </h3>
 
-            <div className="space-y-3 text-xs">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/40 border border-zinc-850">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 rounded-none bg-zinc-900/40 border border-zinc-800 flex flex-col justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <Globe className="h-4 w-4 text-zinc-400" />
+                  <Globe className="h-4 w-4 text-zinc-400 shrink-0" />
                   <div>
-                    <div className="font-medium text-zinc-200">Query API Service</div>
-                    <div className="text-zinc-500 text-[11px]">Go net/http + pgx/v5 REST Gateway</div>
+                    <div className="font-semibold text-zinc-200">Query API Service</div>
+                    <div className="text-zinc-500 text-[11px] font-mono">Go net/http + pgx/v5 REST</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 font-mono text-zinc-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <div className="flex items-center gap-2 font-mono text-zinc-300 pt-2 border-t border-zinc-800/80">
+                  <span className="w-2 h-2 rounded-none bg-emerald-500"></span>
                   Port 8080 (Healthy)
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/40 border border-zinc-850">
+              <div className="p-3 rounded-none bg-zinc-900/40 border border-zinc-800 flex flex-col justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <Database className="h-4 w-4 text-zinc-400" />
+                  <Database className="h-4 w-4 text-zinc-400 shrink-0" />
                   <div>
-                    <div className="font-medium text-zinc-200">Inventory Storage Engine</div>
-                    <div className="text-zinc-500 text-[11px]">PostgreSQL 18.6 with ltree & multirange extensions</div>
+                    <div className="font-semibold text-zinc-200">Inventory Storage Engine</div>
+                    <div className="text-zinc-500 text-[11px] font-mono">PostgreSQL 18 (ltree/multirange)</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 font-mono text-zinc-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <div className="flex items-center gap-2 font-mono text-zinc-300 pt-2 border-t border-zinc-800/80">
+                  <span className="w-2 h-2 rounded-none bg-emerald-500"></span>
                   Port 5433 (Healthy)
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-900/40 border border-zinc-850">
+              <div className="p-3 rounded-none bg-zinc-900/40 border border-zinc-800 flex flex-col justify-between gap-3">
                 <div className="flex items-center gap-2.5">
-                  <Cpu className="h-4 w-4 text-zinc-400" />
+                  <Cpu className="h-4 w-4 text-zinc-400 shrink-0" />
                   <div>
-                    <div className="font-medium text-zinc-200">PropertyCollector Ingestion Agent</div>
-                    <div className="text-zinc-500 text-[11px]">Continuous streaming WaitForUpdatesEx synchronizer</div>
+                    <div className="font-semibold text-zinc-200">PropertyCollector Synchronizer</div>
+                    <div className="text-zinc-500 text-[11px] font-mono">WaitForUpdatesEx agent</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 font-mono text-zinc-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <div className="flex items-center gap-2 font-mono text-zinc-300 pt-2 border-t border-zinc-800/80">
+                  <span className="w-2 h-2 rounded-none bg-emerald-500"></span>
                   Port 8081 (Streaming)
                 </div>
               </div>
@@ -154,23 +153,23 @@ export default function SettingsPage() {
           </div>
 
           {/* Security & Access Policies */}
-          <div className="border border-zinc-800/80 rounded-xl bg-[#0a0a0a] p-5 shadow-lg space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-200 flex items-center gap-2">
-              <Shield className="h-4 w-4 text-emerald-400" />
+          <div className="border border-zinc-800 bg-[#0a0a0a] p-4 rounded-none space-y-3">
+            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-2">
+              <Shield className="h-3.5 w-3.5 text-emerald-400" />
               Security & Policy Guardrails
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="p-3 rounded-lg bg-zinc-900/40 border border-zinc-850">
-                <div className="text-zinc-500 mb-1 flex items-center gap-1.5">
-                  <Lock className="h-3.5 w-3.5 text-zinc-400" /> JWT Token Session Lifespan
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-none bg-zinc-900/40 border border-zinc-800">
+                <div className="text-zinc-500 mb-1 flex items-center gap-1.5 font-mono text-[11px] uppercase">
+                  <Lock className="h-3.5 w-3.5 text-zinc-400" /> Session Lifespan
                 </div>
-                <div className="font-mono text-zinc-200 font-medium">24 Hours (HMAC-SHA256)</div>
+                <div className="font-mono text-zinc-200 font-medium">24 Hours (HMAC-SHA256 JWT)</div>
               </div>
 
-              <div className="p-3 rounded-lg bg-zinc-900/40 border border-zinc-850">
-                <div className="text-zinc-500 mb-1 flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5 text-zinc-400" /> Password Security Hashing
+              <div className="p-3 rounded-none bg-zinc-900/40 border border-zinc-800">
+                <div className="text-zinc-500 mb-1 flex items-center gap-1.5 font-mono text-[11px] uppercase">
+                  <Key className="h-3.5 w-3.5 text-zinc-400" /> Credential Hashing
                 </div>
                 <div className="font-mono text-zinc-200 font-medium">bcrypt (Cost Factor 10)</div>
               </div>

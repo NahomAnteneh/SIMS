@@ -8,8 +8,8 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Depot - Inventory Management",
-  description: "Analytics and insights for your inventory",
+  title: "SIMS — Infrastructure Management System",
+  description: "Enterprise VMware virtual machine inventory and workload query platform",
 };
 
 export default function RootLayout({

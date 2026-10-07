@@ -175,11 +175,11 @@ export default function DataSourcesPage() {
           </Button>
 
           {/* View Toggle */}
-          <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
+          <div className="flex items-center rounded-none border border-zinc-800 bg-zinc-900/50 p-1">
             <button
               type="button"
               onClick={() => setView("table")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-none transition-colors ${
                 view === "table"
                   ? "bg-zinc-800 text-zinc-100 shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200"
@@ -191,7 +191,7 @@ export default function DataSourcesPage() {
             <button
               type="button"
               onClick={() => setView("card")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-none transition-colors ${
                 view === "card"
                   ? "bg-zinc-800 text-zinc-100 shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200"
@@ -210,7 +210,7 @@ export default function DataSourcesPage() {
           <span className="text-sm">Loading registered vCenters...</span>
         </div>
       ) : dataSources.length === 0 ? (
-        <div className="p-12 text-center border border-zinc-800 rounded-2xl bg-zinc-950/20 space-y-3">
+        <div className="p-12 text-center border border-zinc-800 rounded-none bg-zinc-950/20 space-y-3">
           <Server className="h-10 w-10 text-zinc-600 mx-auto" />
           <h3 className="text-base font-semibold text-zinc-200">No vCenter Instances Registered</h3>
           <p className="text-sm text-zinc-500 max-w-md mx-auto">
@@ -218,7 +218,7 @@ export default function DataSourcesPage() {
           </p>
           <Button
             onClick={() => setIsModalOpen(true)}
-            className="mt-2 bg-yellow-600 hover:bg-yellow-500 text-black font-semibold text-xs"
+            className="mt-2 bg-yellow-600 hover:bg-yellow-500 text-black font-semibold text-xs rounded-none"
           >
             Register vCenter
           </Button>
@@ -241,7 +241,7 @@ export default function DataSourcesPage() {
       {/* Register vCenter Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
+          <div className="w-full max-w-lg rounded-none bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <div>
                 <h3 className="text-base font-bold text-white">Register vCenter Instance</h3>
@@ -251,14 +251,14 @@ export default function DataSourcesPage() {
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 rounded-md"
+                className="text-zinc-500 hover:text-zinc-300 p-1 rounded-none"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {saveError && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+              <div className="p-3 rounded-none bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{saveError}</span>
               </div>
@@ -273,7 +273,7 @@ export default function DataSourcesPage() {
                   placeholder="e.g. vc-prod-01 or vcsim-local"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
 
@@ -286,7 +286,7 @@ export default function DataSourcesPage() {
                     placeholder="e.g. vcsim or 10.0.0.10"
                     value={formData.host}
                     onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600 font-mono"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600 font-mono"
                   />
                 </div>
                 <div>
@@ -296,7 +296,7 @@ export default function DataSourcesPage() {
                     required
                     value={formData.port}
                     onChange={(e) => setFormData({ ...formData, port: Number(e.target.value) })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-600 font-mono"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-600 font-mono"
                   />
                 </div>
               </div>
@@ -310,7 +310,7 @@ export default function DataSourcesPage() {
                     placeholder="administrator@vsphere.local"
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                   />
                 </div>
                 <div>
@@ -321,7 +321,7 @@ export default function DataSourcesPage() {
                     placeholder="••••••••••••"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                   />
                 </div>
               </div>
@@ -342,7 +342,7 @@ export default function DataSourcesPage() {
               {/* Test Connection Banner */}
               {testStatus.message && (
                 <div
-                  className={`p-3 rounded-lg text-xs flex items-center gap-2 border ${
+                  className={`p-3 rounded-none text-xs flex items-center gap-2 border ${
                     testStatus.success
                       ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                       : "bg-rose-500/10 border-rose-500/20 text-rose-400"

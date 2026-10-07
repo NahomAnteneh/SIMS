@@ -281,7 +281,7 @@ function VmsContent() {
   };
 
   const searchBarControl = (
-    <div className="relative flex-1 max-w-xl">
+    <div className="relative flex-1 w-full">
       <div className="relative flex items-center">
         <Search className="absolute left-3 h-4 w-4 text-zinc-500 pointer-events-none" />
         <input
@@ -291,8 +291,8 @@ function VmsContent() {
           onChange={(e) => setSearchTerm(e.target.value)}
           onFocus={() => setIsHelperOpen(true)}
           onKeyDown={handleSearchKeyDown}
-          placeholder="Search VMs or use syntax: vm:web ip:10.0.0.1/24 power:on ds:vsan..."
-          className="w-full pl-9 pr-16 py-1.5 bg-zinc-900/70 border border-zinc-800 rounded-lg text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-yellow-600/60 focus:ring-1 focus:ring-yellow-600/40 transition-colors"
+          placeholder="Filter table: vm:name ip:cidr power:state host:name ds:name..."
+          className="w-full pl-9 pr-14 py-1.5 bg-zinc-900/80 border border-zinc-800 rounded-none text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-yellow-500 font-mono transition-colors"
         />
         <div className="absolute right-2 flex items-center gap-1">
           {searchTerm && (
@@ -302,73 +302,69 @@ function VmsContent() {
                 setSearchTerm("");
                 setDebouncedSearch("");
               }}
-              className="p-1 text-zinc-500 hover:text-zinc-300 rounded transition-colors"
+              className="p-1 text-zinc-500 hover:text-zinc-300"
               title="Clear search"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3 w-3" />
             </button>
           )}
           <button
             type="button"
             onClick={() => setIsHelperOpen(!isHelperOpen)}
-            className={`p-1 rounded text-xs transition-colors ${
+            className={`p-1 text-xs transition-colors ${
               isHelperOpen ? "text-yellow-400 bg-yellow-500/10" : "text-zinc-500 hover:text-zinc-300"
             }`}
-            title="Toggle search syntax helper"
+            title="Toggle search syntax tokens"
           >
-            <Sparkles className="h-3.5 w-3.5" />
+            <Sparkles className="h-3 w-3" />
           </button>
         </div>
       </div>
 
-      {/* Syntax Helper Dropdown Popover */}
+      {/* Syntax Helper Dropdown */}
       {isHelperOpen && (
-        <div className="absolute left-0 top-full mt-2 w-full p-3 rounded-xl border border-zinc-800 bg-[#0e0e0e] shadow-2xl z-40">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-zinc-800/80">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-yellow-500" />
-              Advanced Search Syntax
+        <div className="absolute left-0 top-full mt-1 w-full p-2.5 border border-zinc-700 bg-[#0c0c0c] shadow-2xl z-40 rounded-none font-mono">
+          <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-zinc-800">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold flex items-center gap-1.5">
+              <span>Syntax Filters</span>
             </span>
             <button
               type="button"
               onClick={() => setIsHelperOpen(false)}
-              className="text-xs text-zinc-500 hover:text-zinc-300"
+              className="text-[10px] text-zinc-500 hover:text-zinc-300"
             >
               Close
             </button>
           </div>
-          <div className="flex flex-wrap gap-1.5 mb-2.5">
+          <div className="flex flex-wrap gap-1 mb-1.5">
             {SYNTAX_TOKENS.map((token) => (
               <button
                 key={token.prefix}
                 type="button"
                 onClick={() => handleInsertToken(token.prefix)}
-                className="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-xs font-mono text-yellow-400 hover:border-yellow-600/60 hover:bg-zinc-800/80 transition-colors flex items-center gap-1"
+                className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 text-[11px] text-yellow-400 hover:border-yellow-600 hover:bg-zinc-800 transition-colors flex items-center gap-1"
               >
                 <span>{token.prefix}</span>
                 <span className="text-[10px] text-zinc-400 font-sans">({token.label})</span>
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-zinc-500">
-            Combine tokens with free-text (e.g. <code className="text-zinc-300 font-mono">vm:api power:on ip:10.0.0.0/24</code>). Press Enter to apply.
-          </p>
         </div>
       )}
     </div>
   );
 
   const filterControl = (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 shrink-0">
       <select
         value={powerState}
         onChange={(e) => setPowerState(e.target.value)}
-        className="h-9 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-700"
+        className="h-8 border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-700 rounded-none font-mono"
       >
-        <option value="all">All Power States</option>
-        <option value="poweredOn">Powered On</option>
-        <option value="poweredOff">Powered Off</option>
-        <option value="suspended">Suspended</option>
+        <option value="all">All States</option>
+        <option value="poweredOn">poweredOn</option>
+        <option value="poweredOff">poweredOff</option>
+        <option value="suspended">suspended</option>
       </select>
       {(searchTerm || powerState !== "all" || topologyFilter) && (
         <button
@@ -378,52 +374,52 @@ function VmsContent() {
             setPowerState("all");
             if (topologyFilter) handleClearTopologyFilter();
           }}
-          className="text-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted whitespace-nowrap"
+          className="text-xs text-zinc-400 hover:text-yellow-400 font-mono underline decoration-dotted whitespace-nowrap"
         >
-          Reset All
+          Reset
         </button>
       )}
     </div>
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 w-full">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-zinc-100 flex items-center gap-2.5">
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
             Virtual Machines
+            <span className="text-xs font-mono font-normal text-zinc-500">
+              ({vms.length} loaded)
+            </span>
             {topologyFilter && (
-              <span className="text-xs font-normal px-2.5 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/30 text-yellow-400">
-                Filtered by {topologyFilter.type}
+              <span className="text-xs font-mono font-normal px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400">
+                scope: {topologyFilter.type}
               </span>
             )}
           </h1>
-          <p className="text-sm text-zinc-500 mt-1">
-            Global inventory of instances, compute specs, IP addresses, and state.
-          </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => loadData(currentCursor)}
             disabled={loading}
-            className="border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8"
+            className="border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
 
           {/* View Toggle */}
-          <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
+          <div className="flex items-center border border-zinc-800 bg-zinc-900/50 p-0.5">
             <button
               type="button"
               onClick={() => setView("table")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
                 view === "table"
-                  ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                  ? "bg-zinc-800 text-zinc-100"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
             >
@@ -433,9 +429,9 @@ function VmsContent() {
             <button
               type="button"
               onClick={() => setView("card")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
                 view === "card"
-                  ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                  ? "bg-zinc-800 text-zinc-100"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
             >
@@ -448,19 +444,19 @@ function VmsContent() {
 
       {/* Topology Active Filter Chip Banner */}
       {topologyFilter && (
-        <div className="flex items-center justify-between p-3 px-4 rounded-xl border border-yellow-600/40 bg-yellow-950/20 text-yellow-200 shadow-sm">
-          <div className="flex items-center gap-2.5 flex-wrap text-xs">
-            <Filter className="h-4 w-4 text-yellow-400 shrink-0" />
+        <div className="flex items-center justify-between p-2.5 px-3 border border-yellow-600/50 bg-yellow-950/20 text-yellow-200">
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+            <Filter className="h-3.5 w-3.5 text-yellow-400 shrink-0" />
             <span className="font-semibold text-zinc-400 uppercase tracking-wider text-[11px]">
               Drill-Down Scope:
             </span>
-            <span className="px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-300 font-mono font-medium capitalize">
+            <span className="px-1.5 py-0.2 bg-yellow-500/20 text-yellow-300 font-bold capitalize">
               {topologyFilter.type}
             </span>
-            <span className="font-semibold text-white text-sm">
+            <span className="font-semibold text-white">
               {topologyFilter.name}
             </span>
-            <span className="font-mono text-zinc-500 text-xs">
+            <span className="text-zinc-500 text-xs">
               ({topologyFilter.id})
             </span>
           </div>
@@ -468,9 +464,9 @@ function VmsContent() {
           <button
             type="button"
             onClick={handleClearTopologyFilter}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-900/80 border border-zinc-700/80 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors ml-4 shrink-0"
+            className="flex items-center gap-1 px-2 py-0.5 bg-zinc-900 border border-zinc-700 text-xs font-mono text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-3 w-3" />
             <span>Reset to Fleet</span>
           </button>
         </div>

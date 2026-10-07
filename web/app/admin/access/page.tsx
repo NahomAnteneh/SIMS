@@ -110,7 +110,7 @@ export default function AccessPage() {
           <span className="text-sm">Loading users and permissions...</span>
         </div>
       ) : users.length === 0 ? (
-        <div className="p-12 text-center border border-zinc-800 rounded-2xl bg-zinc-950/20 space-y-3">
+        <div className="p-12 text-center border border-zinc-800 rounded-none bg-zinc-950/20 space-y-3">
           <Shield className="h-10 w-10 text-zinc-600 mx-auto" />
           <h3 className="text-base font-semibold text-zinc-200">No Users Found</h3>
           <p className="text-sm text-zinc-500 max-w-md mx-auto">
@@ -118,7 +118,7 @@ export default function AccessPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-zinc-800 bg-[#0e0e0e] overflow-hidden">
+        <div className="rounded-none border border-zinc-800 bg-[#0e0e0e] overflow-hidden">
           <table className="w-full text-left text-sm text-zinc-200">
             <thead className="border-b border-zinc-800 bg-zinc-950/60 text-xs font-semibold text-zinc-400">
               <tr>
@@ -138,14 +138,14 @@ export default function AccessPage() {
                   <tr key={u.id} className="hover:bg-zinc-900/40 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400">
+                        <div className="p-2 rounded-none bg-zinc-900 border border-zinc-800 text-zinc-400">
                           <User className="h-4 w-4" />
                         </div>
                         <div>
                           <div className="font-semibold text-zinc-100 flex items-center gap-2">
                             {u.username}
                             {isSelf && (
-                              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">
+                              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-none font-mono">
                                 you
                               </span>
                             )}
@@ -157,7 +157,7 @@ export default function AccessPage() {
 
                     <td className="px-5 py-4">
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold capitalize border ${
+                        className={`inline-flex items-center px-2 py-0.5 rounded-none text-xs font-mono font-bold capitalize border ${
                           isAdmin
                             ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                             : "bg-blue-500/10 text-blue-400 border-blue-500/20"
@@ -187,7 +187,7 @@ export default function AccessPage() {
                           variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteUser(u.id, u.username)}
-                          className="h-8 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 p-2"
+                          className="h-8 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-none"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -204,7 +204,7 @@ export default function AccessPage() {
       {/* Add User Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
+          <div className="w-full max-w-md rounded-none bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <UserPlus className="h-4 w-4 text-yellow-500" />
@@ -212,14 +212,14 @@ export default function AccessPage() {
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-zinc-500 hover:text-zinc-300 p-1 rounded-md"
+                className="text-zinc-500 hover:text-zinc-300 p-1 rounded-none"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {error && (
-              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+              <div className="p-3 rounded-none bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -234,7 +234,7 @@ export default function AccessPage() {
                   placeholder="e.g. operator1"
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
 
@@ -246,7 +246,7 @@ export default function AccessPage() {
                   placeholder="••••••••••••"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
 
@@ -257,7 +257,7 @@ export default function AccessPage() {
                   placeholder="operator@company.com"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
 
@@ -266,7 +266,7 @@ export default function AccessPage() {
                 <select
                   value={formData.role}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-600"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-600"
                 >
                   <option value="user">User (Standard Access)</option>
                   <option value="admin">Administrator (Full Access)</option>

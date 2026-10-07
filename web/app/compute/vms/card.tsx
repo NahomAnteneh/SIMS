@@ -23,7 +23,7 @@ export const VmCard: React.FC<VmCardProps> = ({ vm, onClick }) => {
   return (
     <Card
       onClick={onClick}
-      className={`bg-[#0c0c0c] border border-zinc-800/80 text-[#e6e4e0] rounded-xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+      className={`bg-[#0c0c0c] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg transition-all ${
         onClick ? "cursor-pointer hover:border-zinc-700 hover:bg-zinc-900/40" : ""
       }`}
     >
@@ -34,12 +34,12 @@ export const VmCard: React.FC<VmCardProps> = ({ vm, onClick }) => {
         </CardTitle>
         <div className="flex items-center gap-1.5 shrink-0">
           <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+            className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-none text-[10px] font-mono uppercase font-bold border ${
               isOn
-                ? "text-emerald-400 bg-emerald-400/10"
+                ? "text-emerald-400 bg-emerald-400/10 border-emerald-500/30"
                 : isSuspended
-                ? "text-amber-400 bg-amber-400/10"
-                : "text-zinc-500 bg-zinc-800"
+                ? "text-amber-400 bg-amber-400/10 border-amber-500/30"
+                : "text-zinc-500 bg-zinc-800 border-zinc-700"
             }`}
           >
             <Power className="h-2.5 w-2.5" />

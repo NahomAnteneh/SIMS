@@ -18,7 +18,7 @@ export const DataSourceCard: React.FC<DataSourceCardProps> = ({ source }) => {
   const dateStr = source.lastSync ? new Date(source.lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "N/A";
 
   return (
-    <Card className="bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg">
+    <Card className="bg-[#0a0a0a] border border-zinc-800 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg">
       <CardHeader className="p-5 pb-4 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base font-bold tracking-tight text-white flex items-center gap-2 truncate">
           <Database className="h-4 w-4 text-yellow-500 shrink-0" />
@@ -54,20 +54,20 @@ export const DataSourceCard: React.FC<DataSourceCardProps> = ({ source }) => {
       </CardContent>
 
       <CardFooter className="p-5 pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-1.5 text-zinc-500">
+        <div className="flex items-center gap-1.5 text-zinc-500 font-mono">
           <Clock className="h-3 w-3" />
           <span>Synced at {dateStr}</span>
         </div>
 
         <div
-          className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ${
+          className={`inline-flex items-center gap-2 px-2 py-0.5 rounded-none text-xs font-mono font-medium border ${
             isConnected
-              ? "text-emerald-400 bg-emerald-400/10"
-              : "text-rose-400 bg-rose-400/10"
+              ? "text-emerald-400 bg-emerald-400/10 border-emerald-500/30"
+              : "text-rose-400 bg-rose-400/10 border-rose-500/30"
           }`}
         >
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-none ${
               isConnected ? "bg-emerald-400" : "bg-rose-400"
             }`}
           />

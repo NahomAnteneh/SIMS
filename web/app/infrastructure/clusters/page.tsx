@@ -103,22 +103,22 @@ export default function ClustersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100">
-            Clusters & Hosts
+          <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
+            Clusters & Hypervisors
+            <span className="text-xs font-mono font-normal text-zinc-500">
+              ({clusters.length} clusters, {hosts.length} hosts)
+            </span>
           </h1>
-          <p className="text-sm text-zinc-500 mt-1">
-            Manage computing clusters, high availability rules, DRS, and ESXi hypervisors.
-          </p>
         </div>
 
         {/* View Toggle */}
-        <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
+        <div className="flex items-center rounded-none border border-zinc-800 bg-zinc-900/50 p-1">
           <button
             type="button"
             onClick={() => setView("table")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-none transition-colors ${
               view === "table"
                 ? "bg-zinc-800 text-zinc-100 shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"
@@ -130,7 +130,7 @@ export default function ClustersPage() {
           <button
             type="button"
             onClick={() => setView("card")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-none transition-colors ${
               view === "card"
                 ? "bg-zinc-800 text-zinc-100 shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"

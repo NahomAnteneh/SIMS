@@ -86,12 +86,12 @@ export const vmColumns = [
       const isSuspended = power === "suspended";
       return (
         <span
-          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[11px] font-mono font-medium border ${
             isOn
-              ? "text-emerald-400 bg-emerald-400/10"
+              ? "text-emerald-400 bg-emerald-400/10 border-emerald-500/30"
               : isSuspended
-              ? "text-amber-400 bg-amber-400/10"
-              : "text-zinc-400 bg-zinc-800"
+              ? "text-amber-400 bg-amber-400/10 border-amber-500/30"
+              : "text-zinc-400 bg-zinc-800 border-zinc-700"
           }`}
         >
           <Power className="h-3 w-3" />
@@ -109,12 +109,12 @@ export const vmColumns = [
       const isConnected = conn === "connected";
       return (
         <span
-          className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+          className={`inline-flex items-center gap-1.5 text-xs font-mono font-medium ${
             isConnected ? "text-emerald-400" : "text-rose-400"
           }`}
         >
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-none ${
               isConnected ? "bg-emerald-400" : "bg-rose-400"
             }`}
           />

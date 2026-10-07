@@ -94,9 +94,9 @@ export function DataTable<TData extends RowData>({
       : undefined);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0c] shadow-sm">
-      <div className="flex items-center justify-between p-4 border-b border-zinc-800/80 gap-3">
-        <div className="flex items-center gap-3 flex-1 max-w-2xl">
+    <div className="overflow-hidden border border-zinc-800 bg-[#0c0c0c] shadow-sm rounded-none w-full">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border-b border-zinc-800/80 gap-3">
+        <div className="flex items-center gap-3 flex-1 w-full">
           {customSearch ? (
             customSearch
           ) : onSearchChange ? (
@@ -183,7 +183,19 @@ export function DataTable<TData extends RowData>({
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
                   onClick={() => onRowClick?.(row.original)}
-                  className={`border-b border-zinc-800/60 transition-colors ${
+                  tabIndex={onRowClick ? 0 : undefined}
+                  role={onRowClick ? "button" : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowClick(row.original);
+                          }
+                        }
+                      : undefined
+                  }
+                  className={`border-b border-zinc-800/60 transition-colors focus:outline-none focus:bg-zinc-800/80 ${
                     onRowClick ? "cursor-pointer hover:bg-zinc-800/60" : "hover:bg-zinc-900/40"
                   }`}
                 >
@@ -215,14 +227,14 @@ export function DataTable<TData extends RowData>({
             <select
               value={pagination.limit || 20}
               onChange={(e) => pagination.onLimitChange?.(Number(e.target.value))}
-              className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200 text-xs focus:outline-none focus:border-zinc-700"
+              className="bg-zinc-900 border border-zinc-800 rounded-none px-2 py-1 text-zinc-200 text-xs focus:outline-none focus:border-zinc-700 font-mono"
             >
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
             </select>
-            <span className="text-zinc-500 ml-2">
+            <span className="text-zinc-500 ml-2 font-mono">
               Showing {data.length} records
             </span>
           </div>
@@ -233,7 +245,7 @@ export function DataTable<TData extends RowData>({
               size="sm"
               disabled={!pagination.canPrev}
               onClick={pagination.onPrev}
-              className="h-8 px-2.5 border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
+              className="h-8 px-2.5 rounded-none border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
               Previous
@@ -243,7 +255,7 @@ export function DataTable<TData extends RowData>({
               size="sm"
               disabled={!pagination.hasMore}
               onClick={pagination.onNext}
-              className="h-8 px-2.5 border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
+              className="h-8 px-2.5 rounded-none border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
             >
               Next
               <ChevronRight className="h-4 w-4 ml-1" />

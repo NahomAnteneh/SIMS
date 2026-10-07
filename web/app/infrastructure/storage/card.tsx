@@ -23,7 +23,7 @@ export const StorageCard: React.FC<StorageCardProps> = ({ storage, onClick }) =>
   return (
     <Card
       onClick={onClick}
-      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg transition-all ${
         onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
       }`}
     >
@@ -59,7 +59,7 @@ export const StorageCard: React.FC<StorageCardProps> = ({ storage, onClick }) =>
 
         {/* Storage Bar */}
         <div className="space-y-1">
-          <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-1.5 w-full bg-zinc-800 rounded-none overflow-hidden">
             <div
               className={`h-full ${
                 percent > 85 ? "bg-rose-500" : percent > 70 ? "bg-amber-500" : "bg-cyan-500"
@@ -67,7 +67,7 @@ export const StorageCard: React.FC<StorageCardProps> = ({ storage, onClick }) =>
               style={{ width: `${Math.min(percent, 100)}%` }}
             />
           </div>
-          <div className="flex justify-between text-xs text-zinc-500">
+          <div className="flex justify-between text-xs text-zinc-500 font-mono">
             <span>{freeTB} TB Free</span>
             <span>{percent}% Used</span>
           </div>
@@ -75,13 +75,13 @@ export const StorageCard: React.FC<StorageCardProps> = ({ storage, onClick }) =>
       </CardContent>
 
       <CardFooter className="p-5 pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs">
-        <div className="flex items-center gap-1.5 text-zinc-400">
+        <div className="flex items-center gap-1.5 text-zinc-400 font-mono">
           <Zap className="h-3.5 w-3.5 text-zinc-400" />
           <span>Shared Storage Pool</span>
         </div>
 
-        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-emerald-400 text-xs font-medium bg-emerald-400/10">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        <div className="inline-flex items-center gap-2 px-2 py-0.5 rounded-none text-emerald-400 text-xs font-mono font-medium bg-emerald-400/10 border border-emerald-500/30">
+          <span className="w-1.5 h-1.5 rounded-none bg-emerald-400" />
           <span className="capitalize">{storage.status}</span>
         </div>
       </CardFooter>

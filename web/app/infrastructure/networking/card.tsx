@@ -20,7 +20,7 @@ export const NetworkCard: React.FC<NetworkCardProps> = ({ network, onClick }) =>
   return (
     <Card
       onClick={onClick}
-      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg transition-all ${
         onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
       }`}
     >

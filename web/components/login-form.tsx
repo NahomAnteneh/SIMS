@@ -54,7 +54,7 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card className="border-zinc-800 bg-[#0c0c0c] text-zinc-100 shadow-2xl">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-yellow-600 text-black shadow-lg">
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-none bg-yellow-600 text-black shadow-lg">
             <Warehouse className="h-5 w-5" />
           </div>
           <CardTitle className="text-xl font-bold tracking-tight text-zinc-100">
@@ -68,7 +68,7 @@ export function LoginForm({
           <form onSubmit={handleSubmit}>
             <FieldGroup>
               {error && (
-                <div className="flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
+                <div className="flex items-center gap-2 rounded-none border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{error}</span>
                 </div>

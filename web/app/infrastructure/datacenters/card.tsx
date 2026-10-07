@@ -68,7 +68,7 @@ export const DatacenterCard: React.FC<DatacenterCardProps> = ({
   return (
     <Card
       onClick={onClick}
-      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg max-w-sm transition-all ${
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg max-w-sm transition-all ${
         onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
       }`}
     >
@@ -81,9 +81,9 @@ export const DatacenterCard: React.FC<DatacenterCardProps> = ({
         {/* Minimal Connection / Server Marker */}
         <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full border border-zinc-500" />
+            <span className="w-2 h-2 rounded-none border border-zinc-500" />
             <div className="w-7 h-[1px] bg-zinc-700" />
-            <span className="w-2 h-2 rounded-full bg-zinc-100" />
+            <span className="w-2 h-2 rounded-none bg-zinc-100" />
           </div>
           <Server className="h-4 w-4 ml-1 text-zinc-300" />
           <span>{datacenter.hostCount} Hosts</span>
@@ -132,8 +132,8 @@ export const DatacenterCard: React.FC<DatacenterCardProps> = ({
         </div>
 
         {/* Subtle Dark Pill Status */}
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-emerald-400 text-xs font-medium bg-emerald-400/10">
-          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+        <div className="inline-flex items-center gap-2 px-2 py-0.5 rounded-none text-emerald-400 text-xs font-mono font-medium bg-emerald-400/10 border border-emerald-500/30">
+          <span className="w-2 h-2 rounded-none bg-emerald-400" />
           <span className="capitalize">{datacenter.status}</span>
         </div>
       </CardFooter>

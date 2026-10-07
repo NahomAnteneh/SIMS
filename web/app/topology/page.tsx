@@ -58,14 +58,14 @@ export default function InfraCanvas() {
 
   if (loading) {
     return (
-      <div className="w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-2xl flex items-center justify-center text-zinc-500 text-sm">
+      <div className="w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-none flex items-center justify-center text-zinc-500 text-sm font-mono">
         Building Infrastructure Diagram...
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-2xl overflow-hidden border border-zinc-800/80 shadow-2xl">
+    <div className="relative w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-none overflow-hidden border border-zinc-800/80 shadow-2xl">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900/40 via-[#121110] to-[#0a0a09] pointer-events-none z-10" />
 
       <ReactFlow
@@ -87,7 +87,7 @@ export default function InfraCanvas() {
         <MiniMap
           nodeColor="#27272a"
           maskColor="rgba(18, 17, 16, 0.7)"
-          className="!bg-[#1c1b1a] !border-zinc-800 rounded-lg overflow-hidden"
+          className="!bg-[#1c1b1a] !border-zinc-800 rounded-none overflow-hidden"
         />
       </ReactFlow>
     </div>

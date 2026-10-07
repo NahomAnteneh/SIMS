@@ -18,7 +18,7 @@ export const ClusterCard: React.FC<ClusterCardProps> = ({ cluster, onClick }) =>
   return (
     <Card
       onClick={onClick}
-      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg transition-all ${
         onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
       }`}
     >
@@ -79,8 +79,8 @@ export const ClusterCard: React.FC<ClusterCardProps> = ({ cluster, onClick }) =>
           </span>
         </div>
 
-        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-emerald-400 text-xs font-medium bg-emerald-400/10">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        <div className="inline-flex items-center gap-2 px-2 py-0.5 rounded-none text-emerald-400 text-xs font-mono font-medium bg-emerald-400/10 border border-emerald-500/30">
+          <span className="w-1.5 h-1.5 rounded-none bg-emerald-400" />
           <span className="capitalize">{cluster.status}</span>
         </div>
       </CardFooter>

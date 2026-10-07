@@ -26,6 +26,7 @@ export const SYNTAX_TOKENS: SyntaxHelperItem[] = [
   { prefix: "ip:", label: "IP / CIDR", example: "ip:10.0.0.0/24", description: "Match IP address or CIDR block" },
   { prefix: "power:", label: "Power State", example: "power:on", description: "poweredOn, poweredOff, or suspended" },
   { prefix: "cluster:", label: "Cluster", example: "cluster:Compute-01", description: "Filter by compute cluster" },
+  { prefix: "host:", label: "Host", example: "host:esxi-01", description: "Filter by host name or UUID" },
   { prefix: "ds:", label: "Datastore", example: "ds:vsan-prod", description: "Filter by attached datastore" },
   { prefix: "os:", label: "Guest OS", example: "os:linux", description: "Filter by operating system" },
   { prefix: "tag:", label: "vSphere Tag", example: "tag:Tier:Web", description: "Filter by tag category or tag:category:value" },
@@ -37,10 +38,13 @@ const KNOWN_PREFIXES = new Set([
   "ip",
   "power",
   "cluster",
+  "host",
   "ds",
   "storage",
   "os",
   "tag",
+  "dc",
+  "datacenter",
 ]);
 
 /**
@@ -163,6 +167,33 @@ export function parseSearchQuery(raw: string): ParseResult {
           operands.push({
             op: "CONTAINS",
             field: "name",
+            value: token.value,
+          });
+        }
+        break;
+
+      case "host":
+        if (isUUID(token.value)) {
+          operands.push({
+            op: "EQ",
+            field: "host_id",
+            value: token.value,
+          });
+        } else {
+          operands.push({
+            op: "CONTAINS",
+            field: "name",
+            value: token.value,
+          });
+        }
+        break;
+
+      case "dc":
+      case "datacenter":
+        if (isUUID(token.value)) {
+          operands.push({
+            op: "EQ",
+            field: "datacenter_id",
             value: token.value,
           });
         }

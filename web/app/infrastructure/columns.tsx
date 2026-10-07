@@ -234,7 +234,7 @@ export const dcColumns = [
       const status = info.getValue();
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-3 py-1 rounded-none text-xs font-bold capitalize border ${
             status === "healthy"
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : status === "warning"
@@ -362,7 +362,7 @@ export const clusterColumns = [
       const status = info.getValue();
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-3 py-1 rounded-none text-xs font-bold capitalize border ${
             status === "healthy"
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : status === "warning"
@@ -444,7 +444,7 @@ export const storageColumns = [
       const status = info.getValue();
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-3 py-1 rounded-none text-xs font-bold capitalize border ${
             status === "healthy"
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : status === "warning"
@@ -520,7 +520,7 @@ export const netColumns = [
 
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-3 py-1 rounded-none text-xs font-bold capitalize border ${
             isActive
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"
@@ -667,7 +667,7 @@ export const hostColumns = [
       const isConnected = status === "connected";
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-3 py-1 rounded-none text-xs font-bold capitalize border ${
             isConnected
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : "bg-rose-500/15 text-rose-400 border-rose-500/30"

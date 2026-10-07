@@ -189,21 +189,21 @@ export default function AlertsPage() {
     switch (severity) {
       case "CRITICAL":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[10px] font-bold uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
             <XCircle className="h-3 w-3" />
             CRITICAL
           </span>
         );
       case "WARNING":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
             <AlertTriangle className="h-3 w-3" />
             WARNING
           </span>
         );
       case "SUCCESS":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
             <CheckCircle2 className="h-3 w-3" />
             SUCCESS
           </span>
@@ -211,7 +211,7 @@ export default function AlertsPage() {
       case "INFO":
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-none text-[10px] font-bold uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
             <Info className="h-3 w-3" />
             INFO
           </span>
@@ -220,31 +220,31 @@ export default function AlertsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto p-2 md:p-4">
+    <div className="space-y-4 w-full">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-zinc-100 flex items-center gap-2.5">
-            <Bell className="h-6 w-6 text-yellow-500" />
-            Notifications & Activity Feed
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-800/80">
+        <div className="flex items-center gap-2.5">
+          <Bell className="h-5 w-5 text-yellow-500" />
+          <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
+            Activity & Audit Ledger
+            <span className="text-xs font-mono font-normal text-zinc-500">
+              ({events.length} events)
+            </span>
             {unreadCount > 0 && (
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-mono font-medium">
+              <span className="text-[11px] px-2 py-0.2 bg-yellow-500/20 text-yellow-400 font-mono font-medium border border-yellow-500/30">
                 {unreadCount} unread
               </span>
             )}
           </h1>
-          <p className="text-sm text-zinc-500 mt-1">
-            Real-time feed of inventory mutations, cluster alerts, vCenter syncs, and security events.
-          </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <Button
             variant="outline"
             size="sm"
             onClick={handleMarkAllRead}
             disabled={unreadCount === 0}
-            className="border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs"
+            className="border-zinc-800 bg-zinc-900/60 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
           >
             <CheckCheck className="h-3.5 w-3.5 text-yellow-500" />
             Mark All Read
@@ -255,7 +255,7 @@ export default function AlertsPage() {
             size="sm"
             onClick={loadEvents}
             disabled={loading}
-            className="border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8"
+            className="border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
@@ -263,75 +263,32 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* Summary KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-xl border border-zinc-800 bg-[#0d0d0d] flex items-center justify-between">
-          <div>
-            <div className="text-xs text-zinc-500 font-medium">Recorded Events</div>
-            <div className="text-2xl font-bold text-zinc-100 mt-1">{events.length}</div>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-zinc-800/80 flex items-center justify-center text-zinc-400">
-            <Terminal className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-zinc-800 bg-[#0d0d0d] flex items-center justify-between">
-          <div>
-            <div className="text-xs text-zinc-500 font-medium">Critical Alerts</div>
-            <div className="text-2xl font-bold text-rose-400 mt-1">{criticalCount}</div>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400">
-            <XCircle className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-zinc-800 bg-[#0d0d0d] flex items-center justify-between">
-          <div>
-            <div className="text-xs text-zinc-500 font-medium">Warnings</div>
-            <div className="text-2xl font-bold text-amber-400 mt-1">{warningCount}</div>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
-            <AlertTriangle className="h-5 w-5" />
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl border border-zinc-800 bg-[#0d0d0d] flex items-center justify-between">
-          <div>
-            <div className="text-xs text-zinc-500 font-medium">Unread Mutations</div>
-            <div className="text-2xl font-bold text-yellow-400 mt-1">{unreadCount}</div>
-          </div>
-          <div className="h-10 w-10 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-400">
-            <Bell className="h-5 w-5" />
-          </div>
-        </div>
-      </div>
-
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-center gap-2.5">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search events by title, description, action (e.g. vm.discovered), actor, or target ID..."
-            className="w-full bg-[#0d0d0d] border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-yellow-600 transition-colors"
+            placeholder="Search events by action, actor, target ID, or payload details..."
+            className="w-full bg-[#0d0d0d] border border-zinc-800 rounded-none pl-9 pr-4 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-yellow-600 font-mono transition-colors"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+        <div className="flex items-center gap-1 self-start sm:self-auto flex-wrap">
           {["ALL", "CRITICAL", "WARNING", "SUCCESS", "INFO"].map((sev) => (
             <button
               key={sev}
               type="button"
               onClick={() => setSeverityFilter(sev)}
-              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+              className={`px-2.5 py-1 text-xs font-mono transition-colors rounded-none ${
                 severityFilter === sev
-                  ? "bg-zinc-800 text-zinc-100 border border-zinc-700"
-                  : "bg-zinc-900/40 text-zinc-400 hover:text-zinc-200 border border-transparent"
+                  ? "bg-zinc-800 text-zinc-100 border border-zinc-600"
+                  : "bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 border border-zinc-800"
               }`}
             >
-              {sev === "ALL" ? "All Severities" : sev}
+              {sev === "ALL" ? "ALL" : sev}
             </button>
           ))}
         </div>
@@ -341,14 +298,14 @@ export default function AlertsPage() {
       {loading && events.length === 0 ? (
         <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
           <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
-          <span className="text-sm">Streaming audit events from Go ledger...</span>
+          <span className="text-sm font-mono">Streaming audit ledger events...</span>
         </div>
       ) : filteredItems.length === 0 ? (
-        <div className="p-12 text-center text-sm text-zinc-500 border border-zinc-800 rounded-xl bg-zinc-950/20">
+        <div className="p-12 text-center text-xs font-mono text-zinc-500 border border-zinc-800 bg-zinc-950/20 rounded-none">
           No audit events found matching the selected filter.
         </div>
       ) : (
-        <div className="border border-zinc-800/80 rounded-xl bg-[#0a0a0a] divide-y divide-zinc-900 overflow-hidden shadow-lg">
+        <div className="border border-zinc-800/80 bg-[#0a0a0a] divide-y divide-zinc-900 overflow-hidden shadow-lg rounded-none">
           {filteredItems.map(({ event: ev, synthesized, isUnread }) => {
             const isExpanded = expandedId === ev.id;
             const dateStr = new Date(ev.created_at).toLocaleString();
@@ -381,7 +338,7 @@ export default function AlertsPage() {
                           {synthesized.title}
                         </span>
                         {isUnread && (
-                          <span className="h-2 w-2 rounded-full bg-yellow-500 shrink-0" title="Unread mutation" />
+                          <span className="h-2 w-2 rounded-none bg-yellow-500 shrink-0" title="Unread mutation" />
                         )}
                       </div>
 
@@ -431,7 +388,7 @@ export default function AlertsPage() {
                     <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
                       Event Metadata & Payload Details
                     </div>
-                    <pre className="p-3 rounded-lg bg-zinc-950 border border-zinc-850 text-emerald-400 font-mono text-xs overflow-x-auto">
+                    <pre className="p-3 rounded-none bg-zinc-950 border border-zinc-850 text-emerald-400 font-mono text-xs overflow-x-auto">
                       {JSON.stringify(
                         {
                           event_id: ev.id,
