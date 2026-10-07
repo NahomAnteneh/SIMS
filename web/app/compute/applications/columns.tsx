@@ -16,7 +16,9 @@ export interface Application {
   owner: string;
 }
 
-const columnHelper = createColumnHelper<Application>();
+import { type DataTableFeatures } from "@/components/ui/data-table-features";
+
+const columnHelper = createColumnHelper<DataTableFeatures, Application>();
 
 export const appColumns = [
   // Application Name & Owner

@@ -92,6 +92,7 @@ services:
       PORT: "8080"
       LOG_LEVEL: "debug"
       DATABASE_URL: "postgres://sims:${POSTGRES_PASSWORD:-sims_password}@postgres:5432/sims?sslmode=disable"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
     depends_on:
       postgres:
         condition: service_healthy

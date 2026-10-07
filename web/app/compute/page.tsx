@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { LayoutList, LayoutGrid } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { vmColumns, type VirtualMachine } from "./vms/columns";
@@ -9,7 +9,8 @@ import { VmCard } from "./vms/card";
 import { appColumns, type Application } from "./applications/columns";
 import { ApplicationCard } from "./applications/card";
 import { DataTable } from "@/components/ui/data-table";
-import { InfraService } from "@/lib/services/infra";
+import { VMDetailSheet } from "@/components/vm/vm-detail-sheet";
+import { simsApi } from "@/lib/api/client";
 
 export default function ComputePage() {
   const [view, setView] = useState<"table" | "card">("table");
@@ -17,26 +18,52 @@ export default function ComputePage() {
 
   const [vms, setVms] = useState<VirtualMachine[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [selectedVMId, setSelectedVMId] = useState<string | null>(null);
+
+  // Pagination states
+  const [limit, setLimit] = useState(20);
+  const [currentCursor, setCurrentCursor] = useState<string | undefined>(undefined);
+  const [cursorHistory, setCursorHistory] = useState<(string | undefined)[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+
+  const loadData = useCallback(async (cursor?: string) => {
+    setLoading(true);
+    try {
+      const res = await simsApi.listVMs({ limit, cursor });
+      setVms(res.items || []);
+      setHasMore(res.pagination.has_more);
+      setNextCursor(res.pagination.next_cursor);
+      setApplications([]); // Real vSphere inventory has VMs & resource pools, no mock applications
+    } catch (error) {
+      console.error("Failed to load compute data", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [limit]);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const [vmData, appData] = await Promise.all([
-          InfraService.getVms(),
-          InfraService.getApplications(),
-        ]);
+    loadData(currentCursor);
+  }, [loadData, currentCursor]);
 
-        setVms(vmData || []);
-        setApplications(appData || []);
-      } catch (error) {
-        console.error("Failed to load compute data", error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  const handleNextPage = () => {
+    if (!nextCursor) return;
+    setCursorHistory((prev) => [...prev, currentCursor]);
+    setCurrentCursor(nextCursor);
+  };
 
-    fetchData();
-  }, []);
+  const handlePrevPage = () => {
+    if (cursorHistory.length === 0) return;
+    const prev = cursorHistory[cursorHistory.length - 1];
+    setCursorHistory((prevStack) => prevStack.slice(0, prevStack.length - 1));
+    setCurrentCursor(prev);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    setLimit(newLimit);
+    setCursorHistory([]);
+    setCurrentCursor(undefined);
+  };
 
   return (
     <div className="space-y-6">
@@ -86,39 +113,63 @@ export default function ComputePage() {
         </TabsList>
 
         <TabsContent value="vms" className="mt-4">
-          {view === "table" ? (
+          {loading ? (
+            <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
+              <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
+              <span className="text-sm">Loading virtual machines...</span>
+            </div>
+          ) : view === "table" ? (
             <DataTable
               columns={vmColumns}
               data={vms}
               searchColumn="name"
               searchPlaceholder="Filter virtual machines by name..."
+              onRowClick={(row) => setSelectedVMId(row.id)}
+              pagination={{
+                hasMore,
+                canPrev: cursorHistory.length > 0,
+                onNext: handleNextPage,
+                onPrev: handlePrevPage,
+                limit,
+                onLimitChange: handleLimitChange,
+              }}
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {vms.map((vm) => (
-                <VmCard key={vm.id} vm={vm} />
+                <div key={vm.id} onClick={() => setSelectedVMId(vm.id)} className="cursor-pointer">
+                  <VmCard vm={vm} />
+                </div>
               ))}
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="applications" className="mt-4">
-          {view === "table" ? (
-            <DataTable
-              columns={appColumns}
-              data={applications}
-              searchColumn="name"
-              searchPlaceholder="Filter applications by name..."
-            />
+          {applications.length > 0 ? (
+            view === "table" ? (
+              <DataTable
+                columns={appColumns}
+                data={applications}
+                searchColumn="name"
+                searchPlaceholder="Filter applications by name..."
+              />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {applications.map((app) => (
+                  <ApplicationCard key={app.id} app={app} />
+                ))}
+              </div>
+            )
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {applications.map((app) => (
-                <ApplicationCard key={app.id} app={app} />
-              ))}
+            <div className="p-12 text-center text-sm text-zinc-500 border border-zinc-800 rounded-xl bg-zinc-950/20">
+              No application workloads mapped. Workloads are categorized by vSphere tags and folders in the SIMS inventory.
             </div>
           )}
         </TabsContent>
       </Tabs>
+
+      <VMDetailSheet vmId={selectedVMId} onClose={() => setSelectedVMId(null)} />
     </div>
   );
 }

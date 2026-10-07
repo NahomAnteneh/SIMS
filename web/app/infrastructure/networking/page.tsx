@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { LayoutList, LayoutGrid } from "lucide-react";
+import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 
 import { netColumns, type NetworkItem } from "../columns";
 import { DataTable } from "@/components/ui/data-table";
 import { NetworkCard } from "./card";
-import { InfraService } from "@/lib/services/infra";
+import { simsApi } from "@/lib/api/client";
 
 export default function NetworkingPage() {
   const [view, setView] = useState<"table" | "card">("table");
@@ -15,9 +15,19 @@ export default function NetworkingPage() {
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
       try {
-        const data = await InfraService.getNetworks();
-        setNetworks(data || []);
+        const rawNets = await simsApi.listNetworks();
+        const mapped: NetworkItem[] = rawNets.map((net) => ({
+          id: net.id,
+          name: net.name,
+          datacenterId: net.datacenter_id || "",
+          type: net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed") ? "Distributed" : "Standard",
+          vlanId: 0,
+          subnet: "VLAN Default",
+          status: "active",
+        }));
+        setNetworks(mapped);
       } catch (err) {
         console.error("Failed to load networks", err);
       } finally {
@@ -66,7 +76,12 @@ export default function NetworkingPage() {
         </div>
       </div>
 
-      {view === "table" ? (
+      {loading ? (
+        <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
+          <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
+          <span className="text-sm">Loading networks...</span>
+        </div>
+      ) : view === "table" ? (
         <DataTable
           columns={netColumns}
           data={networks}

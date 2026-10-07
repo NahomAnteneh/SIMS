@@ -27,3 +27,6 @@ export const features = tableFeatures({
 });
 
 export type DataTableFeatures = typeof features;
+
+export type ColumnFiltersState = Array<{ id: string; value: unknown }>;
+export type ColumnVisibilityState = Record<string, boolean>;

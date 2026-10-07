@@ -28,6 +28,7 @@ export const features = tableFeatures({
   sortFns: { alphanumeric: sortFn_alphanumeric, text: sortFn_text },
 })
 
-// Pass this as the first generic argument to `ColumnDef`, `Column`, `Table`,
-// and `Row` so each type knows which feature APIs are available.
-export type DataTableFeatures = typeof features
+export type DataTableFeatures = typeof features;
+
+export type ColumnFiltersState = Array<{ id: string; value: unknown }>;
+export type ColumnVisibilityState = Record<string, boolean>;

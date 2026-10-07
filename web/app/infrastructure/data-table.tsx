@@ -36,14 +36,17 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 interface DataTableProps<TData extends RowData> {
-  columns: ColumnDef<DataTableFeatures, TData>[];
+  columns: ColumnDef<DataTableFeatures, TData, any>[];
   data: TData[];
+  searchColumn?: string;
+  searchPlaceholder?: string;
 }
 
 export function DataTable<TData extends RowData>({
   columns,
   data,
-  searchColumn
+  searchColumn,
+  searchPlaceholder,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -63,17 +66,29 @@ export function DataTable<TData extends RowData>({
     },
   });
 
+  const activeSearchCol =
+    searchColumn ??
+    (table.getColumn("name")
+      ? "name"
+      : table.getColumn("displayName")
+      ? "displayName"
+      : undefined);
+
   return (
     <div className="overflow-hidden rounded-md border">
       <div className="flex items-center py-4">
-        <Input
-          placeholder="Filter ..."
-          value={(table.getColumn(searchColumn)?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
-            table.getColumn(searchColumn)?.setFilterValue(event.target.value)
-          }
-          className="max-w-sm"
-        />
+        {activeSearchCol ? (
+          <Input
+            placeholder={searchPlaceholder ?? `Filter by ${activeSearchCol}...`}
+            value={(table.getColumn(activeSearchCol)?.getFilterValue() as string) ?? ""}
+            onChange={(event) =>
+              table.getColumn(activeSearchCol)?.setFilterValue(event.target.value)
+            }
+            className="max-w-sm"
+          />
+        ) : (
+          <div />
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="ml-auto">

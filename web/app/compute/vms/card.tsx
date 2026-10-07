@@ -1,5 +1,7 @@
+"use client";
+
 import React from "react";
-import { Monitor, Power } from "lucide-react";
+import { Monitor, Power, Clock, FolderTree } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -11,70 +13,79 @@ import { type VirtualMachine } from "./columns";
 
 interface VmCardProps {
   vm: VirtualMachine;
+  onClick?: () => void;
 }
 
-export const VmCard: React.FC<VmCardProps> = ({ vm }) => {
-  const isOn = vm.powerState === "powered_on";
+export const VmCard: React.FC<VmCardProps> = ({ vm, onClick }) => {
+  const isOn = vm.power_state === "poweredOn";
+  const isSuspended = vm.power_state === "suspended";
 
   return (
-    <Card className="bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg">
-      <CardHeader className="p-5 pb-4 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base font-bold tracking-tight text-white flex items-center gap-2 truncate">
-          <Monitor className="h-4 w-4 text-emerald-400 shrink-0" />
+    <Card
+      onClick={onClick}
+      className={`bg-[#0c0c0c] border border-zinc-800/80 text-[#e6e4e0] rounded-xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+        onClick ? "cursor-pointer hover:border-zinc-700 hover:bg-zinc-900/40" : ""
+      }`}
+    >
+      <CardHeader className="p-4 pb-3 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-sm font-bold tracking-tight text-white flex items-center gap-2 truncate">
+          <Monitor className="h-4 w-4 text-yellow-600 shrink-0" />
           <span className="truncate">{vm.name}</span>
         </CardTitle>
         <div className="flex items-center gap-1.5 shrink-0">
           <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-              isOn ? "text-emerald-400 bg-emerald-400/10" : "text-zinc-500 bg-zinc-850"
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${
+              isOn
+                ? "text-emerald-400 bg-emerald-400/10"
+                : isSuspended
+                ? "text-amber-400 bg-amber-400/10"
+                : "text-zinc-500 bg-zinc-800"
             }`}
           >
             <Power className="h-2.5 w-2.5" />
-            {isOn ? "On" : "Off"}
+            {isOn ? "On" : isSuspended ? "Suspended" : "Off"}
           </span>
         </div>
       </CardHeader>
 
-      <CardContent className="p-5 space-y-3 text-sm">
+      <CardContent className="p-4 space-y-2.5 text-xs">
         <div className="flex items-center justify-between">
           <span className="text-zinc-500 font-normal">IP Address</span>
-          <span className="font-mono font-medium text-zinc-100">{vm.ip}</span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Operating System</span>
-          <span className="font-medium text-zinc-300 text-xs truncate max-w-[200px]">
-            {vm.os}
+          <span className="font-mono font-medium text-zinc-200">
+            {vm.guest_ip_address || "None"}
           </span>
         </div>
 
         <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Location</span>
-          <span className="font-semibold text-zinc-200">
-            {vm.clusterId} • {vm.datacenterId}
+          <span className="text-zinc-500 font-normal">Operating System</span>
+          <span className="font-medium text-zinc-300 truncate max-w-[180px]">
+            {vm.guest_os || vm.moref}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500 font-normal">Folder</span>
+          <span className="font-mono text-zinc-300 truncate max-w-[180px] flex items-center gap-1">
+            <FolderTree className="h-3 w-3 text-yellow-600" />
+            {vm.folder_path || "Root"}
           </span>
         </div>
 
         <div className="flex items-center justify-between">
           <span className="text-zinc-500 font-normal">Resources</span>
-          <span className="font-semibold text-zinc-200">
-            {vm.vcpus} vCPU • {vm.memoryGB} GB RAM
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Utilization</span>
-          <span className="font-semibold text-zinc-200">
-            CPU: {vm.cpuUsagePercent}% • RAM: {vm.memoryUsagePercent}%
+          <span className="font-medium text-zinc-200">
+            {vm.cpu_cores} vCPU • {(vm.memory_mb / 1024).toFixed(1)} GB RAM
           </span>
         </div>
       </CardContent>
 
-      <CardFooter className="p-5 pt-3 border-t border-zinc-800/60 flex items-center justify-between text-xs">
-        <span className="text-zinc-500">Uptime: {vm.uptimeDays} days</span>
-        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-emerald-400 text-xs font-medium bg-emerald-400/10">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="capitalize">{vm.status}</span>
+      <CardFooter className="p-4 pt-2.5 border-t border-zinc-800/60 flex items-center justify-between text-[11px] text-zinc-500">
+        <span className="flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {vm.created_at ? new Date(vm.created_at).toLocaleDateString() : "N/A"}
+        </span>
+        <div className="inline-flex items-center gap-1 text-zinc-400 font-mono">
+          {vm.moref}
         </div>
       </CardFooter>
     </Card>

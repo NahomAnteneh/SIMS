@@ -29,7 +29,7 @@ export interface DatacenterCardData {
   usedMemoryGB: number;
   totalStorageTB: number;
   usedStorageTB: number;
-  lastSync: string;
+  lastSync?: string;
 }
 
 interface DatacenterCardProps {

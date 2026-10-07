@@ -14,9 +14,14 @@ export interface DataSource {
   lastSync: string;
   syncDurationSeconds: number;
   objectsDiscovered: number;
+  version?: string;
+  onResync?: (id: string) => void;
+  isResyncing?: boolean;
 }
 
-const columnHelper = createColumnHelper<DataSource>();
+import { type DataTableFeatures } from "@/components/ui/data-table-features";
+
+const columnHelper = createColumnHelper<DataTableFeatures, DataSource>();
 
 export const dataSourceColumns = [
   // Source Name & Endpoint
@@ -108,6 +113,27 @@ export const dataSourceColumns = [
         >
           {status}
         </span>
+      );
+    },
+  }),
+
+  // Actions
+  columnHelper.display({
+    id: "actions",
+    header: "Actions",
+    cell: (info) => {
+      const ds = info.row.original;
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={ds.isResyncing}
+          onClick={() => ds.onResync?.(ds.id)}
+          className="text-xs h-8 gap-1.5 border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${ds.isResyncing ? "animate-spin text-yellow-500" : ""}`} />
+          {ds.isResyncing ? "Syncing..." : "Resync"}
+        </Button>
       );
     },
   }),

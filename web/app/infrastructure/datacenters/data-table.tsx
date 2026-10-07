@@ -36,8 +36,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 interface DataTableProps<TData extends RowData> {
-  columns: ColumnDef<DataTableFeatures, TData>[];
+  columns: ColumnDef<DataTableFeatures, TData, any>[];
   data: TData[];
+  searchColumn?: string;
+  searchPlaceholder?: string;
 }
 
 export function DataTable<TData extends RowData>({

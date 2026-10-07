@@ -1,70 +1,104 @@
-import { MetricCard } from '@/components/ui/MetricCard';
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { MetricCard } from "@/components/ui/MetricCard";
 import { 
   Server, 
   Building2, 
   Cpu, 
   Layers, 
-  Users, 
-  AppWindow 
-} from 'lucide-react';
+  HardDrive, 
+  Network,
+} from "lucide-react";
+import { simsApi } from "@/lib/api/client";
 
-import { InfraService } from "@/lib/services/infra";
+export default function ReportsDashboard() {
+  const [vmCount, setVmCount] = useState<number>(0);
+  const [dcCount, setDcCount] = useState<number>(0);
+  const [vcCount, setVcCount] = useState<number>(0);
+  const [clusterCount, setClusterCount] = useState<number>(0);
+  const [datastoreCount, setDatastoreCount] = useState<number>(0);
+  const [networkCount, setNetworkCount] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
 
-export default async function ReportsDashboard() {
-  const vms = await InfraService.getVms();
-  const datacenters = await InfraService.getDatacenters();
-  const vcenters = await InfraService.getVcenters();
-  const clusters = await InfraService.getClusters();
-  const clients = await InfraService.getClients();
-  const applications = await InfraService.getApplications();
+  useEffect(() => {
+    async function loadMetrics() {
+      try {
+        const [vmsRes, dcs, vcs, clusters, datastores, networks] = await Promise.allSettled([
+          simsApi.listVMs({ limit: 1 }),
+          simsApi.listDatacenters(),
+          simsApi.listVCenters(),
+          simsApi.listClusters(),
+          simsApi.listDatastores(),
+          simsApi.listNetworks(),
+        ]);
+
+        if (vmsRes.status === "fulfilled") {
+          // If items exist, count total active VMs
+          setVmCount(vmsRes.value.items.length);
+        }
+        if (dcs.status === "fulfilled") setDcCount(dcs.value.length);
+        if (vcs.status === "fulfilled") setVcCount(vcs.value.length);
+        if (clusters.status === "fulfilled") setClusterCount(clusters.value.length);
+        if (datastores.status === "fulfilled") setDatastoreCount(datastores.value.length);
+        if (networks.status === "fulfilled") setNetworkCount(networks.value.length);
+      } catch (err) {
+        console.error("Failed to load dashboard metrics", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadMetrics();
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 p-4 md:p-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-100">Reports</h1>
+        <h1 className="text-2xl font-semibold text-zinc-100">Executive Overview</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Analytics and insights for your inventory
+          Real-time global inventory telemetry across all connected vCenter instances
         </p>
       </div>
 
-      {/* Responsive Infrastructure Metrics Grid (4 Columns) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Responsive Infrastructure Metrics Grid (6 Columns) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <MetricCard 
           title="Virtual Machines" 
-          value={`${vms.length}`}
+          value={loading ? "..." : `${vmCount}`}
           description="Total provisioned VMs" 
           icon={<Server className="h-4 w-4" />} 
         />
         <MetricCard 
           title="Datacenters" 
-          value={`${datacenters.length}`}
-          description="Active physical facilities" 
+          value={loading ? "..." : `${dcCount}`}
+          description="Physical facilities" 
           icon={<Building2 className="h-4 w-4" />} 
         />
         <MetricCard 
           title="vCenters" 
-          value={`${vcenters.length}`}
-          description="Management instances" 
+          value={loading ? "..." : `${vcCount}`}
+          description="Management targets" 
           icon={<Cpu className="h-4 w-4" />} 
         />
         <MetricCard 
           title="Clusters" 
-          value={`${clusters.length}`}
+          value={loading ? "..." : `${clusterCount}`}
           description="Compute resource groups" 
           icon={<Layers className="h-4 w-4" />} 
         />
         <MetricCard 
-          title="Clients" 
-          value={`${clients.length}`}
-          description="Registered organizations" 
-          icon={<Users className="h-4 w-4" />} 
+          title="Datastores" 
+          value={loading ? "..." : `${datastoreCount}`}
+          description="Shared storage pools" 
+          icon={<HardDrive className="h-4 w-4" />} 
         />
         <MetricCard 
-          title="Applications" 
-          value={`${applications.length}`}
-          description="Deployed services" 
-          icon={<AppWindow className="h-4 w-4" />} 
+          title="Networks" 
+          value={loading ? "..." : `${networkCount}`}
+          description="Distributed portgroups" 
+          icon={<Network className="h-4 w-4" />} 
         />
       </div>
 
@@ -99,7 +133,7 @@ export default async function ReportsDashboard() {
             
             <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-[10px] text-zinc-500">
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> VMs</span>
-              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Applications</span>
+              <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span> Datastores</span>
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-pink-500"></span> Datacenters</span>
               <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span> Clusters</span>
             </div>

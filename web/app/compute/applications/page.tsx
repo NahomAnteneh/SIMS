@@ -6,25 +6,16 @@ import { LayoutList, LayoutGrid } from "lucide-react";
 import { appColumns, type Application } from "./columns";
 import { DataTable } from "@/components/ui/data-table";
 import { ApplicationCard } from "./card";
-import { InfraService } from "@/lib/services/infra";
 
 export default function ApplicationsPage() {
   const [view, setView] = useState<"table" | "card">("table");
   const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const data = await InfraService.getApplications();
-        setApplications(data || []);
-      } catch (err) {
-        console.error("Failed to load applications", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
+    // Real vSphere infrastructure groups workloads by tags and folders rather than mock applications
+    setApplications([]);
+    setLoading(false);
   }, []);
 
   return (

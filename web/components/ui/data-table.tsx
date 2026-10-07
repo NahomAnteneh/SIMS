@@ -30,13 +30,24 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
+
+export interface DataTablePaginationProps {
+  hasMore?: boolean;
+  onNext?: () => void;
+  onPrev?: () => void;
+  canPrev?: boolean;
+  limit?: number;
+  onLimitChange?: (limit: number) => void;
+}
 
 export interface DataTableProps<TData extends RowData> {
-  columns: ColumnDef<DataTableFeatures, TData>[];
+  columns: ColumnDef<DataTableFeatures, TData, any>[];
   data: TData[];
   searchColumn?: string;
   searchPlaceholder?: string;
+  onRowClick?: (row: TData) => void;
+  pagination?: DataTablePaginationProps;
 }
 
 export function DataTable<TData extends RowData>({
@@ -44,6 +55,8 @@ export function DataTable<TData extends RowData>({
   data,
   searchColumn,
   searchPlaceholder,
+  onRowClick,
+  pagination,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -151,7 +164,10 @@ export function DataTable<TData extends RowData>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className="border-b border-zinc-800/60 hover:bg-zinc-900/40 transition-colors"
+                  onClick={() => onRowClick?.(row.original)}
+                  className={`border-b border-zinc-800/60 transition-colors ${
+                    onRowClick ? "cursor-pointer hover:bg-zinc-800/60" : "hover:bg-zinc-900/40"
+                  }`}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id} className="py-3.5 px-4 text-sm">
@@ -173,6 +189,51 @@ export function DataTable<TData extends RowData>({
           </TableBody>
         </Table>
       </div>
+
+      {pagination && (
+        <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800/80 text-xs text-zinc-400">
+          <div className="flex items-center gap-2">
+            <span>Rows per page:</span>
+            <select
+              value={pagination.limit || 20}
+              onChange={(e) => pagination.onLimitChange?.(Number(e.target.value))}
+              className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-200 text-xs focus:outline-none focus:border-zinc-700"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span className="text-zinc-500 ml-2">
+              Showing {data.length} records
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!pagination.canPrev}
+              onClick={pagination.onPrev}
+              className="h-8 px-2.5 border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!pagination.hasMore}
+              onClick={pagination.onNext}
+              className="h-8 px-2.5 border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

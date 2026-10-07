@@ -9,30 +9,32 @@ import {
   useNodesState,
   useEdgesState,
   BackgroundVariant,
+  type Node,
+  type Edge,
+  type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { InfraService } from "@/lib/services/infra";
+import { simsApi } from "@/lib/api/client";
 import { transformInfraToFlow } from "@/lib/transformers/infraToFlow";
 import { CustomInfraNode } from "@/components/ui/nodes/DatacenterNode";
 
 export default function InfraCanvas() {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [loading, setLoading] = useState(true);
 
-  const nodeTypes = useMemo(() => ({ infraNode: CustomInfraNode }), []);
+  const nodeTypes: NodeTypes = useMemo(() => ({ infraNode: CustomInfraNode as any }), []);
 
   useEffect(() => {
     async function loadCanvasData() {
       try {
         setLoading(true);
 
-        // Fetch datasets in parallel
         const [datacenters, clusters, hosts] = await Promise.all([
-          InfraService.getDatacenters(),
-          InfraService.getClusters(),
-          InfraService.getHosts(),
+          simsApi.listDatacenters(),
+          simsApi.listClusters(),
+          simsApi.listHosts(),
         ]);
 
         // Transform REST records into calculated Node/Edge trees

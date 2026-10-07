@@ -1,33 +1,14 @@
 "use client";
 
 import { createColumnHelper } from "@tanstack/react-table";
-import { Monitor, Cpu, Database, HardDrive, ArrowUpDown, Power } from "lucide-react";
+import { Monitor, ArrowUpDown, Power, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { type VMListItem } from "@/lib/api/types";
+import { type DataTableFeatures } from "@/components/ui/data-table-features";
 
-export interface VirtualMachine {
-  id: string;
-  name: string;
-  clientId: string;
-  applicationId: string;
-  datacenterId: string;
-  vcenterId: string;
-  clusterId: string;
-  hostId: string;
-  ip: string;
-  os: string;
-  powerState: "powered_on" | "powered_off" | "suspended" | string;
-  toolsStatus: "running" | "not_running" | string;
-  vcpus: number;
-  memoryGB: number;
-  storageGB: number;
-  cpuUsagePercent: number;
-  memoryUsagePercent: number;
-  diskUsagePercent: number;
-  uptimeDays: number;
-  status: "healthy" | "warning" | "critical" | string;
-}
+export type VirtualMachine = VMListItem;
 
-const columnHelper = createColumnHelper<VirtualMachine>();
+const columnHelper = createColumnHelper<DataTableFeatures, VirtualMachine>();
 
 export const vmColumns = [
   // VM Name & Operating System
@@ -43,36 +24,40 @@ export const vmColumns = [
     ),
     cell: (info) => (
       <div>
-        <div className="text-base font-bold text-zinc-50">{info.getValue()}</div>
-        <div className="text-zinc-400 text-xs font-medium mt-1 flex items-center gap-1.5">
-          <Monitor className="h-3.5 w-3.5" /> {info.row.original.os}
+        <div className="text-sm font-bold text-zinc-100 flex items-center gap-2">
+          <Monitor className="h-4 w-4 text-yellow-600 shrink-0" />
+          <span className="truncate max-w-[220px]">{info.getValue()}</span>
+        </div>
+        <div className="text-zinc-500 text-xs font-mono mt-0.5 truncate max-w-[220px]">
+          {info.row.original.guest_os || info.row.original.moref}
         </div>
       </div>
     ),
   }),
 
-  // IP Address & Host
-  columnHelper.accessor("ip", {
-    header: "IP & Host",
+  // IP Address & MoRef
+  columnHelper.accessor("guest_ip_address", {
+    header: "IP Address",
     cell: (info) => (
       <div>
-        <div className="text-sm font-mono font-bold text-zinc-100">{info.getValue()}</div>
-        <div className="text-zinc-400 text-xs font-medium mt-1">
-          {info.row.original.hostId}
+        <div className="text-xs font-mono font-medium text-zinc-200">
+          {info.getValue() || "No IP assigned"}
+        </div>
+        <div className="text-zinc-500 text-[11px] font-mono mt-0.5">
+          {info.row.original.instance_uuid
+            ? `${info.row.original.instance_uuid.slice(0, 16)}...`
+            : info.row.original.moref}
         </div>
       </div>
     ),
   }),
 
-  // Cluster & Datacenter
-  columnHelper.accessor("clusterId", {
-    header: "Cluster & Site",
+  // Location / Hierarchy Folder
+  columnHelper.accessor("folder_path", {
+    header: "Folder Hierarchy",
     cell: (info) => (
-      <div>
-        <div className="text-sm font-bold text-zinc-100">{info.getValue()}</div>
-        <div className="text-zinc-400 text-xs font-medium mt-1">
-          {info.row.original.datacenterId}
-        </div>
+      <div className="text-xs font-mono text-zinc-300 truncate max-w-[180px]">
+        {info.getValue() || "Root"}
       </div>
     ),
   }),
@@ -80,94 +65,75 @@ export const vmColumns = [
   // Compute Spec
   columnHelper.display({
     id: "specs",
-    header: "Resources (vCPU / RAM / Disk)",
-    cell: (info) => (
-      <div>
-        <div className="text-sm font-bold text-zinc-100">
-          {info.row.original.vcpus} vCPU • {info.row.original.memoryGB} GB RAM
-        </div>
-        <div className="text-zinc-400 text-xs font-medium mt-1">
-          {info.row.original.storageGB} GB Disk
-        </div>
-      </div>
-    ),
-  }),
-
-  // CPU Usage
-  columnHelper.accessor("cpuUsagePercent", {
-    header: "CPU Load",
+    header: "Resources",
     cell: (info) => {
-      const percent = info.getValue();
+      const vcpus = info.row.original.cpu_cores;
+      const ramGB = (info.row.original.memory_mb / 1024).toFixed(1);
       return (
-        <div>
-          <div className="text-sm font-bold text-zinc-100 flex items-center gap-1.5">
-            <Cpu className="h-4 w-4 text-zinc-400" />
-            {percent}%
-          </div>
-          <div className="text-zinc-400 text-xs font-medium mt-1">
-            Uptime {info.row.original.uptimeDays}d
-          </div>
-        </div>
-      );
-    },
-  }),
-
-  // Memory Usage
-  columnHelper.accessor("memoryUsagePercent", {
-    header: "Memory Load",
-    cell: (info) => {
-      const percent = info.getValue();
-      return (
-        <div>
-          <div className="text-sm font-bold text-zinc-100 flex items-center gap-1.5">
-            <Database className="h-4 w-4 text-zinc-400" />
-            {percent}%
-          </div>
-          <div className="text-zinc-400 text-xs font-medium mt-1">
-            Disk: {info.row.original.diskUsagePercent}%
-          </div>
+        <div className="text-xs font-medium text-zinc-200">
+          <span>{vcpus} vCPU</span> • <span>{ramGB} GB RAM</span>
         </div>
       );
     },
   }),
 
   // Power State
-  columnHelper.accessor("powerState", {
+  columnHelper.accessor("power_state", {
     header: "Power",
     cell: (info) => {
       const power = info.getValue();
-      const isOn = power === "powered_on";
+      const isOn = power === "poweredOn";
+      const isSuspended = power === "suspended";
       return (
         <span
-          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
+          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
             isOn
               ? "text-emerald-400 bg-emerald-400/10"
-              : "text-zinc-500 bg-zinc-800"
+              : isSuspended
+              ? "text-amber-400 bg-amber-400/10"
+              : "text-zinc-400 bg-zinc-800"
           }`}
         >
           <Power className="h-3 w-3" />
-          {isOn ? "On" : "Off"}
+          {isOn ? "Powered On" : isSuspended ? "Suspended" : "Powered Off"}
         </span>
       );
     },
   }),
 
-  // Health Status Badge
-  columnHelper.accessor("status", {
-    header: "Status",
+  // Connection State
+  columnHelper.accessor("connection_state", {
+    header: "State",
     cell: (info) => {
-      const status = info.getValue();
+      const conn = info.getValue();
+      const isConnected = conn === "connected";
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
-            status === "healthy"
-              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-              : status === "warning"
-              ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
-              : "bg-rose-500/15 text-rose-400 border-rose-500/30"
+          className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+            isConnected ? "text-emerald-400" : "text-rose-400"
           }`}
         >
-          {status}
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              isConnected ? "bg-emerald-400" : "bg-rose-400"
+            }`}
+          />
+          <span className="capitalize">{conn || "Unknown"}</span>
+        </span>
+      );
+    },
+  }),
+
+  // Discovered / First Seen
+  columnHelper.accessor("created_at", {
+    header: "Discovered",
+    cell: (info) => {
+      const val = info.getValue();
+      if (!val) return <span className="text-zinc-500 text-xs">N/A</span>;
+      return (
+        <span className="text-zinc-400 text-xs flex items-center gap-1">
+          <Clock className="h-3 w-3 text-zinc-500" />
+          {new Date(val).toLocaleDateString()}
         </span>
       );
     },

@@ -85,17 +85,24 @@ function layoutDatacenterSubtree(
 
   // 1. Filter child clusters and standalone hosts
   const childClusters = allClusters.filter(
-    (c) => c.datacenterId === dc.id || c.datacenterId === dc.siteCode
+    (c) =>
+      c.datacenterId === dc.id ||
+      c.datacenter_id === dc.id ||
+      (dc.siteCode && c.datacenterId === dc.siteCode)
   );
   const standaloneHosts = allHosts.filter(
     (h) =>
-      (!h.clusterId || h.clusterId === "") &&
-      (h.datacenterId === dc.id || h.datacenterId === dc.siteCode)
+      (!h.clusterId && !h.cluster_id) &&
+      (h.datacenterId === dc.id ||
+        h.datacenter_id === dc.id ||
+        (dc.siteCode && h.datacenterId === dc.siteCode))
   );
 
   // 2. Measure cluster subtrees
   const clusterLayouts = childClusters.map((cluster) => {
-    const clusterHosts = allHosts.filter((h) => h.clusterId === cluster.id);
+    const clusterHosts = allHosts.filter(
+      (h) => h.clusterId === cluster.id || h.cluster_id === cluster.id
+    );
     return {
       cluster,
       hosts: clusterHosts,
@@ -234,7 +241,7 @@ export function transformInfraToFlow(
 
   const allNodes: Node[] = [];
   const allEdges: Edge[] = [];
-  let currentY = LAYOUT.START_Y;
+  let currentY: number = LAYOUT.START_Y;
 
   for (const dc of datacenters) {
     const { nodes, edges, nextY } = layoutDatacenterSubtree(

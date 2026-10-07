@@ -6,7 +6,8 @@ import { LayoutList, LayoutGrid } from "lucide-react";
 import { storageColumns, type Storage } from "../columns";
 import { DataTable } from "@/components/ui/data-table";
 import { StorageCard } from "./card";
-import { InfraService } from "@/lib/services/infra";
+import { simsApi } from "@/lib/api/client";
+import { Loader2 } from "lucide-react";
 
 export default function StoragePage() {
   const [view, setView] = useState<"table" | "card">("table");
@@ -15,9 +16,25 @@ export default function StoragePage() {
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
       try {
-        const data = await InfraService.getDatastores();
-        setDatastores(data || []);
+        const rawDss = await simsApi.listDatastores();
+        const mapped: Storage[] = rawDss.map((ds) => {
+          const capGB = ds.capacity_bytes ? Math.round(ds.capacity_bytes / (1024 * 1024 * 1024)) : 0;
+          const freeGB = ds.free_bytes ? Math.round(ds.free_bytes / (1024 * 1024 * 1024)) : 0;
+          const usedGB = Math.max(0, capGB - freeGB);
+          return {
+            id: ds.id,
+            name: ds.name,
+            datacenterId: ds.datacenter_id || "",
+            type: ds.type || "VMFS",
+            capacityGB: capGB,
+            usedGB: usedGB,
+            freeGB: freeGB,
+            status: (capGB > 0 && freeGB / capGB < 0.1) ? "warning" : "healthy",
+          };
+        });
+        setDatastores(mapped);
       } catch (err) {
         console.error("Failed to load datastores", err);
       } finally {
@@ -66,7 +83,12 @@ export default function StoragePage() {
         </div>
       </div>
 
-      {view === "table" ? (
+      {loading ? (
+        <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
+          <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
+          <span className="text-sm">Loading storage datastores...</span>
+        </div>
+      ) : view === "table" ? (
         <DataTable
           columns={storageColumns}
           data={datastores}

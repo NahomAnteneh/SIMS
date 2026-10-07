@@ -14,10 +14,15 @@ import (
 
 // TopologyItem represents a general topology entity.
 type TopologyItem struct {
-	ID        string `json:"id"`
-	VCenterID string `json:"vcenter_id"`
-	Name      string `json:"name"`
-	MoRef     string `json:"moref,omitempty"`
+	ID            string  `json:"id"`
+	VCenterID     string  `json:"vcenter_id"`
+	Name          string  `json:"name"`
+	MoRef         string  `json:"moref,omitempty"`
+	DatacenterID  *string `json:"datacenter_id,omitempty"`
+	ClusterID     *string `json:"cluster_id,omitempty"`
+	Type          *string `json:"type,omitempty"`
+	CapacityBytes *int64  `json:"capacity_bytes,omitempty"`
+	FreeBytes     *int64  `json:"free_bytes,omitempty"`
 }
 
 // TopologyListResponse encapsulates lists of topology entities.
@@ -51,7 +56,20 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 			return
 		}
 
-		query := fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE 1=1", table)
+		var query string
+		switch table {
+		case "clusters":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id FROM clusters WHERE 1=1"
+		case "hosts":
+			query = "SELECT id, vcenter_id, name, moref, cluster_id, datacenter_id FROM hosts WHERE 1=1"
+		case "datastores":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id, type, capacity_bytes, free_bytes FROM datastores WHERE 1=1"
+		case "networks":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id FROM networks WHERE 1=1"
+		default:
+			query = fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE 1=1", table)
+		}
+
 		var args []any
 		if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
 			params := make([]string, len(scope.AllowedVCenterIDs))
@@ -61,7 +79,7 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 			}
 			query += fmt.Sprintf(" AND vcenter_id IN (%s)", strings.Join(params, ", "))
 		}
-		query += " ORDER BY name ASC LIMIT 100"
+		query += " ORDER BY name ASC LIMIT 250"
 
 		rows, err := h.pool.Query(r.Context(), query, args...)
 		if err != nil {
@@ -75,17 +93,75 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 		for rows.Next() {
 			var id, vcenterID uuid.UUID
 			var name, moref string
-			if err := rows.Scan(&id, &vcenterID, &name, &moref); err != nil {
-				h.logger.Error("failed to scan topology item", "error", err)
-				h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
-				return
+			item := TopologyItem{}
+
+			switch table {
+			case "clusters":
+				var dcID *uuid.UUID
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &dcID); err != nil {
+					h.logger.Error("failed to scan cluster item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+			case "hosts":
+				var clID, dcID *uuid.UUID
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &clID, &dcID); err != nil {
+					h.logger.Error("failed to scan host item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if clID != nil {
+					s := clID.String()
+					item.ClusterID = &s
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+			case "datastores":
+				var dcID *uuid.UUID
+				var dsType string
+				var capBytes, freeBytes int64
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &dcID, &dsType, &capBytes, &freeBytes); err != nil {
+					h.logger.Error("failed to scan datastore item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+				item.Type = &dsType
+				item.CapacityBytes = &capBytes
+				item.FreeBytes = &freeBytes
+			case "networks":
+				var dcID *uuid.UUID
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &dcID); err != nil {
+					h.logger.Error("failed to scan network item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+			default:
+				if err := rows.Scan(&id, &vcenterID, &name, &moref); err != nil {
+					h.logger.Error("failed to scan topology item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
 			}
-			items = append(items, TopologyItem{
-				ID:        id.String(),
-				VCenterID: vcenterID.String(),
-				Name:      name,
-				MoRef:     moref,
-			})
+
+			item.ID = id.String()
+			item.VCenterID = vcenterID.String()
+			item.Name = name
+			item.MoRef = moref
+			items = append(items, item)
 		}
 
 		h.writeJSON(w, http.StatusOK, TopologyListResponse{Items: items})
@@ -111,7 +187,20 @@ func (h *Handler) handleGetTopologyByID(table string) http.HandlerFunc {
 			return
 		}
 
-		query := fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE id = $1", table)
+		var query string
+		switch table {
+		case "clusters":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id FROM clusters WHERE id = $1"
+		case "hosts":
+			query = "SELECT id, vcenter_id, name, moref, cluster_id, datacenter_id FROM hosts WHERE id = $1"
+		case "datastores":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id, type, capacity_bytes, free_bytes FROM datastores WHERE id = $1"
+		case "networks":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id FROM networks WHERE id = $1"
+		default:
+			query = fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE id = $1", table)
+		}
+
 		args := []any{id}
 		if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
 			params := make([]string, len(scope.AllowedVCenterIDs))
@@ -124,7 +213,49 @@ func (h *Handler) handleGetTopologyByID(table string) http.HandlerFunc {
 
 		var item TopologyItem
 		var uid, vcid uuid.UUID
-		err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef)
+
+		switch table {
+		case "clusters":
+			var dcID *uuid.UUID
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &dcID)
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+		case "hosts":
+			var clID, dcID *uuid.UUID
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &clID, &dcID)
+			if clID != nil {
+				s := clID.String()
+				item.ClusterID = &s
+			}
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+		case "datastores":
+			var dcID *uuid.UUID
+			var dsType string
+			var capBytes, freeBytes int64
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &dcID, &dsType, &capBytes, &freeBytes)
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+			item.Type = &dsType
+			item.CapacityBytes = &capBytes
+			item.FreeBytes = &freeBytes
+		case "networks":
+			var dcID *uuid.UUID
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &dcID)
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+		default:
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef)
+		}
+
 		if err != nil {
 			h.writeProblem(w, http.StatusNotFound, "Not Found", fmt.Sprintf("%s not found", table), "not_found")
 			return

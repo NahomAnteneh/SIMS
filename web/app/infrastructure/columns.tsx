@@ -81,9 +81,9 @@ import { ArrowUpDown } from "lucide-react";
 
 // 2. Initialize the column helper for the Datacenter type
 const columnHelper = createColumnHelper<DataTableFeatures, Datacenter>();
-const clusterHelper = createColumnHelper<Cluster>();
-const storageHelper = createColumnHelper<Storage>();
-const netHelper = createColumnHelper<NetworkItem>();
+const clusterHelper = createColumnHelper<DataTableFeatures, Cluster>();
+const storageHelper = createColumnHelper<DataTableFeatures, Storage>();
+const netHelper = createColumnHelper<DataTableFeatures, NetworkItem>();
 // 3. Define the columns
 export const dcColumns = [
   // Datacenter Name & Identity
@@ -555,7 +555,7 @@ export interface Host {
   uptimeDays: number;
 }
 
-const hostHelper = createColumnHelper<Host>();
+const hostHelper = createColumnHelper<DataTableFeatures, Host>();
 
 export const hostColumns = [
   // Host Name & Model

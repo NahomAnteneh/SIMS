@@ -1,73 +1,70 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { LayoutList, LayoutGrid } from "lucide-react";
+import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 
 import { columns, type Datacenter } from "./columns";
 import { DataTable } from "./data-table";
 import { DatacenterCard } from "./card";
-import { InfraService } from "@/lib/services/infra";
-
-const sampleDatacenters: Datacenter[] = [
-  {
-    id: "dc-001",
-    name: "DC-Addis-01",
-    displayName: "Addis Ababa Primary Data Center",
-    location: "Addis Ababa, Ethiopia",
-    country: "Ethiopia",
-    siteCode: "ADD01",
-    environment: "production",
-    status: "healthy",
-    vcenterCount: 2,
-    clusterCount: 4,
-    hostCount: 12,
-    vmCount: 96,
-    applicationCount: 18,
-    clientCount: 7,
-    totalCpuGHz: 1536,
-    usedCpuGHz: 712,
-    totalMemoryGB: 6144,
-    usedMemoryGB: 3980,
-    totalStorageTB: 240,
-    usedStorageTB: 156,
-  },
-  {
-    id: "dc-002",
-    name: "DC-Nairobi-02",
-    displayName: "Nairobi Secondary Hub",
-    location: "Nairobi, Kenya",
-    country: "Kenya",
-    siteCode: "NBO02",
-    environment: "production",
-    status: "healthy",
-    vcenterCount: 1,
-    clusterCount: 3,
-    hostCount: 8,
-    vmCount: 64,
-    applicationCount: 12,
-    clientCount: 5,
-    totalCpuGHz: 1024,
-    usedCpuGHz: 480,
-    totalMemoryGB: 4096,
-    usedMemoryGB: 2100,
-    totalStorageTB: 180,
-    usedStorageTB: 92,
-  },
-];
+import { simsApi } from "@/lib/api/client";
 
 export default function DatacentersPage() {
   const [view, setView] = useState<"table" | "card">("table");
-  const [datacenters, setDatacenters] = useState<Datacenter[]>(sampleDatacenters);
+  const [datacenters, setDatacenters] = useState<Datacenter[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
       try {
-        const data = await InfraService.getDatacenters();
-        if (data && data.length > 0) {
-          setDatacenters(data);
+        const [datacenters, clusters, hosts] = await Promise.all([
+          simsApi.listDatacenters(),
+          simsApi.listClusters(),
+          simsApi.listHosts(),
+        ]);
+
+        const clusterCountByDc: Record<string, number> = {};
+        for (const cl of clusters) {
+          if (cl.datacenter_id) {
+            clusterCountByDc[cl.datacenter_id] = (clusterCountByDc[cl.datacenter_id] || 0) + 1;
+          }
         }
+
+        const hostCountByDc: Record<string, number> = {};
+        for (const h of hosts) {
+          if (h.datacenter_id) {
+            hostCountByDc[h.datacenter_id] = (hostCountByDc[h.datacenter_id] || 0) + 1;
+          }
+        }
+
+        const mapped: Datacenter[] = datacenters.map((dc) => ({
+          id: dc.id,
+          name: dc.name,
+          displayName: dc.name,
+          location: "On-Premises",
+          country: "vSphere",
+          siteCode: dc.moref || dc.id.slice(0, 5).toUpperCase(),
+          environment: "production",
+          status: "healthy",
+          vcenterCount: 1,
+          clusterCount: clusterCountByDc[dc.id] || 0,
+          hostCount: hostCountByDc[dc.id] || 0,
+          vmCount: 0,
+          applicationCount: 0,
+          clientCount: 1,
+          totalCpuGHz: 0,
+          usedCpuGHz: 0,
+          totalMemoryGB: 0,
+          usedMemoryGB: 0,
+          totalStorageTB: 0,
+          usedStorageTB: 0,
+        }));
+
+        setDatacenters(mapped);
       } catch (err) {
         console.error("Failed to load datacenters", err);
+      } finally {
+        setLoading(false);
       }
     }
     loadData();
@@ -112,7 +109,12 @@ export default function DatacentersPage() {
         </div>
       </div>
 
-      {view === "table" ? (
+      {loading ? (
+        <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
+          <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
+          <span className="text-sm">Loading datacenters...</span>
+        </div>
+      ) : view === "table" ? (
         <DataTable columns={columns} data={datacenters} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

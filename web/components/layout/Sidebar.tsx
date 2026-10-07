@@ -1,14 +1,16 @@
 "use client";
 
-import { usePathname } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
   LayoutGrid, Waypoints, Bell, 
   Building2, Server, HardDrive, Network, 
   Monitor, Component, Copy, 
   Activity, TrendingUp, BarChart3, 
-  Database, Shield, Settings, Warehouse, ChevronDown
+  Database, Shield, Settings, Warehouse, ChevronDown, LogOut
 } from 'lucide-react';
+import { simsApi } from '@/lib/api/client';
 
 // Notice we removed the static 'active: boolean' property from these items
 const menuGroups = [
@@ -56,7 +58,25 @@ const menuGroups = [
 ];
 
 export const Sidebar = () => {
-  const pathname = usePathname(); // Get the current active URL path
+  const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<{ username: string; role: string } | null>(null);
+
+  useEffect(() => {
+    simsApi
+      .getMe()
+      .then((u) => {
+        setUser({ username: u.username, role: u.role });
+      })
+      .catch(() => {
+        setUser({ username: "admin", role: "admin" });
+      });
+  }, []);
+
+  const handleLogout = () => {
+    simsApi.logout();
+    router.push("/login");
+  };
 
   return (
     <aside className="w-64 border-r border-zinc-900 bg-[#0a0a0a] flex flex-col h-full shrink-0">
@@ -115,18 +135,29 @@ export const Sidebar = () => {
       </nav>
 
       {/* User Profile */}
-      <div className="p-4 border-t border-zinc-900 flex items-center justify-between cursor-pointer hover:bg-zinc-900/50 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full bg-pink-700 flex items-center justify-center text-xs font-medium">
-            SC
+      <div className="p-3 border-t border-zinc-900 flex items-center justify-between hover:bg-zinc-900/40 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="h-8 w-8 rounded-full bg-yellow-600/30 text-yellow-500 border border-yellow-600/40 flex items-center justify-center text-xs font-bold uppercase shrink-0">
+            {user?.username ? user.username.slice(0, 2) : "AD"}
           </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-medium text-zinc-200 leading-tight">Sarah Chen</span>
-            <span className="text-[11px] text-zinc-500 leading-tight">Admin</span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-medium text-zinc-200 truncate leading-tight">
+              {user?.username || "admin"}
+            </span>
+            <span className="text-[11px] text-zinc-500 capitalize leading-tight">
+              {user?.role || "admin"}
+            </span>
           </div>
         </div>
-        <ChevronDown className="h-4 w-4 text-zinc-500" />
+        <button
+          onClick={handleLogout}
+          title="Sign Out"
+          className="p-1.5 rounded-md hover:bg-zinc-800 text-zinc-400 hover:text-rose-400 transition-colors"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </div>
     </aside>
+
   );
 };
