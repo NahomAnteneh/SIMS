@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/infrastructure/sims/generated/db"
@@ -439,6 +440,11 @@ func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 		Enabled:        enabled,
 	})
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			h.writeProblem(w, http.StatusConflict, "Conflict", "a vCenter with this API URL already exists", "conflict")
+			return
+		}
 		h.logger.Error("failed to create vCenter in database", slog.String("error", err.Error()))
 		h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "Database insertion failed", "internal_error")
 		return
@@ -484,6 +490,10 @@ func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 // GET /v1/vcenters
 func (h *Handler) handleListVCenters(w http.ResponseWriter, r *http.Request) {
 	id, ok := auth.FromContext(r.Context())
+	if !ok || id == nil {
+		h.writeProblem(w, http.StatusUnauthorized, "Unauthorized", "Authentication required", "unauthorized")
+		return
+	}
 
 	vcs, err := h.queries.ListActiveVCentersWithCollectorDetails(r.Context())
 	if err != nil {
@@ -498,7 +508,7 @@ func (h *Handler) handleListVCenters(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		if ok && !id.CanAccessVCenter(parsedID) {
+		if !id.CanAccessVCenter(parsedID) {
 			continue
 		}
 		items = append(items, formatVCenterDetailsResponse(
@@ -522,7 +532,11 @@ func (h *Handler) handleGetVCenter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id, ok := auth.FromContext(r.Context())
-	if ok && !id.CanAccessVCenter(parsedUUID) {
+	if !ok || id == nil {
+		h.writeProblem(w, http.StatusUnauthorized, "Unauthorized", "Authentication required", "unauthorized")
+		return
+	}
+	if !id.CanAccessVCenter(parsedUUID) {
 		h.writeProblem(w, http.StatusForbidden, "Forbidden", "Access to requested vCenter not permitted", "forbidden")
 		return
 	}

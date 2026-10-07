@@ -229,6 +229,29 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 
 	nameFilter := strings.TrimSpace(q.Get("name"))
 
+	// Enforce tenant boundary scoping
+	callerID, hasAuth := auth.FromContext(r.Context())
+	if hasAuth && callerID != nil {
+		if vcenterID.Valid {
+			vcUUID, _ := uuid.FromBytes(vcenterID.Bytes[:])
+			if !callerID.CanAccessVCenter(vcUUID) {
+				h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested vCenter denied", "forbidden")
+				return
+			}
+		} else if !callerID.HasRole(auth.RoleAdmin) {
+			if len(callerID.AllowedVCenterIDs) == 0 {
+				h.writeJSON(w, http.StatusOK, ListVMsResponse{
+					Items:      []VMListItem{},
+					Pagination: PaginationMeta{Limit: limit, HasMore: false},
+				})
+				return
+			}
+			if len(callerID.AllowedVCenterIDs) == 1 && len(callerID.AllowedFolderPaths) == 0 {
+				vcenterID = pgtype.UUID{Bytes: callerID.AllowedVCenterIDs[0], Valid: true}
+			}
+		}
+	}
+
 	// 3. Parse opaque cursor
 	rawCursor := q.Get("cursor")
 	cursor, err := DecodeCursor(rawCursor)

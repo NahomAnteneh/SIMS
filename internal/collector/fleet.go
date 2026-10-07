@@ -569,3 +569,10 @@ func (fm *FleetManager) ActiveTargetCount() int {
 	defer fm.mu.RUnlock()
 	return len(fm.targets)
 }
+
+// IsRunning reports whether the fleet manager is actively running.
+func (fm *FleetManager) IsRunning() bool {
+	fm.mu.RLock()
+	defer fm.mu.RUnlock()
+	return fm.running
+}

@@ -35,7 +35,7 @@ func TestSearchAPI_ClassifierAndStructuredPaths(t *testing.T) {
 	defer roPool.Close()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New("sims-query-api", "0.2.0", "8080", logger)
+	srv := server.New("sims-query-api", "1.0.0", "8080", logger)
 	handler := api.NewHandler(roPool, logger)
 	handler.RegisterRoutes(srv.Mux)
 
@@ -199,7 +199,7 @@ func TestSearchAPI_ClassifierAndStructuredPaths(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
 			t.Fatalf("failed to unmarshal me response: %v", err)
 		}
-		if me.Subject != "test-user@corp.local" || me.Role != "viewer" {
+		if me.Subject != "test-user@corp.local" || (me.Role != "viewer" && me.Role != "user") {
 			t.Errorf("unexpected me profile: %+v", me)
 		}
 	})

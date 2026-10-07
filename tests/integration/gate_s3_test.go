@@ -222,7 +222,7 @@ func TestGateS3_SQLInjectionPenetration(t *testing.T) {
 	defer rwPool.Close()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New("sims-query-api", "0.2.0", "8080", logger)
+	srv := server.New("sims-query-api", "1.0.0", "8080", logger)
 	handler := api.NewHandler(rwPool, logger)
 	handler.RegisterRoutes(srv.Mux)
 
@@ -427,7 +427,7 @@ func TestGateS3_CredentialLeakScanner(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New("sims-query-api", "0.2.0", "8080", logger)
+	srv := server.New("sims-query-api", "1.0.0", "8080", logger)
 	handler := api.NewHandler(rwPool, logger)
 	handler.RegisterRoutes(srv.Mux)
 

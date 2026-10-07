@@ -325,7 +325,7 @@ func (a *Authenticator) AuthenticateToken(ctx context.Context, tokenStr string) 
 	}
 
 	// Validate expiry (required; 1 min leeway)
-	if claims.Exp == 0 || time.Now().Unix() > claims.Exp+60 {
+	if claims.Exp <= 0 || time.Now().Unix() > claims.Exp+60 {
 		return nil, ErrExpiredToken
 	}
 

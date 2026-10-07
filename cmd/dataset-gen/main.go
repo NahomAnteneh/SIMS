@@ -31,7 +31,7 @@ func main() {
 		if port == "" {
 			port = "5433"
 		}
-		defaultDBURL = fmt.Sprintf("postgres://postgres:postgres@%s:%s/sims?sslmode=disable", host, port)
+		defaultDBURL = fmt.Sprintf("postgres://sims:sims_password@%s:%s/sims?sslmode=disable", host, port)
 	}
 	dbURL := flag.String("db", defaultDBURL, "PostgreSQL connection URL")
 	flag.Parse()

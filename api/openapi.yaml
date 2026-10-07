@@ -1045,7 +1045,7 @@ components:
           example: query-api
         version:
           type: string
-          example: "0.2.0"
+          example: "1.0.0"
         details:
           type: object
           additionalProperties: true

@@ -2,14 +2,17 @@ package telemetry_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/infrastructure/sims/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -152,5 +155,55 @@ func TestHTTPTraceMiddleware(t *testing.T) {
 
 	if !foundMethod || !foundStatus {
 		t.Fatalf("missing expected http attributes: method=%v, status=%v", foundMethod, foundStatus)
+	}
+}
+
+func TestStartSpan_SanitizesStartAttributes(t *testing.T) {
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	otel.SetTracerProvider(tp)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+
+	ctx, span := telemetry.StartSpan(context.Background(), "test.start_span",
+		trace.WithAttributes(
+			attribute.String("vcenter.password", "leaked-secret"),
+			attribute.String("safe.key", "hello"),
+		),
+	)
+	span.End()
+
+	_ = tp.ForceFlush(ctx)
+	spans := exp.GetSpans()
+	if len(spans) == 0 {
+		t.Fatal("expected span")
+	}
+	for _, attr := range spans[0].Attributes {
+		if attr.Key == "vcenter.password" && attr.Value.AsString() != telemetry.RedactedVal {
+			t.Fatalf("expected password attribute to be redacted, got %s", attr.Value.AsString())
+		}
+	}
+}
+
+func TestRecordSafeError_RedactsSecrets(t *testing.T) {
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	otel.SetTracerProvider(tp)
+	defer func() { _ = tp.Shutdown(context.Background()) }()
+
+	ctx, span := telemetry.StartSpan(context.Background(), "test.error_span")
+	telemetry.RecordSafeError(span, errors.New("connection failed to https://user:secret123@vcenter.corp.local/sdk"))
+	span.End()
+
+	_ = tp.ForceFlush(ctx)
+	spans := exp.GetSpans()
+	if len(spans) == 0 {
+		t.Fatal("expected span")
+	}
+	statusDesc := spans[0].Status.Description
+	if strings.Contains(statusDesc, "secret123") {
+		t.Fatalf("status description leaked credentials: %s", statusDesc)
+	}
+	if !strings.Contains(statusDesc, "[REDACTED]") {
+		t.Fatalf("status description did not contain [REDACTED]: %s", statusDesc)
 	}
 }

@@ -46,6 +46,11 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 			scope = id.ToScopeConstraint()
 		}
 
+		if scope != nil && len(scope.AllowedVCenterIDs) == 0 {
+			h.writeJSON(w, http.StatusOK, TopologyListResponse{Items: []TopologyItem{}})
+			return
+		}
+
 		query := fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE 1=1", table)
 		var args []any
 		if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
@@ -101,6 +106,11 @@ func (h *Handler) handleGetTopologyByID(table string) http.HandlerFunc {
 			scope = authID.ToScopeConstraint()
 		}
 
+		if scope != nil && len(scope.AllowedVCenterIDs) == 0 {
+			h.writeProblem(w, http.StatusNotFound, "Not Found", fmt.Sprintf("%s not found", table), "not_found")
+			return
+		}
+
 		query := fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE id = $1", table)
 		args := []any{id}
 		if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
@@ -132,6 +142,11 @@ func (h *Handler) handleListFolders(w http.ResponseWriter, r *http.Request) {
 		scope = id.ToScopeConstraint()
 	}
 
+	if scope != nil && len(scope.AllowedVCenterIDs) == 0 && len(scope.AllowedFolderPaths) == 0 {
+		h.writeJSON(w, http.StatusOK, FolderListResponse{Items: []FolderItem{}})
+		return
+	}
+
 	parentIDStr := strings.TrimSpace(r.URL.Query().Get("parent_id"))
 
 	query := `SELECT f.id, f.vcenter_id, f.name, f.path::text, count(vm.id)
@@ -147,13 +162,23 @@ func (h *Handler) handleListFolders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
-		params := make([]string, len(scope.AllowedVCenterIDs))
-		for i, vcid := range scope.AllowedVCenterIDs {
-			args = append(args, vcid)
-			params[i] = fmt.Sprintf("$%d", len(args))
+	if scope != nil {
+		if len(scope.AllowedVCenterIDs) > 0 {
+			params := make([]string, len(scope.AllowedVCenterIDs))
+			for i, vcid := range scope.AllowedVCenterIDs {
+				args = append(args, vcid)
+				params[i] = fmt.Sprintf("$%d", len(args))
+			}
+			query += fmt.Sprintf(" AND f.vcenter_id IN (%s)", strings.Join(params, ", "))
 		}
-		query += fmt.Sprintf(" AND f.vcenter_id IN (%s)", strings.Join(params, ", "))
+		if len(scope.AllowedFolderPaths) > 0 {
+			folderParts := make([]string, len(scope.AllowedFolderPaths))
+			for i, p := range scope.AllowedFolderPaths {
+				args = append(args, p)
+				folderParts[i] = fmt.Sprintf("(f.path <@ $%d::ltree OR $%d::ltree <@ f.path)", len(args), len(args))
+			}
+			query += fmt.Sprintf(" AND (%s)", strings.Join(folderParts, " OR "))
+		}
 	}
 
 	query += ` GROUP BY f.id, f.vcenter_id, f.name, f.path ORDER BY f.path ASC LIMIT 100`
@@ -208,6 +233,27 @@ func (h *Handler) handleGetFolderByID(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeProblem(w, http.StatusNotFound, "Not Found", "folder not found", "not_found")
 		return
+	}
+
+	// Enforce tenant authorization boundaries to eliminate BOLA/IDOR
+	if callerID, ok := auth.FromContext(r.Context()); ok && callerID != nil {
+		if !callerID.CanAccessVCenter(vcid) {
+			h.writeProblem(w, http.StatusNotFound, "Not Found", "folder not found", "not_found")
+			return
+		}
+		if len(callerID.AllowedFolderPaths) > 0 {
+			allowed := false
+			for _, p := range callerID.AllowedFolderPaths {
+				if item.Path == p || strings.HasPrefix(item.Path, p+".") || strings.HasPrefix(p, item.Path+".") {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				h.writeProblem(w, http.StatusNotFound, "Not Found", "folder not found", "not_found")
+				return
+			}
+		}
 	}
 
 	item.ID = uid.String()
