@@ -39,10 +39,10 @@ lint: tools ## Run golangci-lint on backend code
 test: test-unit ## Alias for test-unit
 
 test-unit: ## Run unit tests with standard timeout
-	$(GO) test -v -short ./internal/... ./cmd/...
+	$(GO) test -v ./internal/... ./cmd/...
 
 test-race: ## Run unit tests with data race detector enabled
-	$(GO) test -v -race -short ./internal/... ./cmd/...
+	$(GO) test -v -race ./internal/... ./cmd/...
 
 build: ## Build collector and query-api binaries into bin/
 	@mkdir -p $(BIN_DIR)
@@ -50,6 +50,7 @@ build: ## Build collector and query-api binaries into bin/
 	$(GO) build -o $(BIN_DIR)/query-api ./cmd/query-api
 	$(GO) build -o $(BIN_DIR)/vcenter-spike ./cmd/vcenter-spike
 	$(GO) build -o $(BIN_DIR)/dataset-gen ./cmd/dataset-gen
+	$(GO) build -o $(BIN_DIR)/vcsim ./cmd/vcsim
 
 sqlc-generate: tools ## Generate type-safe Go database code with sqlc
 	$(SQLC) generate
@@ -67,7 +68,7 @@ test-vcsim-integration: ## Run vcsim simulator integration tests
 	$(GO) test -v -tags=integration ./tests/integration -run TestVCSim
 
 test-integration: tools ## Run all integration tests (database, identity, topology, network, API)
-	$(GO) test -v -tags=integration ./tests/integration -run 'Test(Migrations|Identity|Topology|Network|VLAN|BulkPersistence|API|OpenAPI|VCSim)'
+	$(GO) test -v -tags=integration ./tests/integration -run 'Test(Migrations|RolePrivileges|Identity|Topology|Network|VLAN|BulkPersistence|API|OpenAPI|VCSim|LocalAuth|UserManagement|Security|Telemetry)'
 
 test-gate: tools ## Run Sprint 1 Test Gate (5,000-VM vcsim hydration & 50,000 synthetic DB load)
 	$(GO) test -v -tags=integration -timeout 10m ./tests/integration -run TestGate
@@ -121,6 +122,7 @@ container-build: ## Build production multi-stage container images for all servic
 	docker build -f deploy/Dockerfile.collector -t sims-collector:1.0.0 .
 	docker build -f deploy/Dockerfile.query-api -t sims-query-api:1.0.0 .
 	docker build -f deploy/Dockerfile.migration -t sims-migration:1.0.0 .
+	docker build -f deploy/Dockerfile.vcsim -t sims-vcsim:1.0.0 .
 	docker build -f deploy/Dockerfile.web -t sims-web:1.0.0 ./web
 
 
@@ -134,4 +136,4 @@ dev-reset: ## Stop local stack and purge persistent database and telemetry volum
 	docker compose -f deploy/docker-compose.yml down -v --remove-orphans
 
 clean: ## Remove build artifacts and temporary files
-	rm -rf bin/collector bin/query-api bin/vcenter-spike bin/dataset-gen dist/ build/ coverage.txt
+	rm -rf bin/collector bin/query-api bin/vcenter-spike bin/dataset-gen bin/vcsim dist/ build/ coverage.txt

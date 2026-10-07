@@ -32,6 +32,7 @@ type PostgresListener struct {
 	conn   *pgx.Conn
 	cancel context.CancelFunc
 	done   chan struct{}
+	wg     sync.WaitGroup
 }
 
 func NewPostgresListener(databaseURL string, sweepInterval time.Duration, logger *slog.Logger) *PostgresListener {
@@ -85,10 +86,17 @@ func (l *PostgresListener) Start(ctx context.Context) error {
 	l.logger.Info("listening on PostgreSQL notification channel", slog.String("channel", VCenterEventsChannel))
 
 	// Notification receiver loop
-	go l.listenLoop(loopCtx)
+	l.wg.Add(2)
+	go func() {
+		defer l.wg.Done()
+		l.listenLoop(loopCtx)
+	}()
 
 	// Periodic fallback sweep loop (S4.4)
-	go l.sweepLoop(loopCtx)
+	go func() {
+		defer l.wg.Done()
+		l.sweepLoop(loopCtx)
+	}()
 
 	return nil
 }
@@ -203,11 +211,16 @@ func (l *PostgresListener) sweepLoop(ctx context.Context) {
 // Close terminates the listener loops and connection
 func (l *PostgresListener) Close() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	if l.cancel != nil {
 		l.cancel()
 	}
+	l.mu.Unlock()
+
+	l.wg.Wait()
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if l.conn != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

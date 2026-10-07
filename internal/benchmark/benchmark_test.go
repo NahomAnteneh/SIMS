@@ -34,6 +34,16 @@ func getTestDBPool(t *testing.T) *pgxpool.Pool {
 		t.Skipf("Skipping test; unable to ping Postgres: %v", err)
 		return nil
 	}
+
+	// Verify that migrations have been applied before attempting synthetic generation
+	var exists bool
+	err = pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'virtual_machines')").Scan(&exists)
+	if err != nil || !exists {
+		pool.Close()
+		t.Skip("skipping db-dependent test; tables not migrated")
+		return nil
+	}
+
 	return pool
 }
 
