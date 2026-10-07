@@ -14,14 +14,15 @@ import (
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/logging"
+	"github.com/infrastructure/sims/internal/search"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	DefaultPageLimit = 20
-	MaxPageLimit     = 100
+	DefaultPageLimit = search.DefaultPageLimit
+	MaxPageLimit     = search.MaxPageLimit
 )
 
 // Handler serves Query API endpoints.
@@ -216,7 +217,7 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Parse optional vcenter_id
-	var vcenterID pgtype.UUID
+	var vcenterUUID *uuid.UUID
 	vcenterIDStr := q.Get("vcenter_id")
 	if vcenterIDStr != "" {
 		parsedUUID, err := uuid.Parse(vcenterIDStr)
@@ -224,32 +225,20 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusBadRequest, "Bad Request", "invalid vcenter_id format, expected UUID")
 			return
 		}
-		vcenterID = pgtype.UUID{Bytes: parsedUUID, Valid: true}
+		vcenterUUID = &parsedUUID
 	}
 
 	nameFilter := strings.TrimSpace(q.Get("name"))
 
 	// Enforce tenant boundary scoping
+	var scope *search.ScopeConstraint
 	callerID, hasAuth := auth.FromContext(r.Context())
 	if hasAuth && callerID != nil {
-		if vcenterID.Valid {
-			vcUUID, _ := uuid.FromBytes(vcenterID.Bytes[:])
-			if !callerID.CanAccessVCenter(vcUUID) {
-				h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested vCenter denied", "forbidden")
-				return
-			}
-		} else if !callerID.HasRole(auth.RoleAdmin) {
-			if len(callerID.AllowedVCenterIDs) == 0 {
-				h.writeJSON(w, http.StatusOK, ListVMsResponse{
-					Items:      []VMListItem{},
-					Pagination: PaginationMeta{Limit: limit, HasMore: false},
-				})
-				return
-			}
-			if len(callerID.AllowedVCenterIDs) == 1 && len(callerID.AllowedFolderPaths) == 0 {
-				vcenterID = pgtype.UUID{Bytes: callerID.AllowedVCenterIDs[0], Valid: true}
-			}
+		if vcenterUUID != nil && !callerID.CanAccessVCenter(*vcenterUUID) {
+			h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested vCenter denied", "forbidden")
+			return
 		}
+		scope = callerID.ToScopeConstraint()
 	}
 
 	// 3. Parse opaque cursor
@@ -260,66 +249,83 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch limit + 1 to detect whether a next page exists
-	fetchLimit := int32(limit + 1)
-
-	var vms []db.VirtualMachine
-	if vcenterID.Valid {
-		if cursor == nil {
-			vms, err = h.queries.ListVMsByVCenterFirstPage(ctx, db.ListVMsByVCenterFirstPageParams{
-				VcenterID:  vcenterID,
-				NameFilter: nameFilter,
-				PageLimit:  fetchLimit,
-			})
-		} else {
-			cursorUUID, parseErr := uuid.Parse(cursor.ID)
-			if parseErr != nil {
-				h.writeError(w, http.StatusBadRequest, "Bad Request", "malformed cursor ID")
-				return
-			}
-			vms, err = h.queries.ListVMsByVCenterNextPage(ctx, db.ListVMsByVCenterNextPageParams{
-				VcenterID:  vcenterID,
-				NameFilter: nameFilter,
-				CursorName: cursor.Name,
-				CursorID:   pgtype.UUID{Bytes: cursorUUID, Valid: true},
-				PageLimit:  fetchLimit,
-			})
-		}
-	} else {
-		if cursor == nil {
-			vms, err = h.queries.ListVMsFirstPage(ctx, db.ListVMsFirstPageParams{
-				NameFilter: nameFilter,
-				PageLimit:  fetchLimit,
-			})
-		} else {
-			cursorUUID, parseErr := uuid.Parse(cursor.ID)
-			if parseErr != nil {
-				h.writeError(w, http.StatusBadRequest, "Bad Request", "malformed cursor ID")
-				return
-			}
-			vms, err = h.queries.ListVMsNextPage(ctx, db.ListVMsNextPageParams{
-				NameFilter: nameFilter,
-				CursorName: cursor.Name,
-				CursorID:   pgtype.UUID{Bytes: cursorUUID, Valid: true},
-				PageLimit:  fetchLimit,
-			})
+	var cursorValues *search.CursorValues
+	if cursor != nil {
+		cursorValues = &search.CursorValues{
+			SortField: "name",
+			LastValue: cursor.Name,
+			LastID:    cursor.ID,
 		}
 	}
 
+	var filterNodes []*search.FilterNode
+	if vcenterUUID != nil {
+		filterNodes = append(filterNodes, &search.FilterNode{
+			Op:    search.OpEQ,
+			Field: "vcenter_id",
+			Value: vcenterUUID.String(),
+		})
+	}
+	if nameFilter != "" {
+		filterNodes = append(filterNodes, &search.FilterNode{
+			Op:    search.OpContains,
+			Field: "name",
+			Value: nameFilter,
+		})
+	}
+
+	var rootFilter *search.FilterNode
+	if len(filterNodes) == 1 {
+		rootFilter = filterNodes[0]
+	} else if len(filterNodes) > 1 {
+		rootFilter = &search.FilterNode{
+			Op:       search.OpAnd,
+			Operands: filterNodes,
+		}
+	}
+
+	opts := search.CompileOptions{
+		Scope:  scope,
+		Sort:   search.SortSpec{Field: "name", Direction: "asc"},
+		Cursor: cursorValues,
+		Limit:  limit + 1,
+	}
+
+	compiled, err := search.CompileVMQuery(rootFilter, opts)
+	if err != nil {
+		h.logger.Error("failed to compile list vms query", "error", err)
+		h.writeError(w, http.StatusBadRequest, "Bad Request", err.Error())
+		return
+	}
+
+	rows, err := h.pool.Query(ctx, compiled.SQL, compiled.Args...)
 	if err != nil {
 		h.logger.Error("failed to list virtual machines", slog.String("error", err.Error()))
 		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "database query failed")
 		return
 	}
+	defer rows.Close()
 
-	hasMore := len(vms) > limit
-	if hasMore {
-		vms = vms[:limit]
+	items := make([]VMListItem, 0, limit)
+	for rows.Next() {
+		item, err := scanVMListItemDirect(rows)
+		if err != nil {
+			h.logger.Error("failed to scan VM row", slog.String("error", err.Error()))
+			h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "failed to scan VM results")
+			return
+		}
+		items = append(items, item)
 	}
 
-	items := make([]VMListItem, len(vms))
-	for i, vm := range vms {
-		items[i] = mapDBVMToListItem(vm)
+	if err := rows.Err(); err != nil {
+		h.logger.Error("row iteration error", slog.String("error", err.Error()))
+		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "row iteration error")
+		return
+	}
+
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
 	}
 
 	nextCursor := ""

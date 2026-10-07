@@ -251,3 +251,64 @@ func TestSQLCompiler_KeysetPagination(t *testing.T) {
 		t.Errorf("expected LIMIT $3, got: %s", q.SQL)
 	}
 }
+
+func TestSQLCompiler_LimitProbePreservation(t *testing.T) {
+	// 1. When limit = MaxPageLimit + 1 (probe for hasMore at limit=100)
+	optsProbe := CompileOptions{
+		Limit: MaxPageLimit + 1,
+	}
+	qProbe, err := CompileVMQuery(nil, optsProbe)
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+
+	// The limit argument must be 101, preserving the +1 probe
+	found101 := false
+	for _, arg := range qProbe.Args {
+		if val, ok := arg.(int); ok && val == MaxPageLimit+1 {
+			found101 = true
+			break
+		}
+	}
+	if !found101 {
+		t.Errorf("expected limit argument %d to be preserved, args: %v", MaxPageLimit+1, qProbe.Args)
+	}
+
+	// 2. When limit = MaxPageLimit (100)
+	opts100 := CompileOptions{
+		Limit: MaxPageLimit,
+	}
+	q100, err := CompileVMQuery(nil, opts100)
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+	found100 := false
+	for _, arg := range q100.Args {
+		if val, ok := arg.(int); ok && val == MaxPageLimit {
+			found100 = true
+			break
+		}
+	}
+	if !found100 {
+		t.Errorf("expected limit argument %d, args: %v", MaxPageLimit, q100.Args)
+	}
+
+	// 3. Excess limit is clamped to MaxPageLimit + 1
+	optsExcess := CompileOptions{
+		Limit: 500,
+	}
+	qExcess, err := CompileVMQuery(nil, optsExcess)
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+	foundClamped := false
+	for _, arg := range qExcess.Args {
+		if val, ok := arg.(int); ok && val == MaxPageLimit+1 {
+			foundClamped = true
+			break
+		}
+	}
+	if !foundClamped {
+		t.Errorf("expected excess limit to clamp to %d, args: %v", MaxPageLimit+1, qExcess.Args)
+	}
+}
