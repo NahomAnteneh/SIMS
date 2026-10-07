@@ -1024,6 +1024,47 @@ paths:
         "202":
           description: Resync accepted
 
+  /v1/audit-events:
+    get:
+      summary: List audit log events
+      description: Returns a list of recorded audit log events ordered by creation timestamp descending. Requires admin role.
+      operationId: listAuditEvents
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of audit events to return (1-100, default 20)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: List of audit events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventListResponse"
+        "400":
+          description: Invalid limit parameter
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "401":
+          description: Authentication required
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Insufficient privileges (requires admin)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
 components:
   schemas:
     HealthResponse:
@@ -1915,4 +1956,52 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UserResponse"
+
+    AuditEventItem:
+      type: object
+      required:
+        - id
+        - actor
+        - action
+        - target_id
+        - outcome
+        - request_id
+        - details
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor:
+          type: string
+          example: admin
+        action:
+          type: string
+          example: vcenter.create
+        target_id:
+          type: string
+          example: 00000000-0000-0000-0000-000000000001
+        outcome:
+          type: string
+          example: success
+        request_id:
+          type: string
+          example: req-12345
+        details:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-10-07T12:00:00Z"
+
+    AuditEventListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEventItem"
 

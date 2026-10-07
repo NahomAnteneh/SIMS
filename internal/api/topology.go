@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -314,7 +315,22 @@ func (h *Handler) handleListTopologyVMs(topologyType string) http.HandlerFunc {
 			filter = &search.FilterNode{Op: search.OpEQ, Field: "folder_id", Value: targetID.String()}
 		}
 
-		h.executeSearch(w, r, filter, search.SortSpec{Field: "name", Direction: "asc"}, DefaultPageLimit, "", topologyType+":"+targetID.String())
+		limit := DefaultPageLimit
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			parsed, err := strconv.Atoi(limitStr)
+			if err != nil || parsed <= 0 {
+				h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+				return
+			}
+			if parsed > MaxPageLimit {
+				limit = MaxPageLimit
+			} else {
+				limit = parsed
+			}
+		}
+		rawCursor := r.URL.Query().Get("cursor")
+
+		h.executeSearch(w, r, filter, search.SortSpec{Field: "name", Direction: "asc"}, limit, rawCursor, topologyType+":"+targetID.String())
 	}
 }
 

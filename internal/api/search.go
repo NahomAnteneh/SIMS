@@ -42,7 +42,14 @@ func (h *Handler) handleQuickSearchVMs(w http.ResponseWriter, r *http.Request) {
 
 	limit := DefaultPageLimit
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= MaxPageLimit {
+		parsed, err := strconv.Atoi(limitStr)
+		if err != nil || parsed <= 0 {
+			h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+			return
+		}
+		if parsed > MaxPageLimit {
+			limit = MaxPageLimit
+		} else {
 			limit = parsed
 		}
 	}
@@ -131,10 +138,12 @@ func (h *Handler) handleStructuredSearchVMs(w http.ResponseWriter, r *http.Reque
 	}
 
 	limit := req.Limit
-	if limit <= 0 {
+	if limit == 0 {
 		limit = DefaultPageLimit
-	}
-	if limit > MaxPageLimit {
+	} else if limit < 0 {
+		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+		return
+	} else if limit > MaxPageLimit {
 		limit = MaxPageLimit
 	}
 

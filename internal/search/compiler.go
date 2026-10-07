@@ -10,6 +10,11 @@ import (
 )
 
 // ScopeConstraint defines tenant isolation parameters that MUST be enforced.
+const (
+	DefaultPageLimit = 20
+	MaxPageLimit     = 100
+)
+
 type ScopeConstraint struct {
 	AllowedVCenterIDs  []uuid.UUID
 	AllowedFolderPaths []string
@@ -133,10 +138,10 @@ func CompileVMQuery(filter *FilterNode, opts CompileOptions) (*CompiledQuery, er
 	// 6. Limit
 	limit := opts.Limit
 	if limit <= 0 {
-		limit = 20
+		limit = DefaultPageLimit
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > MaxPageLimit+1 {
+		limit = MaxPageLimit + 1
 	}
 	limitParam := c.addArg(limit)
 

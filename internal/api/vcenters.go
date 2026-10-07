@@ -750,7 +750,21 @@ func (h *Handler) handleListAuditEvents(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	events, err := h.queries.ListAuditEvents(r.Context(), 100)
+	limit := DefaultPageLimit
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		parsed, err := strconv.Atoi(limitStr)
+		if err != nil || parsed <= 0 {
+			h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+			return
+		}
+		if parsed > MaxPageLimit {
+			limit = MaxPageLimit
+		} else {
+			limit = parsed
+		}
+	}
+
+	events, err := h.queries.ListAuditEvents(r.Context(), int32(limit))
 	if err != nil {
 		h.logger.Error("failed to list audit events", slog.String("error", err.Error()))
 		h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "Failed to retrieve audit events", "internal_error")
