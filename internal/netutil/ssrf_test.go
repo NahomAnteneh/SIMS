@@ -18,10 +18,12 @@ func TestSSRFPolicy_Validation(t *testing.T) {
 		"127.0.0.1",
 		"127.0.0.2",
 		"::1",
-		"169.254.169.254", // AWS/GCP metadata
-		"169.254.1.1",     // Link-local
-		"fe80::1",         // Link-local v6
-		"fd00:ec2::254",   // AWS IMDSv6
+		"::ffff:127.0.0.1",       // IPv4-mapped IPv6 loopback
+		"::ffff:169.254.169.254", // IPv4-mapped IPv6 metadata
+		"169.254.169.254",        // AWS/GCP metadata
+		"169.254.1.1",            // Link-local
+		"fe80::1",                // Link-local v6
+		"fd00:ec2::254",          // AWS IMDSv6
 		"0.0.0.0",
 		"224.0.0.1", // Multicast
 	}
@@ -63,6 +65,18 @@ func TestSSRFPolicy_PortValidation(t *testing.T) {
 	_, err = policy.ResolveAndValidate(ctx, "8.8.8.8", 22)
 	if !errors.Is(err, ErrDisallowedPort) {
 		t.Errorf("expected ErrDisallowedPort for port 22, got: %v", err)
+	}
+
+	// Bracketed IPv4-mapped IPv6 loopback must be rejected
+	_, err = policy.ResolveAndValidate(ctx, "[::ffff:127.0.0.1]", 443)
+	if err == nil {
+		t.Errorf("expected bracketed IPv4-mapped IPv6 loopback to be rejected")
+	}
+
+	// Bracketed IPv4-mapped IPv6 metadata must be rejected
+	_, err = policy.ResolveAndValidate(ctx, "[::ffff:169.254.169.254]", 443)
+	if err == nil {
+		t.Errorf("expected bracketed IPv4-mapped IPv6 metadata to be rejected")
 	}
 }
 

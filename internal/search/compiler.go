@@ -192,7 +192,7 @@ func (c *Compiler) compileScope(scope *ScopeConstraint) (string, error) {
 	}
 
 	if len(scopeParts) == 0 {
-		return "", nil
+		return "1 = 0", nil
 	}
 	return strings.Join(scopeParts, " AND "), nil
 }

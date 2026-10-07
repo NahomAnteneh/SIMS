@@ -2,54 +2,56 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/api"
 	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/config"
+	"github.com/infrastructure/sims/internal/database"
 	"github.com/infrastructure/sims/internal/logging"
 	"github.com/infrastructure/sims/internal/server"
 )
 
-const version = "0.1.0"
+const version = "1.0.0"
 
 func main() {
+	if err := run(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	versionFlag := flag.Bool("version", false, "print service version and exit")
+	flag.BoolVar(versionFlag, "v", false, "print service version and exit (shorthand)")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Printf("sims-query-api v%s\n", version)
+		return nil
+	}
+
 	cfg := config.LoadQueryAPIConfig()
 	logger := logging.DefaultLogger(cfg.LogLevel)
 
 	logger.Info("initializing vSphere query API service",
 		slog.String("version", version),
 		slog.String("port", cfg.Port),
-		slog.String("database_url", cfg.DatabaseURL), // Redacted by slog handler
+		slog.String("database_url", logging.RedactURL(cfg.DatabaseURL)),
 	)
 
-	// Configure pgxpool for read-only queries
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// Configure pgxpool for read-only queries with startup initialization context
+	initCtx, initCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer initCancel()
 
-	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
-	if err != nil {
-		logger.Error("failed to parse database configuration", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	// S1 sizing guidelines from docs/database.md:
-	// query_ro pool: max 20 connections, min 2 connections, max conn lifetime 1 hour
-	poolCfg.MaxConns = 20
-	poolCfg.MinConns = 2
-	poolCfg.MaxConnLifetime = time.Hour
-	poolCfg.MaxConnIdleTime = 15 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	pool, err := database.NewBudgetedPool(initCtx, cfg.DatabaseURL, database.PoolQueryRO)
 	if err != nil {
 		logger.Error("failed to connect to database", slog.String("error", err.Error()))
-		os.Exit(1)
+		return err
 	}
 	defer pool.Close()
 
@@ -87,15 +89,15 @@ func main() {
 		AuthDisabled: os.Getenv("AUTH_ENABLED") == "false",
 		Env:          os.Getenv("ENV"),
 	}
-	authenticator, err := auth.NewAuthenticator(ctx, authCfg)
-	if err == nil {
-		authenticator.SetTokenSigner(tokenSigner)
-		authenticator.SetUserStore(userStore)
-		srv.Use(authenticator.Middleware)
-		logger.Info("configured authentication middleware", slog.Bool("auth_disabled", authCfg.AuthDisabled))
-	} else {
-		logger.Warn("failed to initialize authenticator", slog.String("error", err.Error()))
+	authenticator, err := auth.NewAuthenticator(initCtx, authCfg)
+	if err != nil {
+		logger.Error("failed to initialize authenticator", slog.String("error", err.Error()))
+		return err
 	}
+	authenticator.SetTokenSigner(tokenSigner)
+	authenticator.SetUserStore(userStore)
+	srv.Use(authenticator.Middleware)
+	logger.Info("configured authentication middleware", slog.Bool("auth_disabled", authCfg.AuthDisabled))
 
 	// Register API endpoints
 	apiHandler := api.NewHandler(pool, logger)
@@ -104,6 +106,7 @@ func main() {
 
 	if err := srv.Run(); err != nil {
 		logger.Error("query API encountered fatal error", slog.String("error", err.Error()))
-		os.Exit(1)
+		return err
 	}
+	return nil
 }

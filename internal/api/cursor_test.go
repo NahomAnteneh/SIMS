@@ -106,6 +106,21 @@ func TestCursor_Expired(t *testing.T) {
 	if err != ErrCursorExpired {
 		t.Fatalf("expected ErrCursorExpired, got: %v", err)
 	}
+
+	// Test that non-positive ExpiresAt is rejected as ErrCursorExpired
+	cZero := &Cursor{
+		Version:   CurrentCursorVersion,
+		SortField: "name",
+		SortDir:   "asc",
+		LastValue: "vm-app-01",
+		LastID:    "550e8400-e29b-41d4-a716-446655440000",
+		ExpiresAt: -1,
+	}
+	encodedZero := signer.Encode(cZero)
+	_, err = signer.Decode(encodedZero, "")
+	if err != ErrCursorExpired {
+		t.Fatalf("expected ErrCursorExpired for non-positive expires_at, got: %v", err)
+	}
 }
 
 func TestCursor_BackwardCompatibility(t *testing.T) {

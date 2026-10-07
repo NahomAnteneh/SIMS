@@ -14,6 +14,8 @@ var (
 	sensitiveKeyPattern = regexp.MustCompile(`(?i)(password|passwd|secret|token|auth|credential|apikey|api_key|access_key|private_key)`)
 	bearerPattern       = regexp.MustCompile(`(?i)(bearer\s+)[A-Za-z0-9\-._~+/]+=*`)
 	kvSecretPattern     = regexp.MustCompile(`(?i)(password|passwd|secret|token|apikey|api_key|access_key|private_key)\s*[:=]\s*["']?([^\s"',;]+)["']?`)
+	urlUserPassPattern  = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://[^/\s:@]+):([^/\s@]+)@`)
+	urlUserOnlyPattern  = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.-]*://)([^/\s:@]+)@`)
 )
 
 // RedactionHandler wraps an slog.Handler and redacts values for keys matching sensitive patterns.
@@ -72,10 +74,9 @@ func redactAttr(a slog.Attr) slog.Attr {
 
 // RedactString sanitizes known secret patterns inside strings, such as basic auth URLs or token headers.
 func RedactString(s string) string {
-	// Redact basic auth in URLs: scheme://user:pass@host -> scheme://user:[REDACTED]@host
-	if strings.Contains(s, "://") && strings.Contains(s, "@") {
-		s = RedactURL(s)
-	}
+	// Redact basic auth credentials in embedded URLs: scheme://user:pass@host -> scheme://user:[REDACTED]@host
+	s = urlUserPassPattern.ReplaceAllString(s, "${1}:[REDACTED]@")
+	s = urlUserOnlyPattern.ReplaceAllString(s, "${1}[REDACTED]@")
 	s = bearerPattern.ReplaceAllString(s, "${1}[REDACTED]")
 	s = kvSecretPattern.ReplaceAllString(s, "${1}=[REDACTED]")
 	return s

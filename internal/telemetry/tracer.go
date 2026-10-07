@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -131,7 +132,25 @@ func SanitizeAttributes(attrs ...attribute.KeyValue) []attribute.KeyValue {
 
 // StartSpan creates a traced span with sanitized initial attributes.
 func StartSpan(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return Tracer().Start(ctx, spanName, opts...)
+	cfg := trace.NewSpanStartConfig(opts...)
+	sanitizedAttrs := SanitizeAttributes(cfg.Attributes()...)
+	var newOpts []trace.SpanStartOption
+	if cfg.SpanKind() != trace.SpanKindUnspecified {
+		newOpts = append(newOpts, trace.WithSpanKind(cfg.SpanKind()))
+	}
+	if len(cfg.Links()) > 0 {
+		newOpts = append(newOpts, trace.WithLinks(cfg.Links()...))
+	}
+	if !cfg.Timestamp().IsZero() {
+		newOpts = append(newOpts, trace.WithTimestamp(cfg.Timestamp()))
+	}
+	if cfg.NewRoot() {
+		newOpts = append(newOpts, trace.WithNewRoot())
+	}
+	if len(sanitizedAttrs) > 0 {
+		newOpts = append(newOpts, trace.WithAttributes(sanitizedAttrs...))
+	}
+	return Tracer().Start(ctx, spanName, newOpts...)
 }
 
 // SetSafeAttributes sets sanitized attributes on an active span.
@@ -148,8 +167,9 @@ func RecordSafeError(span trace.Span, err error) {
 	if span == nil || err == nil {
 		return
 	}
-	span.RecordError(err)
-	span.SetStatus(codes.Error, err.Error())
+	redactedMsg := logging.RedactString(err.Error())
+	span.RecordError(errors.New(redactedMsg))
+	span.SetStatus(codes.Error, redactedMsg)
 }
 
 // statusWriter wraps http.ResponseWriter to capture HTTP status code for tracing.

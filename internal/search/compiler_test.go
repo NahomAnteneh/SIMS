@@ -123,6 +123,22 @@ func TestSQLCompiler_ScopeInjection(t *testing.T) {
 	}
 }
 
+func TestSQLCompiler_EmptyScopeFailsClosed(t *testing.T) {
+	// A non-admin user with 0 permitted vCenters and 0 permitted folders must fail closed
+	emptyScope := &ScopeConstraint{
+		AllowedVCenterIDs:  []uuid.UUID{},
+		AllowedFolderPaths: []string{},
+	}
+	q, err := CompileVMQuery(nil, CompileOptions{Scope: emptyScope})
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+	expectedClause := "vm.deleted_at IS NULL AND 1 = 0"
+	if q.WhereClause != expectedClause {
+		t.Errorf("unexpected where clause:\nGot:  %s\nWant: %s", q.WhereClause, expectedClause)
+	}
+}
+
 func TestSQLCompiler_AllOperators(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -49,7 +49,7 @@ func TestOpenAPIContractValidation(t *testing.T) {
 	defer roPool.Close()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New("sims-query-api", "0.1.0", "8080", logger)
+	srv := server.New("sims-query-api", "1.0.0", "8080", logger)
 	handler := api.NewHandler(roPool, logger)
 	handler.RegisterRoutes(srv.Mux)
 

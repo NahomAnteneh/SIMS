@@ -62,6 +62,9 @@ func DefaultPolicy() *SSRFPolicy {
 
 // ValidateIP checks if an IP address is permitted under this policy.
 func (p *SSRFPolicy) ValidateIP(addr netip.Addr) error {
+	// Normalize IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1 -> 127.0.0.1)
+	addr = addr.Unmap()
+
 	// 1. Never allow loopback unless explicitly allowed (e.g. testing)
 	if !p.AllowLoopback && (loopbackV4.Contains(addr) || loopbackV6.Contains(addr)) {
 		return fmt.Errorf("%w: loopback address %s denied", ErrAddressNotAllowed, addr)
@@ -98,8 +101,10 @@ func (p *SSRFPolicy) ResolveAndValidate(ctx context.Context, host string, port i
 		return netip.Addr{}, fmt.Errorf("%w: port %d is not allowed", ErrDisallowedPort, port)
 	}
 
+	cleanHost := strings.Trim(host, "[]")
+
 	// If host is already an IP address
-	if addr, err := netip.ParseAddr(host); err == nil {
+	if addr, err := netip.ParseAddr(cleanHost); err == nil {
 		if err := p.ValidateIP(addr); err != nil {
 			return netip.Addr{}, err
 		}
@@ -108,7 +113,7 @@ func (p *SSRFPolicy) ResolveAndValidate(ctx context.Context, host string, port i
 
 	// Resolve hostname once
 	resolver := net.DefaultResolver
-	addrs, err := resolver.LookupNetIP(ctx, "ip", host)
+	addrs, err := resolver.LookupNetIP(ctx, "ip", cleanHost)
 	if err != nil {
 		return netip.Addr{}, fmt.Errorf("failed to resolve host %q: %w", host, err)
 	}
