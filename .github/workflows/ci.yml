@@ -55,6 +55,12 @@ jobs:
           sudo apt-get update && sudo apt-get install -y postgresql-client
           PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d sims -f db/bootstrap_roles.sql
 
+      - name: Initialize Database Migrations & Schema
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+        run: make test-migration
+
       # 1. format
       - name: Stage 1 — Format Verification
         run: |
@@ -66,30 +72,36 @@ jobs:
         run: make lint
 
       # 3. unit tests
-      - name: Stage 3 — Unit Tests
+      - name: Stage 3 — Package Tests (Real Environment)
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
         run: make test-unit
 
       # 4. race tests
-      - name: Stage 4 — Race Detection Tests
+      - name: Stage 4 — Race Detection Tests (Real Environment)
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
         run: make test-race
 
       # 5. sqlc verify/generate
       - name: Stage 5 — sqlc Code Generation Verification
         run: make sqlc-verify
 
-      # 6. migration test
-      - name: Stage 6 — Database Migration Verification
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_PORT: 5433
-        run: make test-migration
-
-      # 7. PostgreSQL integration tests
-      - name: Stage 7 — PostgreSQL Role Privileges Integration Tests
+      # 6. PostgreSQL integration tests
+      - name: Stage 6 — PostgreSQL Role Privileges Integration Tests
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5433
         run: make test-db-integration
+
+      # 7. Integration test suite
+      - name: Stage 7 — Integration Test Suite (Real Environment)
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5433
+        run: make test-integration
 
       # 8. vcsim integration tests
       - name: Stage 8 — vcsim Simulator Integration Tests
