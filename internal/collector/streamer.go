@@ -218,7 +218,19 @@ func (s *PropertyStreamer) Run(ctx context.Context, handler UpdateHandler) error
 			waitCtx, cancelWait = context.WithTimeout(ctx, s.cfg.CallDeadline)
 		}
 
+		stopCancelWatch := make(chan struct{})
+		go func() {
+			select {
+			case <-waitCtx.Done():
+				cancelCtx, cancelFn := context.WithTimeout(context.WithoutCancel(waitCtx), 5*time.Second)
+				defer cancelFn()
+				_ = s.pc.CancelWaitForUpdates(cancelCtx)
+			case <-stopCancelWatch:
+			}
+		}()
+
 		updateSet, err := s.pc.WaitForUpdatesEx(waitCtx, curVersion, waitOpt)
+		close(stopCancelWatch)
 		if cancelWait != nil {
 			cancelWait()
 		}

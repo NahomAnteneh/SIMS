@@ -39,6 +39,7 @@ type FleetConfig struct {
 	DefaultVCenterUsername  string
 	DefaultVCenterPassword  string
 	DefaultInsecureTLS      bool
+	StreamerWaitSeconds     int32
 }
 
 func (c *FleetConfig) defaults() {
@@ -406,8 +407,12 @@ func (fm *FleetManager) runPipeline(ctx context.Context, rt *runningTarget) {
 	reg.RegisterContainerView(cv.Destroy)
 
 	spec := BuildVMPropertyFilterSpec(cv.Reference())
+	streamerCfg := DefaultStreamerConfig(vcenterIDStr)
+	if fm.cfg.StreamerWaitSeconds > 0 {
+		streamerCfg.MaxWaitSeconds = fm.cfg.StreamerWaitSeconds
+	}
 	govmomiPC := vsphere.NewGovmomiPropertyCollector(client)
-	propStreamer := NewPropertyStreamer(govmomiPC, spec, DefaultStreamerConfig(vcenterIDStr), fm.metrics, fm.logger, reg)
+	propStreamer := NewPropertyStreamer(govmomiPC, spec, streamerCfg, fm.metrics, fm.logger, reg)
 	if err := propStreamer.InitFilter(pipelineCtx); err != nil {
 		fm.logger.Warn("failed to init property filter", slog.String("vcenter_id", vcenterIDStr), slog.String("error", err.Error()))
 		_ = fm.targetFSM.Transition(ctx, targetID, TargetStateDegraded, err.Error())
