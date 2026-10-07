@@ -39,7 +39,7 @@ export function LoginForm({
 
     try {
       await simsApi.login({ username, password });
-      router.push("/dashboard");
+      router.push("/compute/vms");
       router.refresh();
     } catch (err: any) {
       setError(

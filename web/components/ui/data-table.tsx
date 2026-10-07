@@ -51,6 +51,7 @@ export interface DataTableProps<TData extends RowData> {
   searchValue?: string;
   onSearchChange?: (val: string) => void;
   filterComponent?: React.ReactNode;
+  customSearch?: React.ReactNode;
 }
 
 export function DataTable<TData extends RowData>({
@@ -63,6 +64,7 @@ export function DataTable<TData extends RowData>({
   searchValue,
   onSearchChange,
   filterComponent,
+  customSearch,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -95,7 +97,9 @@ export function DataTable<TData extends RowData>({
     <div className="overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0c] shadow-sm">
       <div className="flex items-center justify-between p-4 border-b border-zinc-800/80 gap-3">
         <div className="flex items-center gap-3 flex-1 max-w-2xl">
-          {onSearchChange ? (
+          {customSearch ? (
+            customSearch
+          ) : onSearchChange ? (
             <Input
               placeholder={searchPlaceholder ?? "Search inventory..."}
               value={searchValue ?? ""}

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 
 import { netColumns, type NetworkItem } from "../columns";
@@ -9,9 +10,14 @@ import { NetworkCard } from "./card";
 import { simsApi } from "@/lib/api/client";
 
 export default function NetworkingPage() {
+  const router = useRouter();
   const [view, setView] = useState<"table" | "card">("table");
   const [networks, setNetworks] = useState<NetworkItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const handleSelectNetwork = (net: { id: string; name: string }) => {
+    router.push(`/compute/vms?network_id=${net.id}&network_name=${encodeURIComponent(net.name)}`);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -87,11 +93,12 @@ export default function NetworkingPage() {
           data={networks}
           searchColumn="name"
           searchPlaceholder="Filter networks by name..."
+          onRowClick={(row) => handleSelectNetwork(row)}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {networks.map((net) => (
-            <NetworkCard key={net.id} network={net} />
+            <NetworkCard key={net.id} network={net} onClick={() => handleSelectNetwork(net)} />
           ))}
         </div>
       )}

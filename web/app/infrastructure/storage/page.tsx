@@ -1,18 +1,23 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { LayoutList, LayoutGrid } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 
 import { storageColumns, type Storage } from "../columns";
 import { DataTable } from "@/components/ui/data-table";
 import { StorageCard } from "./card";
 import { simsApi } from "@/lib/api/client";
-import { Loader2 } from "lucide-react";
 
 export default function StoragePage() {
+  const router = useRouter();
   const [view, setView] = useState<"table" | "card">("table");
   const [datastores, setDatastores] = useState<Storage[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const handleSelectDatastore = (ds: { id: string; name: string }) => {
+    router.push(`/compute/vms?datastore_id=${ds.id}&datastore_name=${encodeURIComponent(ds.name)}`);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -50,7 +55,7 @@ export default function StoragePage() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Storage</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Manage VMFS, vSAN, and NFS datastores and storage pools.
+            Manage VMFS, vSAN, and NFS datastores and storage pools. Click any datastore to inspect virtual machines.
           </p>
         </div>
 
@@ -94,11 +99,16 @@ export default function StoragePage() {
           data={datastores}
           searchColumn="name"
           searchPlaceholder="Filter datastores by name..."
+          onRowClick={(row) => handleSelectDatastore(row)}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {datastores.map((ds) => (
-            <StorageCard key={ds.id} storage={ds} />
+            <StorageCard
+              key={ds.id}
+              storage={ds}
+              onClick={() => handleSelectDatastore(ds)}
+            />
           ))}
         </div>
       )}

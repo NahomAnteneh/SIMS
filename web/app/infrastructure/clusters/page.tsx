@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { LayoutList, LayoutGrid } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -11,10 +12,19 @@ import { simsApi } from "@/lib/api/client";
 import { Loader2 } from "lucide-react";
 
 export default function ClustersPage() {
+  const router = useRouter();
   const [view, setView] = useState<"table" | "card">("table");
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const handleSelectCluster = (cl: { id: string; name: string }) => {
+    router.push(`/compute/vms?cluster_id=${cl.id}&cluster_name=${encodeURIComponent(cl.name)}`);
+  };
+
+  const handleSelectHost = (h: { id: string; name: string }) => {
+    router.push(`/compute/vms?host_id=${h.id}&host_name=${encodeURIComponent(h.name)}`);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -151,11 +161,16 @@ export default function ClustersPage() {
                 data={clusters}
                 searchColumn="name"
                 searchPlaceholder="Filter clusters by name..."
+                onRowClick={(row) => handleSelectCluster(row)}
               />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {clusters.map((cl) => (
-                  <ClusterCard key={cl.id} cluster={cl} />
+                  <ClusterCard
+                    key={cl.id}
+                    cluster={cl}
+                    onClick={() => handleSelectCluster(cl)}
+                  />
                 ))}
               </div>
             )}
@@ -167,6 +182,7 @@ export default function ClustersPage() {
               data={hosts}
               searchColumn="name"
               searchPlaceholder="Filter hosts by name..."
+              onRowClick={(row) => handleSelectHost(row)}
             />
           </TabsContent>
         </Tabs>

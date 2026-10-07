@@ -106,6 +106,9 @@ export interface SearchFilter {
   values?: any[];
   operands?: SearchFilter[];
   operand?: SearchFilter;
+  category?: string;
+  tag?: string;
+  name?: string;
 }
 
 export interface SearchVMsRequest {

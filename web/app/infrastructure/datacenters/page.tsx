@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 
 import { columns, type Datacenter } from "./columns";
-import { DataTable } from "./data-table";
+import { DataTable } from "@/components/ui/data-table";
 import { DatacenterCard } from "./card";
 import { simsApi } from "@/lib/api/client";
 
 export default function DatacentersPage() {
+  const router = useRouter();
   const [view, setView] = useState<"table" | "card">("table");
   const [datacenters, setDatacenters] = useState<Datacenter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,13 +80,17 @@ export default function DatacentersPage() {
     loadData();
   }, []);
 
+  const handleSelectDatacenter = (dc: { id: string; name: string }) => {
+    router.push(`/compute/vms?datacenter_id=${dc.id}&datacenter_name=${encodeURIComponent(dc.name)}`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Datacenters</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Manage physical sites and top-level vCenter server instances.
+            Manage physical sites and top-level vCenter server instances. Click any datacenter to inspect virtual machines.
           </p>
         </div>
 
@@ -123,11 +129,21 @@ export default function DatacentersPage() {
           <span className="text-sm">Loading datacenters...</span>
         </div>
       ) : view === "table" ? (
-        <DataTable columns={columns} data={datacenters} />
+        <DataTable
+          columns={columns}
+          data={datacenters}
+          searchColumn="name"
+          searchPlaceholder="Filter datacenters by name..."
+          onRowClick={(row) => handleSelectDatacenter(row)}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {datacenters.map((dc) => (
-            <DatacenterCard key={dc.id || dc.siteCode} datacenter={dc} />
+            <DatacenterCard
+              key={dc.id || dc.siteCode}
+              datacenter={dc}
+              onClick={() => handleSelectDatacenter(dc)}
+            />
           ))}
         </div>
       )}

@@ -11,16 +11,22 @@ import { type Storage } from "../columns";
 
 interface StorageCardProps {
   storage: Storage;
+  onClick?: () => void;
 }
 
-export const StorageCard: React.FC<StorageCardProps> = ({ storage }) => {
+export const StorageCard: React.FC<StorageCardProps> = ({ storage, onClick }) => {
   const percent = Math.round((storage.usedGB / storage.capacityGB) * 100);
   const usedTB = (storage.usedGB / 1024).toFixed(1);
   const totalTB = (storage.capacityGB / 1024).toFixed(1);
   const freeTB = (storage.freeGB / 1024).toFixed(1);
 
   return (
-    <Card className="bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg">
+    <Card
+      onClick={onClick}
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+        onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
+      }`}
+    >
       <CardHeader className="p-5 pb-4 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
         <CardTitle className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
           <HardDrive className="h-4 w-4 text-cyan-500" />

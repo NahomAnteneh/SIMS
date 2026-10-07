@@ -11,11 +11,17 @@ import { type Cluster } from "../columns";
 
 interface ClusterCardProps {
   cluster: Cluster;
+  onClick?: () => void;
 }
 
-export const ClusterCard: React.FC<ClusterCardProps> = ({ cluster }) => {
+export const ClusterCard: React.FC<ClusterCardProps> = ({ cluster, onClick }) => {
   return (
-    <Card className="bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg">
+    <Card
+      onClick={onClick}
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-2xl p-0 overflow-hidden font-sans shadow-lg transition-all ${
+        onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
+      }`}
+    >
       <CardHeader className="p-5 pb-4 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
         <CardTitle className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
           <Layers className="h-4 w-4 text-amber-500" />

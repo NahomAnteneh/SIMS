@@ -14,10 +14,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // If already authenticated and visiting /login, redirect to /dashboard
+  // If already authenticated and visiting /login, redirect to /compute/vms
   if (pathname === "/login") {
     if (token) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      return NextResponse.redirect(new URL("/compute/vms", request.url));
     }
     return NextResponse.next();
   }
@@ -26,6 +26,11 @@ export function middleware(request: NextRequest) {
   if (!token) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // If visiting / or /dashboard, redirect to /compute/vms
+  if (pathname === "/" || pathname === "/dashboard") {
+    return NextResponse.redirect(new URL("/compute/vms", request.url));
   }
 
   return NextResponse.next();

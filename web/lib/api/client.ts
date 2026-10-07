@@ -234,6 +234,13 @@ export const simsApi = {
     });
   },
 
+  async structuredSearchVMs(payload: SearchVMsRequest): Promise<SearchVMsResponse> {
+    return request<SearchVMsResponse>("/v1/vms/search", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getVMFacets(fields?: string, limit?: number): Promise<VMFacetsResponse> {
     const sp = new URLSearchParams();
     if (fields) sp.set("fields", fields);
