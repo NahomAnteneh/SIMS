@@ -48,6 +48,9 @@ export interface DataTableProps<TData extends RowData> {
   searchPlaceholder?: string;
   onRowClick?: (row: TData) => void;
   pagination?: DataTablePaginationProps;
+  searchValue?: string;
+  onSearchChange?: (val: string) => void;
+  filterComponent?: React.ReactNode;
 }
 
 export function DataTable<TData extends RowData>({
@@ -57,6 +60,9 @@ export function DataTable<TData extends RowData>({
   searchPlaceholder,
   onRowClick,
   pagination,
+  searchValue,
+  onSearchChange,
+  filterComponent,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -88,20 +94,28 @@ export function DataTable<TData extends RowData>({
   return (
     <div className="overflow-hidden rounded-xl border border-zinc-800 bg-[#0c0c0c] shadow-sm">
       <div className="flex items-center justify-between p-4 border-b border-zinc-800/80 gap-3">
-        {activeSearchCol ? (
-          <Input
-            placeholder={searchPlaceholder ?? `Filter by ${activeSearchCol}...`}
-            value={
-              (table.getColumn(activeSearchCol)?.getFilterValue() as string) ?? ""
-            }
-            onChange={(event) =>
-              table.getColumn(activeSearchCol)?.setFilterValue(event.target.value)
-            }
-            className="max-w-sm bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-9 text-sm"
-          />
-        ) : (
-          <div />
-        )}
+        <div className="flex items-center gap-3 flex-1 max-w-2xl">
+          {onSearchChange ? (
+            <Input
+              placeholder={searchPlaceholder ?? "Search inventory..."}
+              value={searchValue ?? ""}
+              onChange={(event) => onSearchChange(event.target.value)}
+              className="max-w-sm bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-9 text-sm"
+            />
+          ) : activeSearchCol ? (
+            <Input
+              placeholder={searchPlaceholder ?? `Filter by ${activeSearchCol}...`}
+              value={
+                (table.getColumn(activeSearchCol)?.getFilterValue() as string) ?? ""
+              }
+              onChange={(event) =>
+                table.getColumn(activeSearchCol)?.setFilterValue(event.target.value)
+              }
+              className="max-w-sm bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-9 text-sm"
+            />
+          ) : null}
+          {filterComponent}
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

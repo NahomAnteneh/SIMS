@@ -20,27 +20,82 @@ export default function ComputePage() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [selectedVMId, setSelectedVMId] = useState<string | null>(null);
 
-  // Pagination states
+  // Search & Filter states
   const [limit, setLimit] = useState(20);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [powerState, setPowerState] = useState<string>("all");
+
   const [currentCursor, setCurrentCursor] = useState<string | undefined>(undefined);
   const [cursorHistory, setCursorHistory] = useState<(string | undefined)[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
 
-  const loadData = useCallback(async (cursor?: string) => {
-    setLoading(true);
-    try {
-      const res = await simsApi.listVMs({ limit, cursor });
-      setVms(res.items || []);
-      setHasMore(res.pagination.has_more);
-      setNextCursor(res.pagination.next_cursor);
-      setApplications([]); // Real vSphere inventory has VMs & resource pools, no mock applications
-    } catch (error) {
-      console.error("Failed to load compute data", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [limit]);
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Reset pagination on filter change
+  useEffect(() => {
+    setCurrentCursor(undefined);
+    setCursorHistory([]);
+  }, [debouncedSearch, powerState, limit]);
+
+  const loadData = useCallback(
+    async (cursor?: string) => {
+      setLoading(true);
+      try {
+        const trimmed = debouncedSearch.trim();
+        const hasPower = powerState !== "all";
+
+        if (hasPower && trimmed) {
+          const res = await simsApi.searchVMs({
+            filter: {
+              op: "AND",
+              operands: [
+                { op: "EQ", field: "power_state", value: powerState },
+                { op: "CONTAINS", field: "name", value: trimmed },
+              ],
+            },
+            limit,
+            cursor,
+          });
+          setVms(res.items || []);
+          setHasMore(res.hasMore);
+          setNextCursor(res.nextCursor);
+        } else if (hasPower) {
+          const res = await simsApi.searchVMs({
+            filter: { op: "EQ", field: "power_state", value: powerState },
+            limit,
+            cursor,
+          });
+          setVms(res.items || []);
+          setHasMore(res.hasMore);
+          setNextCursor(res.nextCursor);
+        } else if (trimmed) {
+          const res = await simsApi.quickSearchVMs(trimmed, limit, cursor);
+          setVms(res.items || []);
+          setHasMore(res.hasMore);
+          setNextCursor(res.nextCursor);
+        } else {
+          const res = await simsApi.listVMs({ limit, cursor });
+          setVms(res.items || []);
+          setHasMore(res.pagination.has_more);
+          setNextCursor(res.pagination.next_cursor);
+        }
+        setApplications([]);
+      } catch (error) {
+        console.error("Failed to load compute data", error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [limit, debouncedSearch, powerState]
+  );
 
   useEffect(() => {
     loadData(currentCursor);
@@ -61,9 +116,33 @@ export default function ComputePage() {
 
   const handleLimitChange = (newLimit: number) => {
     setLimit(newLimit);
-    setCursorHistory([]);
-    setCurrentCursor(undefined);
   };
+
+  const filterControl = (
+    <div className="flex items-center gap-2">
+      <select
+        value={powerState}
+        onChange={(e) => setPowerState(e.target.value)}
+        className="h-9 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-700"
+      >
+        <option value="all">All Power States</option>
+        <option value="poweredOn">Powered On</option>
+        <option value="poweredOff">Powered Off</option>
+        <option value="suspended">Suspended</option>
+      </select>
+      {(searchTerm || powerState !== "all") && (
+        <button
+          onClick={() => {
+            setSearchTerm("");
+            setPowerState("all");
+          }}
+          className="text-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted"
+        >
+          Reset
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -113,7 +192,7 @@ export default function ComputePage() {
         </TabsList>
 
         <TabsContent value="vms" className="mt-4">
-          {loading ? (
+          {loading && vms.length === 0 ? (
             <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
               <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
               <span className="text-sm">Loading virtual machines...</span>
@@ -122,8 +201,10 @@ export default function ComputePage() {
             <DataTable
               columns={vmColumns}
               data={vms}
-              searchColumn="name"
-              searchPlaceholder="Filter virtual machines by name..."
+              searchPlaceholder="Search VMs by name, IP, moref, UUID..."
+              searchValue={searchTerm}
+              onSearchChange={setSearchTerm}
+              filterComponent={filterControl}
               onRowClick={(row) => setSelectedVMId(row.id)}
               pagination={{
                 hasMore,
@@ -135,12 +216,24 @@ export default function ComputePage() {
               }}
             />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {vms.map((vm) => (
-                <div key={vm.id} onClick={() => setSelectedVMId(vm.id)} className="cursor-pointer">
-                  <VmCard vm={vm} />
-                </div>
-              ))}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-800 bg-[#0c0c0c] gap-3">
+                <input
+                  type="text"
+                  placeholder="Search VMs by name, IP, moref, UUID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-sm flex-1 bg-zinc-900/60 border border-zinc-800 rounded-md px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-700"
+                />
+                {filterControl}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {vms.map((vm) => (
+                  <div key={vm.id} onClick={() => setSelectedVMId(vm.id)} className="cursor-pointer">
+                    <VmCard vm={vm} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </TabsContent>

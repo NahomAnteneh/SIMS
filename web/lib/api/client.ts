@@ -6,6 +6,7 @@ import {
   UpdateUserRequest,
   ListVMsResponse,
   VMDetailResponse,
+  SearchVMsRequest,
   SearchVMsResponse,
   VMFacetsResponse,
   TagMetadataItem,
@@ -226,6 +227,13 @@ export const simsApi = {
     return request<SearchVMsResponse>(`/v1/search/vms?${sp.toString()}`);
   },
 
+  async searchVMs(payload: SearchVMsRequest): Promise<SearchVMsResponse> {
+    return request<SearchVMsResponse>("/v1/vms/search", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   async getVMFacets(fields?: string, limit?: number): Promise<VMFacetsResponse> {
     const sp = new URLSearchParams();
     if (fields) sp.set("fields", fields);
@@ -306,10 +314,15 @@ export const simsApi = {
 
   async listTopologyVMs(
     type: "datacenter" | "cluster" | "host" | "datastore" | "network" | "folder",
-    id: string
+    id: string,
+    params?: { limit?: number; cursor?: string }
   ): Promise<ListVMsResponse> {
     const plural = type === "folder" ? "folders" : `${type}s`;
-    return request<ListVMsResponse>(`/v1/${plural}/${id}/vms`);
+    const sp = new URLSearchParams();
+    if (params?.limit) sp.set("limit", params.limit.toString());
+    if (params?.cursor) sp.set("cursor", params.cursor);
+    const qs = sp.toString();
+    return request<ListVMsResponse>(`/v1/${plural}/${id}/vms${qs ? `?${qs}` : ""}`);
   },
 
   // vCenter Management
@@ -403,8 +416,11 @@ export const simsApi = {
     });
   },
 
-  async listAuditEvents(): Promise<AuditEventItem[]> {
-    const res = await request<AuditEventListResponse>("/v1/audit-events");
+  async listAuditEvents(params?: { limit?: number }): Promise<AuditEventItem[]> {
+    const sp = new URLSearchParams();
+    if (params?.limit) sp.set("limit", params.limit.toString());
+    const qs = sp.toString();
+    const res = await request<AuditEventListResponse>(`/v1/audit-events${qs ? `?${qs}` : ""}`);
     return res.items || [];
   },
 };

@@ -99,6 +99,22 @@ export interface VMDetailResponse extends VMListItem {
   custom_attributes: CustomAttributeItem[];
 }
 
+export interface SearchFilter {
+  op: string;
+  field?: string;
+  value?: any;
+  values?: any[];
+  operands?: SearchFilter[];
+  operand?: SearchFilter;
+}
+
+export interface SearchVMsRequest {
+  filter?: SearchFilter;
+  sort?: { field: string; direction: "asc" | "desc" };
+  limit?: number;
+  cursor?: string;
+}
+
 export interface SearchVMsResponse {
   items: VMListItem[];
   nextCursor?: string;

@@ -15,25 +15,80 @@ export default function VmsPage() {
   const [vms, setVms] = useState<VirtualMachine[]>([]);
   const [loading, setLoading] = useState(true);
   const [limit, setLimit] = useState(20);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [powerState, setPowerState] = useState<string>("all");
+
   const [currentCursor, setCurrentCursor] = useState<string | undefined>(undefined);
   const [cursorHistory, setCursorHistory] = useState<(string | undefined)[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [selectedVMId, setSelectedVMId] = useState<string | null>(null);
 
-  const loadData = useCallback(async (cursor?: string) => {
-    setLoading(true);
-    try {
-      const res = await simsApi.listVMs({ limit, cursor });
-      setVms(res.items || []);
-      setHasMore(res.pagination.has_more);
-      setNextCursor(res.pagination.next_cursor);
-    } catch (err) {
-      console.error("Failed to load virtual machines", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [limit]);
+  // Debounce search term changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Reset pagination on filter / search changes
+  useEffect(() => {
+    setCurrentCursor(undefined);
+    setCursorHistory([]);
+  }, [debouncedSearch, powerState, limit]);
+
+  const loadData = useCallback(
+    async (cursor?: string) => {
+      setLoading(true);
+      try {
+        const trimmed = debouncedSearch.trim();
+        const hasPower = powerState !== "all";
+
+        if (hasPower && trimmed) {
+          const res = await simsApi.searchVMs({
+            filter: {
+              op: "AND",
+              operands: [
+                { op: "EQ", field: "power_state", value: powerState },
+                { op: "CONTAINS", field: "name", value: trimmed },
+              ],
+            },
+            limit,
+            cursor,
+          });
+          setVms(res.items || []);
+          setHasMore(res.hasMore);
+          setNextCursor(res.nextCursor);
+        } else if (hasPower) {
+          const res = await simsApi.searchVMs({
+            filter: { op: "EQ", field: "power_state", value: powerState },
+            limit,
+            cursor,
+          });
+          setVms(res.items || []);
+          setHasMore(res.hasMore);
+          setNextCursor(res.nextCursor);
+        } else if (trimmed) {
+          const res = await simsApi.quickSearchVMs(trimmed, limit, cursor);
+          setVms(res.items || []);
+          setHasMore(res.hasMore);
+          setNextCursor(res.nextCursor);
+        } else {
+          const res = await simsApi.listVMs({ limit, cursor });
+          setVms(res.items || []);
+          setHasMore(res.pagination.has_more);
+          setNextCursor(res.pagination.next_cursor);
+        }
+      } catch (err) {
+        console.error("Failed to load virtual machines", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [limit, debouncedSearch, powerState]
+  );
 
   useEffect(() => {
     loadData(currentCursor);
@@ -54,9 +109,33 @@ export default function VmsPage() {
 
   const handleLimitChange = (newLimit: number) => {
     setLimit(newLimit);
-    setCursorHistory([]);
-    setCurrentCursor(undefined);
   };
+
+  const filterControl = (
+    <div className="flex items-center gap-2">
+      <select
+        value={powerState}
+        onChange={(e) => setPowerState(e.target.value)}
+        className="h-9 rounded-md border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-700"
+      >
+        <option value="all">All Power States</option>
+        <option value="poweredOn">Powered On</option>
+        <option value="poweredOff">Powered Off</option>
+        <option value="suspended">Suspended</option>
+      </select>
+      {(searchTerm || powerState !== "all") && (
+        <button
+          onClick={() => {
+            setSearchTerm("");
+            setPowerState("all");
+          }}
+          className="text-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted"
+        >
+          Reset
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -121,8 +200,10 @@ export default function VmsPage() {
         <DataTable
           columns={vmColumns}
           data={vms}
-          searchColumn="name"
-          searchPlaceholder="Filter virtual machines by name..."
+          searchPlaceholder="Search VMs by name, IP, moref, UUID..."
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          filterComponent={filterControl}
           onRowClick={(row) => setSelectedVMId(row.id)}
           pagination={{
             hasMore,
@@ -134,10 +215,22 @@ export default function VmsPage() {
           }}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {vms.map((vm) => (
-            <VmCard key={vm.id} vm={vm} onClick={() => setSelectedVMId(vm.id)} />
-          ))}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-800 bg-[#0c0c0c] gap-3">
+            <input
+              type="text"
+              placeholder="Search VMs by name, IP, moref, UUID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm flex-1 bg-zinc-900/60 border border-zinc-800 rounded-md px-3 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-700"
+            />
+            {filterControl}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {vms.map((vm) => (
+              <VmCard key={vm.id} vm={vm} onClick={() => setSelectedVMId(vm.id)} />
+            ))}
+          </div>
         </div>
       )}
 
