@@ -77,6 +77,10 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		}
 		snap.DatacenterIDByMoRef[moref] = id
 		datacenterUUIDByMoRef[moref] = id
+		dc.ID = id
+		snap.Datacenters[moref] = dc
+		snap.ByMoRef[moref] = dc
+		snap.ByID[id] = dc
 	}
 
 	// Map all entity datacenter MoRefs to actual DB Datacenter UUIDs
@@ -154,6 +158,10 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		}
 		snap.FolderIDByMoRef[moref] = id
 		snap.FolderPathByMoRef[moref] = path
+		f.ID = id
+		snap.Folders[moref] = f
+		snap.ByMoRef[moref] = f
+		snap.ByID[id] = f
 	}
 
 	// 2. Datastores
@@ -176,7 +184,15 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert datastore %s: %w", moref, err)
 		}
+		ds.ID = id
+		snap.Datastores[moref] = ds
+		snap.ByMoRef[moref] = ds
 		snap.DatastoreIDByMoRef[moref] = id
+		snap.ByID[id] = ds
+		if ds.Name != "" {
+			snap.DatastoreByName[ds.Name] = ds
+			snap.DatastoreIDByName[ds.Name] = id
+		}
 	}
 
 	// 3. Distributed Switches
@@ -228,8 +244,13 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert portgroup %s: %w", moref, err)
 		}
+		pg.ID = id
+		snap.Portgroups[moref] = pg
+		snap.ByMoRef[moref] = pg
 		snap.PortgroupIDByMoRef[moref] = id
+		snap.ByID[id] = pg
 		if pg.Name != "" {
+			snap.PortgroupByName[pg.Name] = pg
 			snap.PortgroupIDByName[pg.Name] = id
 		}
 	}
@@ -263,8 +284,13 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert network %s: %w", moref, err)
 		}
+		netNode.ID = id
+		snap.Networks[moref] = netNode
+		snap.ByMoRef[moref] = netNode
 		snap.NetworkIDByMoRef[moref] = id
+		snap.ByID[id] = netNode
 		if netNode.Name != "" {
+			snap.NetworkByName[netNode.Name] = netNode
 			snap.NetworkIDByName[netNode.Name] = id
 		}
 	}
@@ -286,7 +312,11 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert cluster %s: %w", moref, err)
 		}
+		cl.ID = id
+		snap.Clusters[moref] = cl
+		snap.ByMoRef[moref] = cl
 		snap.ClusterIDByMoRef[moref] = id
+		snap.ByID[id] = cl
 	}
 
 	// 7. Hosts
@@ -310,7 +340,11 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert host %s: %w", moref, err)
 		}
+		h.ID = id
+		snap.Hosts[moref] = h
+		snap.ByMoRef[moref] = h
 		snap.HostIDByMoRef[moref] = id
+		snap.ByID[id] = h
 		if clusterUUID != nil {
 			snap.ClusterIDByMoRef[moref] = *clusterUUID
 		}

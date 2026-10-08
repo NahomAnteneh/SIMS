@@ -236,6 +236,8 @@ func (a *IncrementalApplier) parseChangeSetToMask(vcenterID, moref string, chang
 	a.mu.RUnlock()
 
 	var mask VMFieldMask
+	var rawGuestNet any
+	var rawHardwareDevices any
 
 	for _, c := range changes {
 		switch c.Name {
@@ -342,12 +344,10 @@ func (a *IncrementalApplier) parseChangeSetToMask(vcenterID, moref string, chang
 			}
 
 		case "guest.net":
-			mask.NetworkInterfaces = a.parseGuestNet(c.Val, snap)
+			rawGuestNet = c.Val
 
 		case "config.hardware.device", "config.hardware":
-			if devNICs := a.parseHardwareDevices(c.Val, snap); len(devNICs) > 0 {
-				mask.NetworkInterfaces = devNICs
-			}
+			rawHardwareDevices = c.Val
 			if mask.ProvisionedStorageBytes == nil {
 				if capBytes := a.calculateDiskCapacity(c.Val); capBytes > 0 {
 					mask.ProvisionedStorageBytes = &capBytes
@@ -376,6 +376,42 @@ func (a *IncrementalApplier) parseChangeSetToMask(vcenterID, moref string, chang
 			if ref, ok := c.Val.(types.ManagedObjectReference); ok && snap != nil {
 				a.resolveHost(ref.Value, snap, &mask)
 			}
+		}
+	}
+
+	if rawHardwareDevices != nil && rawGuestNet != nil {
+		devNICs := a.parseHardwareDevices(rawHardwareDevices, snap)
+		gNICs := a.parseGuestNet(rawGuestNet, snap)
+		if len(devNICs) > 0 {
+			guestIPByMAC := make(map[string][]string)
+			for _, g := range gNICs {
+				if g.IPAddress != "" {
+					guestIPByMAC[g.MacAddress] = append(guestIPByMAC[g.MacAddress], g.IPAddress)
+				}
+			}
+			var enriched []domain.NetworkInterfaceRecord
+			for _, d := range devNICs {
+				if ips, ok := guestIPByMAC[d.MacAddress]; ok && len(ips) > 0 {
+					for _, ip := range ips {
+						rec := d
+						rec.IPAddress = ip
+						enriched = append(enriched, rec)
+					}
+				} else {
+					enriched = append(enriched, d)
+				}
+			}
+			mask.NetworkInterfaces = enriched
+		} else if len(gNICs) > 0 {
+			mask.NetworkInterfaces = gNICs
+		}
+	} else if rawHardwareDevices != nil {
+		if devNICs := a.parseHardwareDevices(rawHardwareDevices, snap); len(devNICs) > 0 {
+			mask.NetworkInterfaces = devNICs
+		}
+	} else if rawGuestNet != nil {
+		if gNICs := a.parseGuestNet(rawGuestNet, snap); len(gNICs) > 0 {
+			mask.NetworkInterfaces = gNICs
 		}
 	}
 

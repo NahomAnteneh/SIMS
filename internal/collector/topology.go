@@ -46,6 +46,8 @@ type TopologySnapshot struct {
 
 	// Fast ID resolutions for VM normalization
 	DatastoreIDByMoRef  map[string]string
+	DatastoreByName     map[string]TopologyNode
+	DatastoreIDByName   map[string]string
 	NetworkIDByMoRef    map[string]string
 	PortgroupIDByMoRef  map[string]string
 	NetworkIDByName     map[string]string
@@ -77,6 +79,8 @@ func NewEmptySnapshot(vcenterID string) *TopologySnapshot {
 		Clusters:             make(map[string]TopologyNode),
 		DatastoreInfoByMoRef: make(map[string]DatastoreInfo),
 		DatastoreIDByMoRef:   make(map[string]string),
+		DatastoreByName:      make(map[string]TopologyNode),
+		DatastoreIDByName:    make(map[string]string),
 		NetworkIDByMoRef:     make(map[string]string),
 		PortgroupIDByMoRef:   make(map[string]string),
 		NetworkIDByName:      make(map[string]string),

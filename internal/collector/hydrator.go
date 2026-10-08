@@ -149,6 +149,7 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 			node := snap.Datastores[mRef]
 			if ds.Name != "" {
 				node.Name = ds.Name
+				snap.DatastoreByName[ds.Name] = node
 			}
 			snap.Datastores[mRef] = node
 			snap.ByMoRef[mRef] = node
