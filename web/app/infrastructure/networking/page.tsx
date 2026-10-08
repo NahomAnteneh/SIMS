@@ -23,14 +23,33 @@ export default function NetworkingPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const rawNets = await simsApi.listNetworks();
+        const [rawNets, rawDcs, rawVCenters] = await Promise.all([
+          simsApi.listNetworks(),
+          simsApi.listDatacenters(),
+          simsApi.listVCenters().catch(() => []),
+        ]);
+
+        const dcMap: Record<string, string> = {};
+        for (const dc of rawDcs) {
+          dcMap[dc.id] = dc.name;
+        }
+
+        const vcenterMap: Record<string, string> = {};
+        for (const vc of rawVCenters) {
+          vcenterMap[vc.id] = vc.name;
+        }
+
         const mapped: NetworkItem[] = rawNets.map((net) => ({
           id: net.id,
-          name: net.name,
+          name: net.name || "Default Network",
+          moref: net.moref || "",
+          vcenterId: net.vcenter_id || "",
+          vcenterName: vcenterMap[net.vcenter_id] || "Primary vCenter",
           datacenterId: net.datacenter_id || "",
-          type: net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed") ? "Distributed" : "Standard",
-          vlanId: 0,
-          subnet: "VLAN Default",
+          datacenterName: (net.datacenter_id ? dcMap[net.datacenter_id] : "") || "Datacenter",
+          type: net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed")
+            ? "Distributed Virtual Portgroup"
+            : "Standard Network",
           status: "active",
         }));
         setNetworks(mapped);
@@ -45,20 +64,22 @@ export default function NetworkingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100">Networking</h1>
-          <p className="text-sm text-zinc-500 mt-1">
-            Manage virtual switches, port groups, VLANs, and subnets.
-          </p>
+          <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
+            Networks & Port Groups
+            <span className="text-xs font-mono font-normal text-zinc-500">
+              ({networks.length} networks)
+            </span>
+          </h1>
         </div>
 
         {/* View Toggle */}
-        <div className="flex items-center rounded-none border border-zinc-800 bg-zinc-900/50 p-0.5">
+        <div className="flex items-center rounded-none border border-zinc-800 bg-zinc-900/50 p-1">
           <button
             type="button"
             onClick={() => setView("table")}
-            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-none transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-none transition-colors ${
               view === "table"
                 ? "bg-zinc-800 text-zinc-100 shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"
@@ -70,7 +91,7 @@ export default function NetworkingPage() {
           <button
             type="button"
             onClick={() => setView("card")}
-            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-none transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-none transition-colors ${
               view === "card"
                 ? "bg-zinc-800 text-zinc-100 shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"
@@ -98,7 +119,11 @@ export default function NetworkingPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {networks.map((net) => (
-            <NetworkCard key={net.id} network={net} onClick={() => handleSelectNetwork(net)} />
+            <NetworkCard
+              key={net.id}
+              network={net}
+              onClick={() => handleSelectNetwork(net)}
+            />
           ))}
         </div>
       )}

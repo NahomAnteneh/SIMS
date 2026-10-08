@@ -19,24 +19,48 @@ export default function DatacentersPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const [datacenters, clusters, hosts, facetsRes] = await Promise.all([
+        const [rawDcs, rawClusters, rawHosts, rawDss, rawNets, rawVCenters, facetsRes] = await Promise.all([
           simsApi.listDatacenters(),
           simsApi.listClusters(),
           simsApi.listHosts(),
+          simsApi.listDatastores(),
+          simsApi.listNetworks(),
+          simsApi.listVCenters().catch(() => []),
           simsApi.getVMFacets("datacenter").catch(() => null),
         ]);
 
+        const vcenterMap: Record<string, string> = {};
+        for (const vc of rawVCenters) {
+          vcenterMap[vc.id] = vc.name;
+        }
+
         const clusterCountByDc: Record<string, number> = {};
-        for (const cl of clusters) {
+        for (const cl of rawClusters) {
           if (cl.datacenter_id) {
             clusterCountByDc[cl.datacenter_id] = (clusterCountByDc[cl.datacenter_id] || 0) + 1;
           }
         }
 
         const hostCountByDc: Record<string, number> = {};
-        for (const h of hosts) {
+        for (const h of rawHosts) {
           if (h.datacenter_id) {
             hostCountByDc[h.datacenter_id] = (hostCountByDc[h.datacenter_id] || 0) + 1;
+          }
+        }
+
+        const datastoreCountByDc: Record<string, number> = {};
+        const storageBytesByDc: Record<string, number> = {};
+        for (const ds of rawDss) {
+          if (ds.datacenter_id) {
+            datastoreCountByDc[ds.datacenter_id] = (datastoreCountByDc[ds.datacenter_id] || 0) + 1;
+            storageBytesByDc[ds.datacenter_id] = (storageBytesByDc[ds.datacenter_id] || 0) + (ds.capacity_bytes || 0);
+          }
+        }
+
+        const networkCountByDc: Record<string, number> = {};
+        for (const net of rawNets) {
+          if (net.datacenter_id) {
+            networkCountByDc[net.datacenter_id] = (networkCountByDc[net.datacenter_id] || 0) + 1;
           }
         }
 
@@ -47,27 +71,19 @@ export default function DatacentersPage() {
           }
         }
 
-        const mapped: Datacenter[] = datacenters.map((dc) => ({
+        const mapped: Datacenter[] = rawDcs.map((dc) => ({
           id: dc.id,
           name: dc.name,
-          displayName: dc.name,
-          location: "On-Premises",
-          country: "vSphere",
-          siteCode: dc.moref || dc.id.slice(0, 5).toUpperCase(),
-          environment: "production",
-          status: "healthy",
-          vcenterCount: 1,
+          moref: dc.moref || "",
+          vcenterId: dc.vcenter_id || "",
+          vcenterName: vcenterMap[dc.vcenter_id] || "Primary vCenter",
           clusterCount: clusterCountByDc[dc.id] || 0,
           hostCount: hostCountByDc[dc.id] || 0,
           vmCount: vmCountByDc[dc.name] || 0,
-          applicationCount: 0,
-          clientCount: 1,
-          totalCpuGHz: 0,
-          usedCpuGHz: 0,
-          totalMemoryGB: 0,
-          usedMemoryGB: 0,
-          totalStorageTB: 0,
-          usedStorageTB: 0,
+          datastoreCount: datastoreCountByDc[dc.id] || 0,
+          totalStorageBytes: storageBytesByDc[dc.id] || 0,
+          networkCount: networkCountByDc[dc.id] || 0,
+          status: "healthy",
         }));
 
         setDatacenters(mapped);
@@ -142,7 +158,7 @@ export default function DatacentersPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {datacenters.map((dc) => (
             <DatacenterCard
-              key={dc.id || dc.siteCode}
+              key={dc.id}
               datacenter={dc}
               onClick={() => handleSelectDatacenter(dc)}
             />

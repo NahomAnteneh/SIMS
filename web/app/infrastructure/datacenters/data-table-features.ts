@@ -1,34 +1,6 @@
-import {
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_includesString,
-  rowPaginationFeature,
-  rowSelectionFeature,
-  rowSortingFeature,
-  sortFn_alphanumeric,
-  sortFn_text,
-  tableFeatures,
-} from "@tanstack/react-table"
-
-// New in v9: declare the features this table uses — anything you don't
-// register is tree-shaken out of the bundle.
-export const features = tableFeatures({
-  columnFilteringFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-  rowSelectionFeature,
-  rowSortingFeature,
-  filteredRowModel: createFilteredRowModel(),
-  paginatedRowModel: createPaginatedRowModel(),
-  sortedRowModel: createSortedRowModel(),
-  filterFns: { includesString: filterFn_includesString },
-  sortFns: { alphanumeric: sortFn_alphanumeric, text: sortFn_text },
-})
-
-export type DataTableFeatures = typeof features;
-
-export type ColumnFiltersState = Array<{ id: string; value: unknown }>;
-export type ColumnVisibilityState = Record<string, boolean>;
+export {
+  features,
+  type DataTableFeatures,
+  type ColumnFiltersState,
+  type ColumnVisibilityState,
+} from "@/components/ui/data-table-features";

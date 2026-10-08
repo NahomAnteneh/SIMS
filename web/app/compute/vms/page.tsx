@@ -456,7 +456,7 @@ function VmsContent() {
             loadingAll,
             entityName: "virtual machines",
           }}
-          tableContainerClassName="max-h-[calc(100vh-230px)] min-h-[420px]"
+          tableContainerClassName="max-h-[calc(100vh-250px)] min-h-[360px]"
         />
       ) : (
         <div className="space-y-4">

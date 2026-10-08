@@ -20,28 +20,52 @@ export default function HostsPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const rawHosts = await simsApi.listHosts();
+        const [rawHosts, rawClusters, rawDcs, rawVCenters, facetsRes] = await Promise.all([
+          simsApi.listHosts(),
+          simsApi.listClusters(),
+          simsApi.listDatacenters(),
+          simsApi.listVCenters().catch(() => []),
+          simsApi.getVMFacets("host").catch(() => null),
+        ]);
+
+        const dcMap: Record<string, string> = {};
+        for (const dc of rawDcs) {
+          dcMap[dc.id] = dc.name;
+        }
+
+        const vcenterMap: Record<string, string> = {};
+        for (const vc of rawVCenters) {
+          vcenterMap[vc.id] = vc.name;
+        }
+
+        const clusterNameMap: Record<string, string> = {};
+        for (const cl of rawClusters) {
+          clusterNameMap[cl.id] = cl.name;
+        }
+
+        const vmCountByHost: Record<string, number> = {};
+        if (facetsRes && facetsRes.facets) {
+          for (const b of facetsRes.facets.host || []) {
+            vmCountByHost[b.value] = b.count;
+          }
+        }
+
         const mappedHosts: Host[] = rawHosts.map((h) => ({
           id: h.id,
           name: h.name,
-          ip: h.name,
+          moref: h.moref || "",
           vcenterId: h.vcenter_id || "",
+          vcenterName: vcenterMap[h.vcenter_id] || "Primary vCenter",
           clusterId: h.cluster_id || "",
+          clusterName: (h.cluster_id ? clusterNameMap[h.cluster_id] : "") || "Standalone",
           datacenterId: h.datacenter_id || "",
-          version: "ESXi 8.0",
-          model: "ESXi Hypervisor",
-          manufacturer: "VMware",
-          cpuModel: "x86_64",
-          physicalCores: 32,
-          logicalProcessors: 64,
-          cpuGHz: 2.8,
-          memoryGB: 256,
-          cpuUsagePercent: 0,
-          memoryUsagePercent: 0,
-          vmCount: 0,
+          datacenterName: (h.datacenter_id ? dcMap[h.datacenter_id] : "") || "Datacenter",
+          vmCount: vmCountByHost[h.name] || 0,
           status: h.connection_state === "connected" ? "connected" : "disconnected",
-          uptimeDays: 30,
+          powerState: h.power_state || "poweredOn",
+          connectionState: h.connection_state || "connected",
         }));
+
         setHosts(mappedHosts);
       } catch (err) {
         console.error("Failed to load ESXi hosts", err);

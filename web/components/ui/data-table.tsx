@@ -113,8 +113,7 @@ export function DataTable<TData extends RowData>({
         }
       },
       {
-        root: viewportRef.current,
-        rootMargin: "300px",
+        rootMargin: "350px",
         threshold: 0,
       }
     );
@@ -132,7 +131,7 @@ export function DataTable<TData extends RowData>({
       return;
     }
     const el = e.currentTarget;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 350) {
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 400) {
       pagination.onNext();
     }
   };
@@ -209,7 +208,7 @@ export function DataTable<TData extends RowData>({
         onScroll={handleScroll}
         className={cn(
           "overflow-x-auto overflow-y-auto",
-          tableContainerClassName ?? "max-h-[calc(100vh-230px)] min-h-[400px]"
+          tableContainerClassName ?? "max-h-[calc(100vh-250px)] min-h-[360px]"
         )}
       >
         <Table noContainer>
@@ -265,7 +264,7 @@ export function DataTable<TData extends RowData>({
                 ))}
                 {/* Sentinel row for IntersectionObserver */}
                 {pagination?.hasMore && (
-                  <tr ref={sentinelRef} className="h-1 border-none">
+                  <tr ref={sentinelRef} className="h-4 border-none">
                     <td colSpan={columns.length} className="p-0 border-none" />
                   </tr>
                 )}

@@ -23,15 +23,34 @@ export default function StoragePage() {
     async function loadData() {
       setLoading(true);
       try {
-        const rawDss = await simsApi.listDatastores();
+        const [rawDss, rawDcs, rawVCenters] = await Promise.all([
+          simsApi.listDatastores(),
+          simsApi.listDatacenters(),
+          simsApi.listVCenters().catch(() => []),
+        ]);
+
+        const dcMap: Record<string, string> = {};
+        for (const dc of rawDcs) {
+          dcMap[dc.id] = dc.name;
+        }
+
+        const vcenterMap: Record<string, string> = {};
+        for (const vc of rawVCenters) {
+          vcenterMap[vc.id] = vc.name;
+        }
+
         const mapped: Storage[] = rawDss.map((ds) => {
           const capGB = ds.capacity_bytes ? Math.round(ds.capacity_bytes / (1024 * 1024 * 1024)) : 0;
           const freeGB = ds.free_bytes ? Math.round(ds.free_bytes / (1024 * 1024 * 1024)) : 0;
           const usedGB = Math.max(0, capGB - freeGB);
           return {
             id: ds.id,
-            name: ds.name,
+            name: ds.name || "Unnamed Datastore",
+            moref: ds.moref || "",
+            vcenterId: ds.vcenter_id || "",
+            vcenterName: vcenterMap[ds.vcenter_id] || "Primary vCenter",
             datacenterId: ds.datacenter_id || "",
+            datacenterName: (ds.datacenter_id ? dcMap[ds.datacenter_id] : "") || "Datacenter",
             type: ds.type || "VMFS",
             capacityGB: capGB,
             usedGB: usedGB,

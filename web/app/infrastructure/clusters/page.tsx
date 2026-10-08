@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutList, LayoutGrid } from "lucide-react";
+import { LayoutList, LayoutGrid, Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { clusterColumns, hostColumns, type Cluster, type Host } from "../columns";
 import { DataTable } from "@/components/ui/data-table";
 import { ClusterCard } from "./card";
 import { simsApi } from "@/lib/api/client";
-import { Loader2 } from "lucide-react";
 
 export default function ClustersPage() {
   const router = useRouter();
@@ -30,11 +29,28 @@ export default function ClustersPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const [rawClusters, rawHosts, facetsRes] = await Promise.all([
+        const [rawClusters, rawHosts, rawDcs, rawVCenters, facetsRes] = await Promise.all([
           simsApi.listClusters(),
           simsApi.listHosts(),
-          simsApi.getVMFacets("cluster").catch(() => null),
+          simsApi.listDatacenters(),
+          simsApi.listVCenters().catch(() => []),
+          simsApi.getVMFacets("cluster,host").catch(() => null),
         ]);
+
+        const dcMap: Record<string, string> = {};
+        for (const dc of rawDcs) {
+          dcMap[dc.id] = dc.name;
+        }
+
+        const vcenterMap: Record<string, string> = {};
+        for (const vc of rawVCenters) {
+          vcenterMap[vc.id] = vc.name;
+        }
+
+        const clusterNameMap: Record<string, string> = {};
+        for (const cl of rawClusters) {
+          clusterNameMap[cl.id] = cl.name;
+        }
 
         const hostCountByCluster: Record<string, number> = {};
         for (const h of rawHosts) {
@@ -44,50 +60,45 @@ export default function ClustersPage() {
         }
 
         const vmCountByCluster: Record<string, number> = {};
+        const vmCountByHost: Record<string, number> = {};
         if (facetsRes && facetsRes.facets) {
           for (const b of facetsRes.facets.cluster || []) {
             vmCountByCluster[b.value] = b.count;
+          }
+          for (const b of facetsRes.facets.host || []) {
+            vmCountByHost[b.value] = b.count;
           }
         }
 
         const mappedClusters: Cluster[] = rawClusters.map((cl) => ({
           id: cl.id,
           name: cl.name,
-          vcenterId: cl.vcenter_id,
+          moref: cl.moref || "",
+          vcenterId: cl.vcenter_id || "",
+          vcenterName: vcenterMap[cl.vcenter_id] || "Primary vCenter",
           datacenterId: cl.datacenter_id || "",
+          datacenterName: (cl.datacenter_id ? dcMap[cl.datacenter_id] : "") || "Datacenter",
           haEnabled: true,
           drsEnabled: true,
           status: "healthy",
           hostCount: hostCountByCluster[cl.id] || 0,
           vmCount: vmCountByCluster[cl.name] || 0,
-          totalCpuGHz: 0,
-          usedCpuGHz: 0,
-          totalMemoryGB: 0,
-          usedMemoryGB: 0,
         }));
 
         const mappedHosts: Host[] = rawHosts.map((h) => ({
           id: h.id,
           name: h.name,
-          ip: h.name,
-          vcenterId: h.vcenter_id,
+          moref: h.moref || "",
+          vcenterId: h.vcenter_id || "",
+          vcenterName: vcenterMap[h.vcenter_id] || "Primary vCenter",
           clusterId: h.cluster_id || "",
+          clusterName: (h.cluster_id ? clusterNameMap[h.cluster_id] : "") || "Standalone",
           datacenterId: h.datacenter_id || "",
-          version: "ESXi 8.0",
-          model: "ESXi Hypervisor",
-          manufacturer: "VMware",
-          cpuModel: "x86_64",
-          physicalCores: 32,
-          logicalProcessors: 64,
-          cpuGHz: 2.8,
-          memoryGB: 256,
-          cpuUsagePercent: 0,
-          memoryUsagePercent: 0,
-          vmCount: 0,
-          status: h.connection_state === "connected" ? "healthy" : "warning",
-          powerState: (h.power_state as any) || "poweredOn",
-          connectionState: (h.connection_state as any) || "connected",
-          uptimeDays: 30,
+          datacenterName: (h.datacenter_id ? dcMap[h.datacenter_id] : "") || "Datacenter",
+          vmCount: vmCountByHost[h.name] || 0,
+          status: h.connection_state === "connected" ? "connected" : "disconnected",
+          powerState: h.power_state || "poweredOn",
+          connectionState: h.connection_state || "connected",
         }));
 
         setClusters(mappedClusters);

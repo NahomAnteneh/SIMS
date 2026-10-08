@@ -1,5 +1,5 @@
 import React from "react";
-import { Server } from "lucide-react";
+import { Server, Layers, Cpu, HardDrive, Network, Monitor } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -7,133 +7,109 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-
-export interface DatacenterCardData {
-  id: string;
-  name: string;
-  displayName: string;
-  location: string;
-  country: string;
-  siteCode: string;
-  environment: string;
-  status: "healthy" | "warning" | "critical" | string;
-  vcenterCount: number;
-  clusterCount: number;
-  hostCount: number;
-  vmCount: number;
-  applicationCount: number;
-  clientCount: number;
-  totalCpuGHz: number;
-  usedCpuGHz: number;
-  totalMemoryGB: number;
-  usedMemoryGB: number;
-  totalStorageTB: number;
-  usedStorageTB: number;
-  lastSync?: string;
-}
+import { type Datacenter } from "./columns";
 
 interface DatacenterCardProps {
-  datacenter?: DatacenterCardData;
+  datacenter: Datacenter;
   onClick?: () => void;
 }
 
-const sampleData: DatacenterCardData = {
-  id: "dc-001",
-  name: "DC-Addis-01",
-  displayName: "Addis Ababa Primary Data Center",
-  location: "Addis Ababa, Ethiopia",
-  country: "Ethiopia",
-  siteCode: "ADD01",
-  environment: "production",
-  status: "healthy",
-  vcenterCount: 2,
-  clusterCount: 4,
-  hostCount: 12,
-  vmCount: 96,
-  applicationCount: 18,
-  clientCount: 8,
-  totalCpuGHz: 1536,
-  usedCpuGHz: 712,
-  totalMemoryGB: 6144,
-  usedMemoryGB: 3980,
-  totalStorageTB: 240,
-  usedStorageTB: 156,
-  lastSync: "10 SEP, 2026",
-};
-
 export const DatacenterCard: React.FC<DatacenterCardProps> = ({
-  datacenter = sampleData,
+  datacenter,
   onClick,
 }) => {
+  const isHealthy = datacenter.status === "healthy" || datacenter.status === "connected";
+  const storageTB = datacenter.totalStorageBytes
+    ? (datacenter.totalStorageBytes / (1024 * 1024 * 1024 * 1024)).toFixed(1)
+    : null;
+
   return (
     <Card
       onClick={onClick}
-      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg max-w-sm transition-all ${
+      className={`bg-[#0a0a0a] border border-zinc-800/80 text-[#e6e4e0] rounded-none p-0 overflow-hidden font-sans shadow-lg transition-all ${
         onClick ? "hover:border-yellow-600/50 hover:bg-zinc-900/30 cursor-pointer" : ""
       }`}
     >
       {/* Top Header Row */}
-      <CardHeader className="p-5 pb-4 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-lg font-bold tracking-tight text-white">
-          #{datacenter.siteCode}
-        </CardTitle>
+      <CardHeader className="p-4 pb-3 border-b border-zinc-800/80 flex-row items-center justify-between space-y-0">
+        <div className="flex items-center gap-2">
+          <Server className="h-4 w-4 text-yellow-500" />
+          <CardTitle className="text-base font-bold tracking-tight text-white">
+            {datacenter.name}
+          </CardTitle>
+        </div>
 
-        {/* Minimal Connection / Server Marker */}
-        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-400">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-none border border-zinc-500" />
-            <div className="w-7 h-[1px] bg-zinc-700" />
-            <span className="w-2 h-2 rounded-none bg-zinc-100" />
-          </div>
-          <Server className="h-4 w-4 ml-1 text-zinc-300" />
-          <span>{datacenter.hostCount} Hosts</span>
+        <div className="text-xs text-zinc-500 font-mono">
+          #{datacenter.moref || datacenter.id.slice(0, 8)}
         </div>
       </CardHeader>
 
       {/* Main Plain-Text Key-Value Rows */}
-      <CardContent className="p-5 space-y-4 text-sm">
-        {/* Datacenter Row */}
+      <CardContent className="p-4 space-y-3 text-sm">
+        {/* vCenter Row */}
         <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Datacenter</span>
-          <span className="font-semibold text-zinc-200 text-base">
-            {datacenter.displayName}
+          <span className="text-zinc-500 font-normal">vCenter</span>
+          <span className="font-medium text-zinc-200 text-xs truncate max-w-[200px]">
+            {datacenter.vcenterName}
           </span>
         </div>
 
-        {/* Location Row */}
+        {/* Compute (Clusters / Hosts) */}
         <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Location</span>
+          <span className="text-zinc-500 font-normal flex items-center gap-1">
+            <Layers className="h-3.5 w-3.5 text-zinc-400" /> Compute
+          </span>
+          <span className="font-semibold text-zinc-200">
+            {datacenter.clusterCount} Clusters • {datacenter.hostCount} Hosts
+          </span>
+        </div>
+
+        {/* Workloads (VMs) */}
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500 font-normal flex items-center gap-1">
+            <Monitor className="h-3.5 w-3.5 text-zinc-400" /> Workloads
+          </span>
+          <span className="font-semibold text-zinc-100">
+            {datacenter.vmCount} Virtual Machines
+          </span>
+        </div>
+
+        {/* Storage */}
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500 font-normal flex items-center gap-1">
+            <HardDrive className="h-3.5 w-3.5 text-zinc-400" /> Storage Pools
+          </span>
           <span className="font-medium text-zinc-300">
-            {datacenter.location}
+            {datacenter.datastoreCount} Datastores {storageTB ? `(${storageTB} TB)` : ""}
           </span>
         </div>
 
-        {/* Capacity / Footprint Row */}
+        {/* Networks */}
         <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Workloads</span>
-          <span className="font-semibold text-zinc-200 text-base">
-            {datacenter.vmCount} VMs, {datacenter.applicationCount} Apps
+          <span className="text-zinc-500 font-normal flex items-center gap-1">
+            <Network className="h-3.5 w-3.5 text-zinc-400" /> Networks
           </span>
-        </div>
-
-        {/* Resource Allocation Row */}
-        <div className="flex items-center justify-between">
-          <span className="text-zinc-500 font-normal">Storage</span>
-          <span className="font-semibold text-zinc-200 text-base">
-            {datacenter.usedStorageTB} / {datacenter.totalStorageTB} TB
+          <span className="font-medium text-zinc-300">
+            {datacenter.networkCount} Port Groups
           </span>
         </div>
       </CardContent>
 
       {/* Footer Row */}
-      <CardFooter className="p-5 pt-2 flex items-center justify-between text-xs">
-        <div className="text-zinc-400 font-medium tracking-wide">
-          SYNC - <span className="text-zinc-200 font-semibold">{datacenter.lastSync}</span>
-        </div>
+      <CardFooter className="p-4 pt-2 border-t border-zinc-800/60 flex items-center justify-between text-xs">
+        <span className="text-zinc-500 font-mono text-[11px]">
+          ID: {datacenter.id.slice(0, 8)}...
+        </span>
 
         {/* Subtle Dark Pill Status */}
-        <div className="inline-flex items-center gap-2 px-2 py-0.5 rounded-none text-emerald-400 text-xs font-mono font-medium bg-emerald-400/10 border border-emerald-500/30">
-          <span className="w-2 h-2 rounded-none bg-emerald-400" />
+        <div
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-none text-xs font-mono font-medium border ${
+            isHealthy
+              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+              : "bg-amber-500/10 text-amber-400 border-amber-500/30"
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 ${isHealthy ? "bg-emerald-400" : "bg-amber-400"}`} />
           <span className="capitalize">{datacenter.status}</span>
         </div>
       </CardFooter>
