@@ -106,7 +106,8 @@ services:
       - "3000:3000"
     environment:
       PORT: "3000"
-      NEXT_PUBLIC_QUERY_API_URL: "http://localhost:8080"
+      INTERNAL_QUERY_API_URL: "http://query-api:8080"
+      QUERY_API_URL: "http://query-api:8080"
     depends_on:
       - query-api
 

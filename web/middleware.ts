@@ -28,8 +28,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // If visiting / or /dashboard, redirect to /compute/vms
-  if (pathname === "/" || pathname === "/dashboard") {
+  // If visiting /, redirect to /compute/vms
+  if (pathname === "/") {
     return NextResponse.redirect(new URL("/compute/vms", request.url));
   }
 
