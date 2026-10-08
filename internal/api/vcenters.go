@@ -21,6 +21,7 @@ import (
 
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/auth"
+	"github.com/infrastructure/sims/internal/credentials"
 	"github.com/infrastructure/sims/internal/vsphere"
 )
 
@@ -417,7 +418,12 @@ func (h *Handler) handleCreateVCenter(w http.ResponseWriter, r *http.Request) {
 		"pinned_fingerprint": req.TLS.PinnedFingerprint,
 	})
 
-	credRef := fmt.Sprintf("ref://sims-vault/%s", uuid.NewString())
+	credRef, err := credentials.Encrypt(req.Username, req.Password)
+	if err != nil {
+		h.logger.Error("failed to encrypt vCenter credentials", slog.String("error", err.Error()))
+		h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "Failed to secure credentials", "internal_error")
+		return
+	}
 
 	var instUUID pgtype.Text
 	if valResult.InstanceUUID != "" {
@@ -615,7 +621,13 @@ func (h *Handler) handleUpdateVCenter(w http.ResponseWriter, r *http.Request) {
 
 	credRef := existing.CredentialRef
 	if req.Username != nil && req.Password != nil && *req.Password != "" {
-		credRef = fmt.Sprintf("ref://sims-vault/%s", uuid.NewString())
+		newRef, err := credentials.Encrypt(*req.Username, *req.Password)
+		if err != nil {
+			h.logger.Error("failed to encrypt updated vCenter credentials", slog.String("error", err.Error()))
+			h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "Failed to secure credentials", "internal_error")
+			return
+		}
+		credRef = newRef
 	}
 
 	updatedVC, err := h.queries.UpdateVCenter(r.Context(), db.UpdateVCenterParams{

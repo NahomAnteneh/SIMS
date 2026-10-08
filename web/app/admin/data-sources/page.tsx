@@ -8,7 +8,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { DataSourceCard } from "./card";
 import { simsApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
-import { AlertModal } from "@/components/ui/modal-popup";
+import { AlertModal, ConfirmModal } from "@/components/ui/modal-popup";
 
 export default function DataSourcesPage() {
   const [view, setView] = useState<"table" | "card">("table");
@@ -18,6 +18,10 @@ export default function DataSourcesPage() {
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingSource, setEditingSource] = useState<DataSource | null>(null);
+  const [deletingSource, setDeletingSource] = useState<{ id: string; name: string } | null>(null);
+  const [deletingLoading, setDeletingLoading] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     host: "",
@@ -60,6 +64,45 @@ export default function DataSourcesPage() {
     }
   }, []);
 
+  const handleOpenEdit = useCallback((ds: DataSource) => {
+    setEditingSource(ds);
+    const parts = ds.endpoint.split(":");
+    setFormData({
+      name: ds.name,
+      host: ds.host || parts[0] || "",
+      port: ds.port || Number(parts[1]) || 443,
+      username: "",
+      password: "",
+      insecure_tls: true,
+    });
+    setTestStatus({ testing: false });
+    setSaveError(null);
+    setIsModalOpen(true);
+  }, []);
+
+  const handleOpenDelete = useCallback((id: string, name: string) => {
+    setDeletingSource({ id, name });
+  }, []);
+
+  const handleConfirmDelete = async () => {
+    if (!deletingSource) return;
+    setDeletingLoading(true);
+    try {
+      await simsApi.deleteVCenter(deletingSource.id);
+      setDeletingSource(null);
+      await loadData();
+    } catch (err: any) {
+      setAlertInfo({
+        isOpen: true,
+        title: "Decommission Error",
+        message: `Failed to decommission vCenter "${deletingSource.name}".`,
+        details: err?.message || String(err),
+      });
+    } finally {
+      setDeletingLoading(false);
+    }
+  };
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -74,8 +117,12 @@ export default function DataSourcesPage() {
         lastSync: vc.last_sync_at || vc.updated_at,
         syncDurationSeconds: 1,
         objectsDiscovered: 0,
-        version: vc.version?.version || "8.0",
+        version: vc.version?.product_version || vc.version?.version || "8.0",
+        host: vc.host,
+        port: vc.port,
         onResync: handleResync,
+        onEdit: handleOpenEdit,
+        onDelete: handleOpenDelete,
         isResyncing: resyncingId === vc.id,
       }));
       setDataSources(mapped);
@@ -84,7 +131,7 @@ export default function DataSourcesPage() {
     } finally {
       setLoading(false);
     }
-  }, [handleResync, resyncingId]);
+  }, [handleResync, handleOpenEdit, handleOpenDelete, resyncingId]);
 
   useEffect(() => {
     loadData();
@@ -126,24 +173,43 @@ export default function DataSourcesPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.host || !formData.username || !formData.password) {
-      setSaveError("All required fields must be completed.");
+    if (!formData.name || !formData.host) {
+      setSaveError("Instance name and host are required.");
+      return;
+    }
+
+    if (!editingSource && (!formData.username || !formData.password)) {
+      setSaveError("Username and password are required for initial registration.");
       return;
     }
 
     setSaveLoading(true);
     setSaveError(null);
     try {
-      await simsApi.createVCenter({
-        name: formData.name,
-        host: formData.host,
-        port: Number(formData.port),
-        username: formData.username,
-        password: formData.password,
-        insecure_tls: formData.insecure_tls,
-      });
+      if (editingSource) {
+        await simsApi.updateVCenter(editingSource.id, {
+          name: formData.name,
+          username: formData.username ? formData.username : undefined,
+          password: formData.password ? formData.password : undefined,
+        });
+        try {
+          await simsApi.resyncVCenter(editingSource.id);
+        } catch {
+          // ignore resync error
+        }
+      } else {
+        await simsApi.createVCenter({
+          name: formData.name,
+          host: formData.host,
+          port: Number(formData.port),
+          username: formData.username,
+          password: formData.password,
+          insecure_tls: formData.insecure_tls,
+        });
+      }
 
       setIsModalOpen(false);
+      setEditingSource(null);
       setFormData({
         name: "",
         host: "",
@@ -155,7 +221,7 @@ export default function DataSourcesPage() {
       setTestStatus({ testing: false });
       await loadData();
     } catch (err: any) {
-      setSaveError(err?.message || "Failed to register vCenter.");
+      setSaveError(err?.message || "Failed to save vCenter settings.");
     } finally {
       setSaveLoading(false);
     }
@@ -176,6 +242,15 @@ export default function DataSourcesPage() {
         <div className="flex items-center gap-3">
           <Button
             onClick={() => {
+              setEditingSource(null);
+              setFormData({
+                name: "",
+                host: "",
+                port: 443,
+                username: "",
+                password: "",
+                insecure_tls: true,
+              });
               setIsModalOpen(true);
               setSaveError(null);
               setTestStatus({ testing: false });
@@ -256,13 +331,20 @@ export default function DataSourcesPage() {
           <div className="w-full max-w-lg rounded-none bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <div>
-                <h3 className="text-base font-bold text-white">Register vCenter Instance</h3>
+                <h3 className="text-base font-bold text-white">
+                  {editingSource ? `Update vCenter: ${editingSource.name}` : "Register vCenter Instance"}
+                </h3>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Connect a vSphere endpoint for property collection and change ingestion.
+                  {editingSource
+                    ? "Update endpoint configuration and credentials for this vCenter."
+                    : "Connect a vSphere endpoint for property collection and change ingestion."}
                 </p>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingSource(null);
+                }}
                 className="text-zinc-500 hover:text-zinc-300 p-1 rounded-none"
               >
                 <X className="h-5 w-5" />
@@ -315,10 +397,12 @@ export default function DataSourcesPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Username</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                    {editingSource ? "Username (leave blank to keep current)" : "Username"}
+                  </label>
                   <input
                     type="text"
-                    required
+                    required={!editingSource}
                     placeholder="administrator@vsphere.local"
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -326,10 +410,12 @@ export default function DataSourcesPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Password</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                    {editingSource ? "Password (leave blank to keep current)" : "Password"}
+                  </label>
                   <input
                     type="password"
-                    required
+                    required={!editingSource}
                     placeholder="••••••••••••"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -375,7 +461,7 @@ export default function DataSourcesPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={testStatus.testing || !formData.host}
+                  disabled={testStatus.testing || !formData.host || !formData.username || !formData.password}
                   onClick={handleTestConnection}
                   className="text-xs border-zinc-800 hover:bg-zinc-800 gap-1.5"
                 >
@@ -392,7 +478,10 @@ export default function DataSourcesPage() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setEditingSource(null);
+                    }}
                     className="text-xs text-zinc-400 hover:text-white"
                   >
                     Cancel
@@ -404,7 +493,9 @@ export default function DataSourcesPage() {
                     className="bg-yellow-600 hover:bg-yellow-500 text-black font-semibold text-xs gap-1.5"
                   >
                     {saveLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                    {saveLoading ? "Registering..." : "Save & Register"}
+                    {saveLoading
+                      ? (editingSource ? "Updating..." : "Registering...")
+                      : (editingSource ? "Update & Resync" : "Save & Register")}
                   </Button>
                 </div>
               </div>
@@ -412,6 +503,19 @@ export default function DataSourcesPage() {
           </div>
         </div>
       )}
+
+      {/* Confirm Decommission Modal */}
+      <ConfirmModal
+        isOpen={Boolean(deletingSource)}
+        onClose={() => setDeletingSource(null)}
+        onConfirm={handleConfirmDelete}
+        title="Decommission vCenter Data Source"
+        message={`Are you sure you want to remove "${deletingSource?.name}"? All associated properties and streaming collection pipelines will be stopped.`}
+        confirmText="Decommission"
+        cancelText="Cancel"
+        variant="danger"
+        loading={deletingLoading}
+      />
 
       {/* Error / Alert Modal Popup */}
       <AlertModal

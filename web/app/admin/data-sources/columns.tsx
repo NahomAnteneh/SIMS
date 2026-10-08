@@ -1,7 +1,7 @@
 "use client";
 
 import { createColumnHelper } from "@tanstack/react-table";
-import { Database, ArrowUpDown, Clock, CheckCircle2, RefreshCw } from "lucide-react";
+import { Database, ArrowUpDown, Clock, RefreshCw, KeyRound, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface DataSource {
@@ -10,12 +10,16 @@ export interface DataSource {
   type: string;
   endpoint: string;
   datacenterId: string;
-  status: "connected" | "disconnected" | "syncing" | string;
+  status: "connected" | "disconnected" | "syncing" | "RUNNING" | "DEGRADED" | "ASSIGNED" | string;
   lastSync: string;
   syncDurationSeconds: number;
   objectsDiscovered: number;
   version?: string;
+  host?: string;
+  port?: number;
   onResync?: (id: string) => void;
+  onEdit?: (ds: DataSource) => void;
+  onDelete?: (id: string, name: string) => void;
   isResyncing?: boolean;
 }
 
@@ -101,17 +105,30 @@ export const dataSourceColumns = [
   columnHelper.accessor("status", {
     header: "Connection",
     cell: (info) => {
-      const status = info.getValue();
-      const isConnected = status === "connected";
+      const status = info.getValue()?.toUpperCase() || "";
+      const isConnected = status === "CONNECTED" || status === "RUNNING";
+      const isSyncing = status === "SYNCING" || status === "ASSIGNED";
+      const isDegraded = status === "DEGRADED" || status === "DISCONNECTED";
+
+      let colorClass = "bg-zinc-800 text-zinc-400 border-zinc-700";
+      let displayStatus = status;
+
+      if (isConnected) {
+        colorClass = "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
+        displayStatus = "Healthy";
+      } else if (isSyncing) {
+        colorClass = "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+        displayStatus = "Syncing";
+      } else if (isDegraded) {
+        colorClass = "bg-rose-500/15 text-rose-400 border-rose-500/30";
+        displayStatus = "Degraded";
+      }
+
       return (
         <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-none text-[11px] font-mono font-bold capitalize border ${
-            isConnected
-              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-              : "bg-rose-500/15 text-rose-400 border-rose-500/30"
-          }`}
+          className={`inline-flex items-center px-2 py-0.5 rounded-none text-[11px] font-mono font-bold capitalize border ${colorClass}`}
         >
-          {status}
+          {displayStatus}
         </span>
       );
     },
@@ -124,16 +141,39 @@ export const dataSourceColumns = [
     cell: (info) => {
       const ds = info.row.original;
       return (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={ds.isResyncing}
-          onClick={() => ds.onResync?.(ds.id)}
-          className="text-xs h-8 gap-1.5 border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${ds.isResyncing ? "animate-spin text-yellow-500" : ""}`} />
-          {ds.isResyncing ? "Syncing..." : "Resync"}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={ds.isResyncing}
+            onClick={() => ds.onResync?.(ds.id)}
+            className="text-xs h-8 gap-1.5 border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white"
+            title="Trigger full inventory resync"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${ds.isResyncing ? "animate-spin text-yellow-500" : ""}`} />
+            {ds.isResyncing ? "Syncing..." : "Resync"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => ds.onEdit?.(ds)}
+            className="text-xs h-8 px-2 border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-yellow-400"
+            title="Edit credentials or settings"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => ds.onDelete?.(ds.id, ds.name)}
+            className="text-xs h-8 px-2 border-zinc-800 hover:bg-rose-950/40 text-zinc-400 hover:text-rose-400 hover:border-rose-800/50"
+            title="Decommission vCenter data source"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       );
     },
   }),
