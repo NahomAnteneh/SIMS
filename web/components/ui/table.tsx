@@ -3,7 +3,20 @@
 import * as React from "react"
 import { cn } from "cn"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+interface TableProps extends React.ComponentProps<"table"> {
+  noContainer?: boolean
+}
+
+function Table({ className, noContainer, ...props }: TableProps) {
+  if (noContainer) {
+    return (
+      <table
+        data-slot="table"
+        className={cn("w-full caption-bottom text-sm", className)}
+        {...props}
+      />
+    )
+  }
   return (
     <div
       data-slot="table-container"

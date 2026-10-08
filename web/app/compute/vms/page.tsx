@@ -34,7 +34,10 @@ function VmsContent() {
   const [view, setView] = useState<"table" | "card">("table");
   const [vms, setVms] = useState<VirtualMachine[]>([]);
   const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(20);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [totalFleetCount, setTotalFleetCount] = useState<number | null>(null);
+  const [limit, setLimit] = useState(100);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [powerState, setPowerState] = useState<string>("all");
@@ -44,6 +47,21 @@ function VmsContent() {
   const [selectedVMId, setSelectedVMId] = useState<string | null>(null);
 
   const [topologyFilter, setTopologyFilter] = useState<TopologyFilter | null>(null);
+
+  // Fetch total fleet count on mount
+  useEffect(() => {
+    async function fetchTotalCount() {
+      try {
+        const facetsRes = await simsApi.getVMFacets("power_state");
+        const buckets = facetsRes.facets?.power_state || [];
+        const total = buckets.reduce((sum, b) => sum + b.count, 0);
+        if (total > 0) setTotalFleetCount(total);
+      } catch {
+        // ignore facets error
+      }
+    }
+    fetchTotalCount();
+  }, []);
 
   // Read URL search parameters on mount and when searchParams changes
   useEffect(() => {
@@ -111,7 +129,11 @@ function VmsContent() {
 
   const loadData = useCallback(
     async (cursor?: string, append = false) => {
-      setLoading(true);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       try {
         const trimmed = debouncedSearch.trim();
         const hasPower = powerState !== "all";
@@ -221,13 +243,21 @@ function VmsContent() {
           nextCur = res.pagination.next_cursor;
         }
 
-        setVms((prev) => (append ? [...prev, ...items] : items));
+        setVms((prev) => {
+          if (!append) return items;
+          const existingIds = new Set(prev.map((vm) => vm.id));
+          const newItems = items.filter((vm) => !existingIds.has(vm.id));
+          return [...prev, ...newItems];
+        });
         setHasMore(more);
         setNextCursor(nextCur);
+        return { more, nextCur };
       } catch (err) {
         console.error("Failed to load virtual machines", err);
+        return { more: false, nextCur: undefined };
       } finally {
         setLoading(false);
+        setLoadingMore(false);
       }
     },
     [limit, debouncedSearch, powerState, topologyFilter]
@@ -237,9 +267,26 @@ function VmsContent() {
     loadData(undefined, false);
   }, [loadData]);
 
-  const handleShowMore = () => {
-    if (!nextCursor || loading) return;
+  const handleShowMore = useCallback(() => {
+    if (!nextCursor || loading || loadingMore || loadingAll) return;
     loadData(nextCursor, true);
+  }, [nextCursor, loading, loadingMore, loadingAll, loadData]);
+
+  const handleLoadAll = async () => {
+    if (!nextCursor || loading || loadingMore || loadingAll) return;
+    setLoadingAll(true);
+    let cur: string | undefined = nextCursor;
+    try {
+      while (cur) {
+        const result = await loadData(cur, true);
+        if (!result.more || !result.nextCur) break;
+        cur = result.nextCur;
+      }
+    } catch (err) {
+      console.error("Failed to load all VMs", err);
+    } finally {
+      setLoadingAll(false);
+    }
   };
 
   const handleClearTopologyFilter = () => {
@@ -305,7 +352,7 @@ function VmsContent() {
           <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
             Virtual Machines
             <span className="text-xs font-mono font-normal text-zinc-500">
-              ({vms.length} loaded)
+              ({vms.length}{totalFleetCount ? ` of ${totalFleetCount}` : ""} loaded)
             </span>
             {topologyFilter && (
               <span className="text-xs font-mono font-normal px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400">
@@ -402,8 +449,14 @@ function VmsContent() {
           onRowClick={(row) => setSelectedVMId(row.id)}
           pagination={{
             hasMore,
+            loadingMore,
             onNext: handleShowMore,
+            total: totalFleetCount ?? undefined,
+            onLoadAll: hasMore ? handleLoadAll : undefined,
+            loadingAll,
+            entityName: "virtual machines",
           }}
+          tableContainerClassName="max-h-[calc(100vh-230px)] min-h-[420px]"
         />
       ) : (
         <div className="space-y-4">
@@ -417,16 +470,25 @@ function VmsContent() {
             ))}
           </div>
           {hasMore && (
-            <div className="flex justify-center pt-2">
+            <div className="flex items-center justify-center gap-3 pt-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleShowMore}
-                disabled={loading}
+                disabled={loadingMore || loadingAll}
                 className="h-8 px-5 text-xs font-mono rounded-none border-zinc-800 bg-zinc-900/60 text-yellow-400 hover:bg-zinc-800 hover:border-yellow-600 gap-1.5"
               >
-                {loading && <Loader2 className="h-3 w-3 animate-spin" />}
-                Show more
+                {loadingMore && <Loader2 className="h-3 w-3 animate-spin" />}
+                {loadingMore ? "Loading..." : "Show more"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleLoadAll}
+                disabled={loadingMore || loadingAll}
+                className="h-8 px-4 text-xs font-mono rounded-none text-zinc-400 hover:text-white"
+              >
+                {loadingAll ? "Loading all..." : "Load all remaining"}
               </Button>
             </div>
           )}
