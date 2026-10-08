@@ -62,14 +62,14 @@ export const NetworkCard: React.FC<NetworkCardProps> = ({ network, onClick }) =>
         </div>
 
         <div
-          className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium ${
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-none text-[11px] font-mono font-medium ${
             isActive
-              ? "text-emerald-400 bg-emerald-400/10"
-              : "text-zinc-400 bg-zinc-800"
+              ? "text-emerald-400 bg-emerald-400/10 border border-emerald-500/20"
+              : "text-zinc-400 bg-zinc-800 border border-zinc-700"
           }`}
         >
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-none ${
               isActive ? "bg-emerald-400" : "bg-zinc-500"
             }`}
           />

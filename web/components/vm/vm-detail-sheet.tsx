@@ -16,8 +16,14 @@ import {
   Clock,
   Loader2,
   FolderTree,
+  Copy,
+  Check,
+  Code,
+  Layers,
+  ExternalLink,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 
 interface VMDetailSheetProps {
   vmId: string | null;
@@ -28,6 +34,7 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
   const [vm, setVM] = useState<VMDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Close on Escape key press
   useEffect(() => {
@@ -64,61 +71,117 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
     loadVM();
   }, [vmId]);
 
+  const copyToClipboard = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => {
+      setCopiedKey((curr) => (curr === key ? null : curr));
+    }, 2000);
+  };
+
   if (!vmId) return null;
 
   const isOn = vm?.power_state === "poweredOn";
   const isSuspended = vm?.power_state === "suspended";
 
+  // Calculate total disk capacity
+  const totalDiskBytes =
+    vm?.datastores?.reduce((acc, ds) => acc + (ds.capacity_bytes || 0), 0) || 0;
+  const totalDiskGB = (totalDiskBytes / (1024 * 1024 * 1024)).toFixed(1);
+
   return (
     <>
+      {/* High-contrast solid dark backdrop - strictly NO background blur */}
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity"
+        className="fixed inset-0 bg-black/80 z-40 transition-opacity"
         onClick={onClose}
         aria-hidden="true"
       />
+
+      {/* Enterprise VM Inspector Drawer */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="vm-detail-title"
-        className="fixed inset-y-0 right-0 z-50 w-full max-w-xl bg-[#0e0e0e] border-l border-zinc-800 shadow-2xl flex flex-col font-sans transition-all duration-300 rounded-none"
+        className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl bg-[#0a0a0a] border-l border-zinc-800 shadow-2xl flex flex-col font-sans transition-all duration-300 rounded-none text-zinc-200"
       >
         {/* Drawer Header */}
-        <div className="p-4 border-b border-zinc-800 bg-[#0a0a0a] flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="p-3.5 px-4 border-b border-zinc-800 bg-[#070707] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="p-2 bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 shrink-0">
               <Server className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <h2 id="vm-detail-title" className="text-sm font-bold text-zinc-100 truncate">
-                {vm?.name || "Loading instance..."}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 id="vm-detail-title" className="text-sm font-bold text-zinc-100 truncate font-mono">
+                  {vm?.name || "Loading instance..."}
+                </h2>
+                {vm && (
+                  <button
+                    onClick={() => copyToClipboard(vm.name, "name")}
+                    title="Copy VM name"
+                    className="text-zinc-500 hover:text-zinc-300 p-0.5"
+                  >
+                    {copiedKey === "name" ? (
+                      <Check className="h-3 w-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
+                  </button>
+                )}
+              </div>
+
               <div className="flex items-center gap-2 mt-0.5 text-xs text-zinc-400 font-mono">
-                <span>{vm?.moref}</span>
+                <span className="text-zinc-500">{vm?.moref}</span>
                 {vm && (
                   <span
                     className={`inline-flex items-center gap-1 px-1.5 py-0.2 text-[10px] uppercase font-bold border ${
                       isOn
-                        ? "text-emerald-400 bg-emerald-400/10 border-emerald-500/30"
+                        ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30"
                         : isSuspended
-                        ? "text-amber-400 bg-amber-400/10 border-amber-500/30"
-                        : "text-zinc-500 bg-zinc-900 border-zinc-700"
+                        ? "text-amber-400 bg-amber-500/10 border-amber-500/30"
+                        : "text-zinc-500 bg-zinc-900 border-zinc-800"
                     }`}
                   >
                     <Power className="h-2.5 w-2.5" />
                     {vm.power_state}
                   </span>
                 )}
+                {vm?.connection_state && (
+                  <span className="text-[10px] text-zinc-500 uppercase">
+                    ({vm.connection_state})
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            aria-label="Close VM detail dialog"
-            className="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {vm && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copyToClipboard(JSON.stringify(vm, null, 2), "json")}
+                className="h-7 px-2 text-[11px] font-mono rounded-none border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:text-white"
+                title="Copy formatted JSON payload"
+              >
+                {copiedKey === "json" ? (
+                  <Check className="h-3 w-3 text-emerald-400 mr-1" />
+                ) : (
+                  <Code className="h-3 w-3 mr-1" />
+                )}
+                {copiedKey === "json" ? "Copied" : "JSON"}
+              </Button>
+            )}
+
+            <button
+              onClick={onClose}
+              aria-label="Close VM detail dialog"
+              className="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Drawer Content */}
@@ -126,7 +189,7 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
           {loading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
               <Loader2 className="h-6 w-6 animate-spin text-yellow-500" />
-              <span className="text-xs font-mono">Loading virtual machine details...</span>
+              <span className="text-xs font-mono">Reading virtual machine telemetry...</span>
             </div>
           ) : error ? (
             <div className="p-3 border border-rose-500/30 bg-rose-500/10 text-rose-400 text-xs font-mono">
@@ -135,79 +198,172 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
           ) : vm ? (
             <div className="space-y-4">
               {/* Quick Specs Strip */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-[#111111] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
+              <div className="grid grid-cols-4 gap-2">
+                <div className="bg-[#0e0e0e] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
                   <Cpu className="h-4 w-4 text-zinc-400 mb-1" />
-                  <span className="text-sm font-bold text-zinc-100 font-mono">{vm.cpu_cores} vCPU</span>
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Cores</span>
+                  <span className="text-sm font-bold text-zinc-100 font-mono">
+                    {vm.cpu_cores} vCPU
+                  </span>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
+                    Compute
+                  </span>
                 </div>
-                <div className="bg-[#111111] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
+
+                <div className="bg-[#0e0e0e] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
                   <Database className="h-4 w-4 text-zinc-400 mb-1" />
                   <span className="text-sm font-bold text-zinc-100 font-mono">
                     {(vm.memory_mb / 1024).toFixed(1)} GB
                   </span>
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Memory</span>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
+                    Memory
+                  </span>
                 </div>
-                <div className="bg-[#111111] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
+
+                <div className="bg-[#0e0e0e] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
                   <HardDrive className="h-4 w-4 text-zinc-400 mb-1" />
                   <span className="text-sm font-bold text-zinc-100 font-mono">
-                    {vm.datastores?.length || 0} Disks
+                    {vm.datastores?.length || 0} ({totalDiskGB} GB)
                   </span>
-                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">Storage</span>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
+                    Storage
+                  </span>
+                </div>
+
+                <div className="bg-[#0e0e0e] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
+                  <Network className="h-4 w-4 text-zinc-400 mb-1" />
+                  <span className="text-sm font-bold text-zinc-100 font-mono">
+                    {vm.network_interfaces?.length || 0} NICs
+                  </span>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
+                    Interfaces
+                  </span>
                 </div>
               </div>
 
               {/* Tabs for Detailed Inspection */}
               <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="w-full justify-start bg-zinc-900 border border-zinc-800 p-0.5 rounded-none">
-                  <TabsTrigger value="overview" className="rounded-none text-xs">Overview</TabsTrigger>
-                  <TabsTrigger value="disks" className="rounded-none text-xs">Storage ({vm.datastores?.length || 0})</TabsTrigger>
-                  <TabsTrigger value="nics" className="rounded-none text-xs">Network ({vm.network_interfaces?.length || 0})</TabsTrigger>
-                  <TabsTrigger value="tags" className="rounded-none text-xs">Tags & Meta</TabsTrigger>
+                <TabsList className="w-full justify-start bg-zinc-900 border border-zinc-800 p-0.5 rounded-none font-mono">
+                  <TabsTrigger
+                    value="overview"
+                    className="rounded-none text-xs data-[state=active]:bg-zinc-800 data-[state=active]:text-yellow-400"
+                  >
+                    Overview
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="disks"
+                    className="rounded-none text-xs data-[state=active]:bg-zinc-800 data-[state=active]:text-yellow-400"
+                  >
+                    Storage ({vm.datastores?.length || 0})
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="nics"
+                    className="rounded-none text-xs data-[state=active]:bg-zinc-800 data-[state=active]:text-yellow-400"
+                  >
+                    Network ({vm.network_interfaces?.length || 0})
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="tags"
+                    className="rounded-none text-xs data-[state=active]:bg-zinc-800 data-[state=active]:text-yellow-400"
+                  >
+                    Tags & Meta
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="raw"
+                    className="rounded-none text-xs data-[state=active]:bg-zinc-800 data-[state=active]:text-yellow-400"
+                  >
+                    Raw Payload
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* Overview Tab */}
                 <TabsContent value="overview" className="mt-3 space-y-3 text-xs">
-                  <div className="border border-zinc-800 bg-[#111111] p-3 space-y-2">
-                    <div className="flex justify-between py-1 border-b border-zinc-850">
-                      <span className="text-zinc-500">Primary IP</span>
-                      <span className="font-mono text-zinc-200">
-                        {vm.guest_ip_address || "None"}
-                      </span>
+                  <div className="border border-zinc-800 bg-[#0e0e0e] p-3 space-y-2">
+                    <div className="text-[10px] font-mono uppercase text-zinc-500 font-bold tracking-wider mb-1">
+                      Guest OS & Workload Identification
                     </div>
-                    <div className="flex justify-between py-1 border-b border-zinc-850">
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
+                      <span className="text-zinc-500">Primary Guest IP</span>
+                      <div className="flex items-center gap-1.5 font-mono text-zinc-200">
+                        <span>{vm.guest_ip_address || "None"}</span>
+                        {vm.guest_ip_address && (
+                          <button
+                            onClick={() =>
+                              copyToClipboard(vm.guest_ip_address!, "ip")
+                            }
+                            className="text-zinc-500 hover:text-white p-0.5"
+                            title="Copy IP"
+                          >
+                            {copiedKey === "ip" ? (
+                              <Check className="h-2.5 w-2.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-2.5 w-2.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
                       <span className="text-zinc-500">Guest OS</span>
-                      <span className="text-zinc-200 truncate max-w-[280px]">
+                      <span className="text-zinc-200 truncate max-w-[320px]">
                         {vm.guest_os || "Unknown"}
                       </span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-zinc-850">
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
                       <span className="text-zinc-500">Guest Hostname</span>
-                      <span className="text-zinc-200 font-mono">{vm.guest_host_name || "N/A"}</span>
+                      <span className="text-zinc-200 font-mono">
+                        {vm.guest_host_name || "N/A"}
+                      </span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-zinc-850">
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
                       <span className="text-zinc-500">Folder Hierarchy</span>
-                      <span className="text-zinc-300 font-mono flex items-center gap-1 truncate max-w-[280px]">
+                      <span className="text-zinc-300 font-mono flex items-center gap-1 truncate max-w-[320px]">
                         <FolderTree className="h-3 w-3 text-yellow-500" />
                         {vm.folder_path || "Root"}
                       </span>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-zinc-850">
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
                       <span className="text-zinc-500">Instance UUID</span>
-                      <span className="font-mono text-zinc-400 truncate max-w-[280px]">
-                        {vm.instance_uuid}
-                      </span>
+                      <div className="flex items-center gap-1.5 font-mono text-zinc-400 truncate max-w-[320px]">
+                        <span className="truncate">{vm.instance_uuid}</span>
+                        <button
+                          onClick={() =>
+                            copyToClipboard(vm.instance_uuid, "inst_uuid")
+                          }
+                          className="text-zinc-500 hover:text-white p-0.5"
+                          title="Copy Instance UUID"
+                        >
+                          {copiedKey === "inst_uuid" ? (
+                            <Check className="h-2.5 w-2.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-2.5 w-2.5" />
+                          )}
+                        </button>
+                      </div>
                     </div>
+
                     {vm.bios_uuid && (
-                      <div className="flex justify-between py-1 border-b border-zinc-850">
+                      <div className="flex justify-between py-1.5 border-b border-zinc-850">
                         <span className="text-zinc-500">BIOS UUID</span>
-                        <span className="font-mono text-zinc-400 truncate max-w-[280px]">
+                        <span className="font-mono text-zinc-400 truncate max-w-[320px]">
                           {vm.bios_uuid}
                         </span>
                       </div>
                     )}
-                    <div className="flex justify-between py-1">
-                      <span className="text-zinc-500">First Seen</span>
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
+                      <span className="text-zinc-500">vCenter Endpoint ID</span>
+                      <span className="font-mono text-zinc-400 truncate max-w-[320px]">
+                        {vm.vcenter_id}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between py-1.5">
+                      <span className="text-zinc-500">First Ingested</span>
                       <span className="text-zinc-400 font-mono flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         {new Date(vm.created_at).toLocaleString()}
@@ -216,46 +372,84 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                   </div>
 
                   {vm.annotation && (
-                    <div className="border border-zinc-800 bg-[#111111] p-3">
-                      <div className="text-[11px] font-semibold text-zinc-400 mb-1 flex items-center gap-1.5 font-mono uppercase">
+                    <div className="border border-zinc-800 bg-[#0e0e0e] p-3">
+                      <div className="text-[10px] font-semibold text-zinc-400 mb-1 flex items-center gap-1.5 font-mono uppercase tracking-wider">
                         <FileText className="h-3.5 w-3.5 text-yellow-500" />
-                        Notes & Annotation
+                        Operator Notes & Annotation
                       </div>
-                      <p className="text-zinc-300 font-mono text-[11px] whitespace-pre-wrap">{vm.annotation}</p>
+                      <p className="text-zinc-300 font-mono text-[11px] whitespace-pre-wrap leading-relaxed">
+                        {vm.annotation}
+                      </p>
                     </div>
                   )}
                 </TabsContent>
 
-                {/* Disks Tab */}
+                {/* Disks & Storage Tab */}
                 <TabsContent value="disks" className="mt-3 space-y-2">
                   {vm.datastores && vm.datastores.length > 0 ? (
                     vm.datastores.map((ds) => {
-                      const capGB = (ds.capacity_bytes / (1024 * 1024 * 1024)).toFixed(1);
-                      const freeGB = (ds.free_bytes / (1024 * 1024 * 1024)).toFixed(1);
+                      const capGB = Number(
+                        (ds.capacity_bytes / (1024 * 1024 * 1024)).toFixed(1)
+                      );
+                      const freeGB = Number(
+                        (ds.free_bytes / (1024 * 1024 * 1024)).toFixed(1)
+                      );
+                      const usedGB = Math.max(0, capGB - freeGB);
+                      const usedPercent =
+                        capGB > 0 ? Math.round((usedGB / capGB) * 100) : 0;
+
                       return (
                         <div
                           key={ds.id}
-                          className="p-3 border border-zinc-800 bg-[#111111] flex items-center justify-between"
+                          className="p-3 border border-zinc-800 bg-[#0e0e0e] space-y-2"
                         >
-                          <div className="flex items-center gap-2.5">
-                            <HardDrive className="h-4 w-4 text-yellow-500" />
-                            <div>
-                              <div className="text-xs font-semibold text-zinc-100">{ds.name}</div>
-                              <div className="text-[10px] text-zinc-500 font-mono">
-                                {ds.type} • {ds.moref}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <HardDrive className="h-4 w-4 text-yellow-500" />
+                              <div>
+                                <div className="text-xs font-semibold text-zinc-100 font-mono">
+                                  {ds.name}
+                                </div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  {ds.type} • {ds.moref}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right font-mono">
+                              <div className="text-xs font-bold text-zinc-200">
+                                {capGB} GB
+                              </div>
+                              <div className="text-[10px] text-zinc-500">
+                                {freeGB} GB free ({100 - usedPercent}%)
                               </div>
                             </div>
                           </div>
-                          <div className="text-right font-mono">
-                            <div className="text-xs font-bold text-zinc-200">{capGB} GB</div>
-                            <div className="text-[10px] text-zinc-500">{freeGB} GB free</div>
+
+                          {/* Storage Utilization Bar */}
+                          <div className="space-y-1 pt-1">
+                            <div className="h-1.5 w-full bg-zinc-900 overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  usedPercent > 85
+                                    ? "bg-rose-500"
+                                    : usedPercent > 70
+                                    ? "bg-amber-500"
+                                    : "bg-yellow-500"
+                                }`}
+                                style={{ width: `${usedPercent}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                              <span>Used: {usedGB.toFixed(1)} GB ({usedPercent}%)</span>
+                              <span>Capacity: {capGB} GB</span>
+                            </div>
                           </div>
                         </div>
                       );
                     })
                   ) : (
-                    <div className="p-6 text-center text-xs font-mono text-zinc-500 border border-zinc-800">
-                      No attached datastores reported.
+                    <div className="p-8 text-center text-xs font-mono text-zinc-500 border border-zinc-800 bg-[#0e0e0e]">
+                      No attached datastores reported by property collector.
                     </div>
                   )}
                 </TabsContent>
@@ -266,13 +460,26 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                     vm.network_interfaces.map((nic) => (
                       <div
                         key={nic.id}
-                        className="p-3 border border-zinc-800 bg-[#111111] flex items-center justify-between"
+                        className="p-3 border border-zinc-800 bg-[#0e0e0e] flex items-center justify-between"
                       >
                         <div className="flex items-center gap-2.5">
                           <Network className="h-4 w-4 text-blue-400" />
                           <div>
-                            <div className="text-xs font-mono font-bold text-zinc-100">
-                              {nic.mac_address}
+                            <div className="text-xs font-mono font-bold text-zinc-100 flex items-center gap-1.5">
+                              <span>{nic.mac_address}</span>
+                              <button
+                                onClick={() =>
+                                  copyToClipboard(nic.mac_address, nic.id)
+                                }
+                                className="text-zinc-500 hover:text-white p-0.5"
+                                title="Copy MAC address"
+                              >
+                                {copiedKey === nic.id ? (
+                                  <Check className="h-2.5 w-2.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="h-2.5 w-2.5" />
+                                )}
+                              </button>
                             </div>
                             <div className="text-[10px] text-zinc-500 font-mono">
                               Device Key: {nic.device_key}
@@ -281,14 +488,14 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                         </div>
                         <div className="text-right">
                           <div className="text-xs font-mono text-zinc-200">
-                            {nic.ip_address || "No IP"}
+                            {nic.ip_address || "No Guest IP"}
                           </div>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="p-6 text-center text-xs font-mono text-zinc-500 border border-zinc-800">
-                      No network interfaces reported.
+                    <div className="p-8 text-center text-xs font-mono text-zinc-500 border border-zinc-800 bg-[#0e0e0e]">
+                      No network interfaces reported by property collector.
                     </div>
                   )}
                 </TabsContent>
@@ -296,7 +503,7 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                 {/* Tags & Metadata Tab */}
                 <TabsContent value="tags" className="mt-3 space-y-3">
                   <div>
-                    <h4 className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5 flex items-center gap-1.5 font-bold">
+                    <h4 className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5 flex items-center gap-1.5 font-bold">
                       <Tag className="h-3 w-3 text-yellow-500" />
                       vSphere Tags ({vm.tags?.length || 0})
                     </h4>
@@ -307,17 +514,18 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                             key={idx}
                             className="px-2 py-0.5 bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-200"
                           >
-                            <span className="text-zinc-500">{t.category_name}:</span> {t.tag_name}
+                            <span className="text-zinc-500">{t.category_name}:</span>{" "}
+                            {t.tag_name}
                           </span>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs font-mono text-zinc-500">No tags assigned.</p>
+                      <p className="text-xs font-mono text-zinc-500">No vSphere tags assigned.</p>
                     )}
                   </div>
 
                   <div>
-                    <h4 className="text-[11px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5 flex items-center gap-1.5 font-bold">
+                    <h4 className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5 flex items-center gap-1.5 font-bold">
                       <FileText className="h-3 w-3 text-yellow-500" />
                       Custom Attributes ({vm.custom_attributes?.length || 0})
                     </h4>
@@ -326,7 +534,7 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                         {vm.custom_attributes.map((ca, idx) => (
                           <div
                             key={idx}
-                            className="p-2 border border-zinc-800 bg-[#111111] flex justify-between text-xs font-mono"
+                            className="p-2 border border-zinc-800 bg-[#0e0e0e] flex justify-between text-xs font-mono"
                           >
                             <span className="text-zinc-400">{ca.name}</span>
                             <span className="text-zinc-200">{ca.value}</span>
@@ -334,9 +542,31 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-xs font-mono text-zinc-500">No custom attributes defined.</p>
+                      <p className="text-xs font-mono text-zinc-500">
+                        No custom attributes defined.
+                      </p>
                     )}
                   </div>
+                </TabsContent>
+
+                {/* Raw JSON Inspector Tab */}
+                <TabsContent value="raw" className="mt-3 space-y-2">
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-[10px] font-mono uppercase text-zinc-500">
+                      Raw Query API Response
+                    </span>
+                    <button
+                      onClick={() =>
+                        copyToClipboard(JSON.stringify(vm, null, 2), "raw_json")
+                      }
+                      className="text-xs font-mono text-yellow-400 hover:underline flex items-center gap-1"
+                    >
+                      {copiedKey === "raw_json" ? "Copied to clipboard!" : "Copy JSON"}
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-black border border-zinc-800 text-[11px] font-mono text-zinc-300 overflow-x-auto max-h-96 whitespace-pre custom-scrollbar">
+                    {JSON.stringify(vm, null, 2)}
+                  </pre>
                 </TabsContent>
               </Tabs>
             </div>

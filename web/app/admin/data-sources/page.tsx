@@ -8,6 +8,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { DataSourceCard } from "./card";
 import { simsApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
+import { AlertModal } from "@/components/ui/modal-popup";
 
 export default function DataSourcesPage() {
   const [view, setView] = useState<"table" | "card">("table");
@@ -34,6 +35,12 @@ export default function DataSourcesPage() {
 
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [alertInfo, setAlertInfo] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    details?: string;
+  }>({ isOpen: false, title: "", message: "" });
 
   const handleResync = useCallback(async (id: string) => {
     setResyncingId(id);
@@ -42,7 +49,12 @@ export default function DataSourcesPage() {
       await loadData();
     } catch (err: any) {
       console.error("Resync failed:", err);
-      alert(err?.message || "Failed to trigger resync");
+      setAlertInfo({
+        isOpen: true,
+        title: "Synchronization Error",
+        message: "Failed to initiate PropertyCollector resync on the target vCenter instance.",
+        details: err?.message || String(err),
+      });
     } finally {
       setResyncingId(null);
     }
@@ -240,7 +252,7 @@ export default function DataSourcesPage() {
 
       {/* Register vCenter Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <div className="w-full max-w-lg rounded-none bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <div>
@@ -400,6 +412,16 @@ export default function DataSourcesPage() {
           </div>
         </div>
       )}
+
+      {/* Error / Alert Modal Popup */}
+      <AlertModal
+        isOpen={alertInfo.isOpen}
+        onClose={() => setAlertInfo({ ...alertInfo, isOpen: false })}
+        title={alertInfo.title}
+        message={alertInfo.message}
+        details={alertInfo.details}
+        type="error"
+      />
     </div>
   );
 }

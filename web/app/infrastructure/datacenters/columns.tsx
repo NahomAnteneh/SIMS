@@ -177,7 +177,7 @@ export const columns = [
       const status = info.getValue();
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-2 py-0.5 rounded-none text-[11px] font-mono font-bold capitalize border ${
             status === "healthy"
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : status === "warning"

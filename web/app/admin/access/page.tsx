@@ -5,6 +5,7 @@ import { Shield, UserPlus, Trash2, Loader2, X, AlertCircle, CheckCircle2, User, 
 import { simsApi } from "@/lib/api/client";
 import { UserResponse } from "@/lib/api/types";
 import { Button } from "@/components/ui/button";
+import { ConfirmModal, AlertModal } from "@/components/ui/modal-popup";
 
 export default function AccessPage() {
   const [users, setUsers] = useState<UserResponse[]>([]);
@@ -21,6 +22,11 @@ export default function AccessPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Custom modal states
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; username: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [alertInfo, setAlertInfo] = useState<{ isOpen: boolean; title: string; message: string; details?: string } | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -69,14 +75,22 @@ export default function AccessPage() {
     }
   };
 
-  const handleDeleteUser = async (userId: string, username: string) => {
-    if (confirm(`Are you sure you want to delete user '${username}'?`)) {
-      try {
-        await simsApi.deleteUser(userId);
-        await loadData();
-      } catch (err: any) {
-        alert(err?.message || "Failed to delete user");
-      }
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      await simsApi.deleteUser(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadData();
+    } catch (err: any) {
+      setAlertInfo({
+        isOpen: true,
+        title: "Deletion Error",
+        message: `Failed to delete user '${deleteTarget.username}'.`,
+        details: err?.message || String(err),
+      });
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -186,7 +200,7 @@ export default function AccessPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeleteUser(u.id, u.username)}
+                          onClick={() => setDeleteTarget({ id: u.id, username: u.username })}
                           className="h-8 text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 p-2 rounded-none"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -203,7 +217,7 @@ export default function AccessPage() {
 
       {/* Add User Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
           <div className="w-full max-w-md rounded-none bg-[#121212] border border-zinc-800 shadow-2xl p-6 text-zinc-200 font-sans space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -268,7 +282,8 @@ export default function AccessPage() {
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-600"
                 >
-                  <option value="user">User (Standard Access)</option>
+                  <option value="viewer">Viewer (Read-Only)</option>
+                  <option value="operator">Operator (Standard)</option>
                   <option value="admin">Administrator (Full Access)</option>
                 </select>
               </div>
@@ -296,6 +311,30 @@ export default function AccessPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete User Account"
+        message={`Are you sure you want to permanently delete user '${deleteTarget?.username}'? This action cannot be undone.`}
+        confirmText="Delete Account"
+        variant="danger"
+        loading={deleteLoading}
+      />
+
+      {/* Error / Alert Modal */}
+      {alertInfo && (
+        <AlertModal
+          isOpen={alertInfo.isOpen}
+          onClose={() => setAlertInfo(null)}
+          title={alertInfo.title}
+          message={alertInfo.message}
+          details={alertInfo.details}
+          type="error"
+        />
       )}
     </div>
   );

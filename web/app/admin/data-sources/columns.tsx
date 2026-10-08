@@ -105,7 +105,7 @@ export const dataSourceColumns = [
       const isConnected = status === "connected";
       return (
         <span
-          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold capitalize border ${
+          className={`inline-flex items-center px-2 py-0.5 rounded-none text-[11px] font-mono font-bold capitalize border ${
             isConnected
               ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
               : "bg-rose-500/15 text-rose-400 border-rose-500/30"

@@ -4,9 +4,12 @@ import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  LayoutDashboard,
   Monitor,
+  GitFork,
   Building2,
   HardDrive,
+  Network,
   Database,
   Server,
   Settings,
@@ -22,11 +25,14 @@ interface SidebarItem {
 }
 
 const navItems: SidebarItem[] = [
+  { name: "Overview", icon: LayoutDashboard, href: "/dashboard" },
   { name: "Virtual Machines", icon: Monitor, href: "/compute/vms" },
+  { name: "Topology", icon: GitFork, href: "/topology" },
   { name: "Datacenters", icon: Building2, href: "/infrastructure/datacenters" },
-  { name: "Datastores", icon: HardDrive, href: "/infrastructure/storage" },
-  { name: "vCenters", icon: Database, href: "/admin/data-sources" },
   { name: "Hosts", icon: Server, href: "/infrastructure/hosts" },
+  { name: "Datastores", icon: HardDrive, href: "/infrastructure/storage" },
+  { name: "Networks", icon: Network, href: "/infrastructure/networking" },
+  { name: "vCenters", icon: Database, href: "/admin/data-sources" },
   { name: "Settings", icon: Settings, href: "/admin/settings" },
 ];
 

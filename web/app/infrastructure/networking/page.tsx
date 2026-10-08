@@ -54,11 +54,11 @@ export default function NetworkingPage() {
         </div>
 
         {/* View Toggle */}
-        <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900/50 p-1">
+        <div className="flex items-center rounded-none border border-zinc-800 bg-zinc-900/50 p-0.5">
           <button
             type="button"
             onClick={() => setView("table")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-none transition-colors ${
               view === "table"
                 ? "bg-zinc-800 text-zinc-100 shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"
@@ -70,7 +70,7 @@ export default function NetworkingPage() {
           <button
             type="button"
             onClick={() => setView("card")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-none transition-colors ${
               view === "card"
                 ? "bg-zinc-800 text-zinc-100 shadow-sm"
                 : "text-zinc-400 hover:text-zinc-200"

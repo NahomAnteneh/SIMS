@@ -85,26 +85,24 @@ export function DataTable<TData extends RowData>({
     },
   });
 
-  const activeSearchCol =
-    searchColumn ??
-    (table.getColumn("name")
-      ? "name"
-      : table.getColumn("displayName")
-      ? "displayName"
-      : undefined);
+  // Only show column search if explicitly requested
+  const activeSearchCol = searchColumn;
+
+  const hasSearchInput = Boolean(customSearch || onSearchChange || activeSearchCol);
 
   return (
     <div className="overflow-hidden border border-zinc-800 bg-[#0c0c0c] shadow-sm rounded-none w-full">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border-b border-zinc-800/80 gap-3">
-        <div className="flex items-center gap-3 flex-1 w-full">
+      {/* Table Header Bar (Filters & Column Visibility) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 sm:p-3 border-b border-zinc-800/80 gap-2.5">
+        <div className="flex items-center gap-2.5 flex-1 w-full">
           {customSearch ? (
             customSearch
           ) : onSearchChange ? (
             <Input
-              placeholder={searchPlaceholder ?? "Search inventory..."}
+              placeholder={searchPlaceholder ?? "Search..."}
               value={searchValue ?? ""}
               onChange={(event) => onSearchChange(event.target.value)}
-              className="max-w-sm bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-9 text-sm"
+              className="max-w-xs bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-8 text-xs rounded-none"
             />
           ) : activeSearchCol ? (
             <Input
@@ -115,7 +113,7 @@ export function DataTable<TData extends RowData>({
               onChange={(event) =>
                 table.getColumn(activeSearchCol)?.setFilterValue(event.target.value)
               }
-              className="max-w-sm bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-9 text-sm"
+              className="max-w-xs bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-8 text-xs rounded-none"
             />
           ) : null}
           {filterComponent}
@@ -126,7 +124,7 @@ export function DataTable<TData extends RowData>({
             <Button
               variant="outline"
               size="sm"
-              className="ml-auto border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-2"
+              className="ml-auto border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Columns
@@ -134,7 +132,7 @@ export function DataTable<TData extends RowData>({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            className="bg-zinc-900 border-zinc-800 text-zinc-300"
+            className="bg-zinc-900 border-zinc-800 text-zinc-300 rounded-none"
           >
             {table
               .getAllColumns()
@@ -142,7 +140,7 @@ export function DataTable<TData extends RowData>({
               .map((column) => (
                 <DropdownMenuCheckboxItem
                   key={column.id}
-                  className="capitalize text-zinc-300 focus:bg-zinc-800 focus:text-white text-xs"
+                  className="capitalize text-zinc-300 focus:bg-zinc-800 focus:text-white text-xs rounded-none"
                   checked={column.getIsVisible()}
                   onCheckedChange={(value) =>
                     column.toggleVisibility(!!value)
@@ -155,9 +153,10 @@ export function DataTable<TData extends RowData>({
         </DropdownMenu>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Scrollable Table Viewport */}
+      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-230px)]">
         <Table>
-          <TableHeader className="bg-zinc-900/40 border-b border-zinc-800">
+          <TableHeader className="bg-[#0e0e0e] sticky top-0 z-10 border-b border-zinc-800">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow
                 key={headerGroup.id}
@@ -166,7 +165,7 @@ export function DataTable<TData extends RowData>({
                 {headerGroup.headers.map((header) => (
                   <TableHead
                     key={header.id}
-                    className="text-xs uppercase tracking-wider text-zinc-400 font-semibold py-3 px-4"
+                    className="text-xs uppercase tracking-wider text-zinc-400 font-semibold py-2.5 px-3.5 font-mono"
                   >
                     {header.isPlaceholder ? null : (
                       <table.FlexRender header={header} />
@@ -200,7 +199,7 @@ export function DataTable<TData extends RowData>({
                   }`}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-3.5 px-4 text-sm">
+                    <TableCell key={cell.id} className="py-2.5 px-3.5 text-xs">
                       <table.FlexRender cell={cell} />
                     </TableCell>
                   ))}
@@ -210,7 +209,7 @@ export function DataTable<TData extends RowData>({
               <TableRow>
                 <TableCell
                   colSpan={columns.length}
-                  className="h-24 text-center text-zinc-500 text-sm"
+                  className="h-24 text-center text-zinc-500 text-xs font-mono"
                 >
                   No results found.
                 </TableCell>
@@ -220,46 +219,29 @@ export function DataTable<TData extends RowData>({
         </Table>
       </div>
 
+      {/* Scrollable Status & Show More Footer */}
       {pagination && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-800/80 text-xs text-zinc-400">
+        <div className="flex items-center justify-between px-4 py-2 border-t border-zinc-800/80 text-xs text-zinc-400 bg-[#0a0a0a]">
           <div className="flex items-center gap-2">
-            <span>Rows per page:</span>
-            <select
-              value={pagination.limit || 20}
-              onChange={(e) => pagination.onLimitChange?.(Number(e.target.value))}
-              className="bg-zinc-900 border border-zinc-800 rounded-none px-2 py-1 text-zinc-200 text-xs focus:outline-none focus:border-zinc-700 font-mono"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-            </select>
-            <span className="text-zinc-500 ml-2 font-mono">
+            <span className="text-zinc-500 font-mono text-[11px]">
               Showing {data.length} records
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!pagination.canPrev}
-              onClick={pagination.onPrev}
-              className="h-8 px-2.5 rounded-none border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!pagination.hasMore}
-              onClick={pagination.onNext}
-              className="h-8 px-2.5 rounded-none border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:text-white hover:bg-zinc-800 disabled:opacity-40"
-            >
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
+          <div>
+            {pagination.hasMore ? (
+              <button
+                type="button"
+                onClick={pagination.onNext}
+                className="px-3 py-1 bg-zinc-900 border border-zinc-700 hover:border-yellow-600 hover:bg-zinc-800 text-yellow-400 text-xs font-mono font-medium transition-colors"
+              >
+                Show more
+              </button>
+            ) : (
+              <span className="text-[11px] font-mono text-zinc-600 uppercase tracking-wider">
+                All records loaded
+              </span>
+            )}
           </div>
         </div>
       )}
