@@ -1,5 +1,5 @@
 import React from "react";
-import { HardDrive, Zap } from "lucide-react";
+import { HardDrive, Zap, Monitor } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -64,6 +64,14 @@ export const StorageCard: React.FC<StorageCardProps> = ({ storage, onClick }) =>
           <span className="text-zinc-500 font-normal">Capacity Allocation</span>
           <span className="font-semibold text-zinc-200 font-mono text-xs">
             {hasCapacity ? `${usedTB} TB / ${totalTB} TB (${percent}%)` : "Unreported / Dynamic"}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500 font-normal">Attached Workloads</span>
+          <span className="font-semibold text-zinc-100 font-mono text-xs flex items-center gap-1.5">
+            <Monitor className="h-3.5 w-3.5 text-yellow-500" />
+            {storage.vmCount || 0} VMs
           </span>
         </div>
 

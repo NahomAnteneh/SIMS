@@ -160,28 +160,30 @@ func (h *Handler) writeProblemWithDetails(w http.ResponseWriter, status int, tit
 
 // VMListItem represents a VM entry in list pagination responses.
 type VMListItem struct {
-	ID              string `json:"id"`
-	VCenterID       string `json:"vcenter_id"`
-	MoRef           string `json:"moref"`
-	InstanceUUID    string `json:"instance_uuid"`
-	BiosUUID        string `json:"bios_uuid,omitempty"`
-	Name            string `json:"name"`
-	PowerState      string `json:"power_state"`
-	ConnectionState string `json:"connection_state"`
-	CPUCores        int32  `json:"cpu_cores"`
-	MemoryMB        int64  `json:"memory_mb"`
-	FolderID        string `json:"folder_id,omitempty"`
-	FolderPath      string `json:"folder_path,omitempty"`
-	HostID          string `json:"host_id,omitempty"`
-	ClusterID       string `json:"cluster_id,omitempty"`
-	DatacenterID    string `json:"datacenter_id,omitempty"`
-	GuestOS         string `json:"guest_os,omitempty"`
-	GuestHostName   string `json:"guest_host_name,omitempty"`
-	GuestIPAddress  string `json:"guest_ip_address,omitempty"`
-	Annotation      string `json:"annotation,omitempty"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
-	FirstSeenAt     string `json:"first_seen_at,omitempty"`
+	ID                      string `json:"id"`
+	VCenterID               string `json:"vcenter_id"`
+	MoRef                   string `json:"moref"`
+	InstanceUUID            string `json:"instance_uuid"`
+	BiosUUID                string `json:"bios_uuid,omitempty"`
+	Name                    string `json:"name"`
+	PowerState              string `json:"power_state"`
+	ConnectionState         string `json:"connection_state"`
+	CPUCores                int32  `json:"cpu_cores"`
+	MemoryMB                int64  `json:"memory_mb"`
+	FolderID                string `json:"folder_id,omitempty"`
+	FolderPath              string `json:"folder_path,omitempty"`
+	HostID                  string `json:"host_id,omitempty"`
+	ClusterID               string `json:"cluster_id,omitempty"`
+	DatacenterID            string `json:"datacenter_id,omitempty"`
+	GuestOS                 string `json:"guest_os,omitempty"`
+	GuestHostName           string `json:"guest_host_name,omitempty"`
+	GuestIPAddress          string `json:"guest_ip_address,omitempty"`
+	Annotation              string `json:"annotation,omitempty"`
+	CommittedStorageBytes   int64  `json:"committed_storage_bytes"`
+	ProvisionedStorageBytes int64  `json:"provisioned_storage_bytes"`
+	CreatedAt               string `json:"created_at"`
+	UpdatedAt               string `json:"updated_at"`
+	FirstSeenAt             string `json:"first_seen_at,omitempty"`
 }
 
 // PaginationMeta contains keyset pagination metadata.
@@ -382,6 +384,8 @@ type NICAttachment struct {
 	IPAddress   string `json:"ip_address,omitempty"`
 	NetworkID   string `json:"network_id,omitempty"`
 	PortgroupID string `json:"portgroup_id,omitempty"`
+	NetworkName string `json:"network_name,omitempty"`
+	VlanIDs     string `json:"vlan_ids,omitempty"`
 }
 
 func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
@@ -467,6 +471,27 @@ func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
 		if nic.IpAddress != nil {
 			ip = nic.IpAddress.String()
 		}
+
+		var vlanStr string
+		if len(nic.VlanIds) > 0 {
+			var parts []string
+			for _, r := range nic.VlanIds {
+				if r.Valid && r.Lower.Valid && r.Upper.Valid {
+					low := r.Lower.Int32
+					up := r.Upper.Int32
+					if r.LowerType == pgtype.Inclusive && r.UpperType == pgtype.Exclusive {
+						up = up - 1
+					}
+					if low == up {
+						parts = append(parts, fmt.Sprintf("%d", low))
+					} else {
+						parts = append(parts, fmt.Sprintf("%d-%d", low, up))
+					}
+				}
+			}
+			vlanStr = strings.Join(parts, ", ")
+		}
+
 		nicAttachments[i] = NICAttachment{
 			ID:          formatUUID(nic.ID),
 			DeviceKey:   nic.DeviceKey,
@@ -474,6 +499,8 @@ func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
 			IPAddress:   ip,
 			NetworkID:   formatUUID(nic.NetworkID),
 			PortgroupID: formatUUID(nic.PortgroupID),
+			NetworkName: nic.NetworkName,
+			VlanIDs:     vlanStr,
 		}
 	}
 
@@ -528,27 +555,29 @@ func mapDBVMToListItem(vm db.VirtualMachine) VMListItem {
 	}
 
 	return VMListItem{
-		ID:              formatUUID(vm.ID),
-		VCenterID:       formatUUID(vm.VcenterID),
-		MoRef:           vm.Moref,
-		InstanceUUID:    vm.InstanceUuid,
-		BiosUUID:        vm.BiosUuid.String,
-		Name:            vm.Name,
-		PowerState:      vm.PowerState,
-		ConnectionState: vm.ConnectionState,
-		CPUCores:        vm.CpuCores,
-		MemoryMB:        vm.MemoryMb,
-		FolderID:        formatUUID(vm.FolderID),
-		FolderPath:      vm.FolderPath.String,
-		HostID:          formatUUID(vm.HostID),
-		ClusterID:       formatUUID(vm.ClusterID),
-		DatacenterID:    formatUUID(vm.DatacenterID),
-		GuestOS:         vm.GuestOs,
-		GuestHostName:   vm.GuestHostName,
-		GuestIPAddress:  ip,
-		Annotation:      vm.Annotation,
-		CreatedAt:       formatTime(vm.CreatedAt.Time),
-		UpdatedAt:       formatTime(vm.UpdatedAt.Time),
+		ID:                      formatUUID(vm.ID),
+		VCenterID:               formatUUID(vm.VcenterID),
+		MoRef:                   vm.Moref,
+		InstanceUUID:            vm.InstanceUuid,
+		BiosUUID:                vm.BiosUuid.String,
+		Name:                    vm.Name,
+		PowerState:              vm.PowerState,
+		ConnectionState:         vm.ConnectionState,
+		CPUCores:                vm.CpuCores,
+		MemoryMB:                vm.MemoryMb,
+		FolderID:                formatUUID(vm.FolderID),
+		FolderPath:              vm.FolderPath.String,
+		HostID:                  formatUUID(vm.HostID),
+		ClusterID:               formatUUID(vm.ClusterID),
+		DatacenterID:            formatUUID(vm.DatacenterID),
+		GuestOS:                 vm.GuestOs,
+		GuestHostName:           vm.GuestHostName,
+		GuestIPAddress:          ip,
+		Annotation:              vm.Annotation,
+		CommittedStorageBytes:   vm.CommittedStorageBytes,
+		ProvisionedStorageBytes: vm.ProvisionedStorageBytes,
+		CreatedAt:               formatTime(vm.CreatedAt.Time),
+		UpdatedAt:               formatTime(vm.UpdatedAt.Time),
 	}
 }
 

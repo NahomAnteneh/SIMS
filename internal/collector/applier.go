@@ -35,6 +35,10 @@ type VMFieldMask struct {
 	DatacenterID    *string
 	LastSeenAt      *time.Time
 
+	// Storage metrics
+	CommittedStorageBytes   *int64
+	ProvisionedStorageBytes *int64
+
 	// Sub-resources
 	CustomAttributes  []domain.CustomAttributeRecord
 	NetworkInterfaces []domain.NetworkInterfaceRecord
@@ -195,6 +199,12 @@ func (a *IncrementalApplier) handleEnter(ctx context.Context, vcenterID, moref s
 	if mask.Annotation != nil {
 		vm.Annotation = *mask.Annotation
 	}
+	if mask.CommittedStorageBytes != nil {
+		vm.CommittedStorageBytes = *mask.CommittedStorageBytes
+	}
+	if mask.ProvisionedStorageBytes != nil {
+		vm.ProvisionedStorageBytes = *mask.ProvisionedStorageBytes
+	}
 
 	_, err = a.persister.PersistVMBatch(ctx, []domain.VMRecord{vm})
 	return err
@@ -334,6 +344,24 @@ func (a *IncrementalApplier) parseChangeSetToMask(vcenterID, moref string, chang
 		case "guest.net":
 			mask.NetworkInterfaces = a.parseGuestNet(c.Val, snap)
 
+		case "config.hardware.device", "config.hardware":
+			if devNICs := a.parseHardwareDevices(c.Val, snap); len(devNICs) > 0 {
+				mask.NetworkInterfaces = devNICs
+			}
+			if mask.ProvisionedStorageBytes == nil {
+				if capBytes := a.calculateDiskCapacity(c.Val); capBytes > 0 {
+					mask.ProvisionedStorageBytes = &capBytes
+				}
+			}
+
+		case "summary.storage":
+			if st, ok := c.Val.(types.VirtualMachineStorageSummary); ok {
+				committed := st.Committed
+				provisioned := st.Committed + st.Uncommitted
+				mask.CommittedStorageBytes = &committed
+				mask.ProvisionedStorageBytes = &provisioned
+			}
+
 		case "parent":
 			if ref, ok := c.Val.(types.ManagedObjectReference); ok && snap != nil {
 				if id, ok := snap.FolderIDByMoRef[ref.Value]; ok {
@@ -421,13 +449,46 @@ func (a *IncrementalApplier) parseGuestNet(val any, snap *TopologySnapshot) []do
 		}
 
 		var netID, pgID, vlanSpec string
+		netName := gnic.Network
 		if snap != nil && gnic.Network != "" {
 			if net, ok := snap.Networks[gnic.Network]; ok {
 				netID = net.ID
+				if netID == "" {
+					netID = snap.NetworkIDByMoRef[gnic.Network]
+				}
 				vlanSpec = net.VLANSpec
 			} else if pg, ok := snap.Portgroups[gnic.Network]; ok {
 				pgID = pg.ID
+				if pgID == "" {
+					pgID = snap.PortgroupIDByMoRef[gnic.Network]
+				}
 				vlanSpec = pg.VLANSpec
+			} else if id, ok := snap.PortgroupIDByMoRef[gnic.Network]; ok {
+				pgID = id
+				if pg, ok2 := snap.Portgroups[gnic.Network]; ok2 {
+					vlanSpec = pg.VLANSpec
+				}
+			} else if id, ok := snap.NetworkIDByMoRef[gnic.Network]; ok {
+				netID = id
+				if net, ok2 := snap.Networks[gnic.Network]; ok2 {
+					vlanSpec = net.VLANSpec
+				}
+			}
+
+			if netID == "" && pgID == "" {
+				if pg, ok := snap.PortgroupByName[netName]; ok {
+					pgID = pg.ID
+					if pgID == "" {
+						pgID = snap.PortgroupIDByMoRef[pg.MoRef]
+					}
+					vlanSpec = pg.VLANSpec
+				} else if net, ok := snap.NetworkByName[netName]; ok {
+					netID = net.ID
+					if netID == "" {
+						netID = snap.NetworkIDByMoRef[net.MoRef]
+					}
+					vlanSpec = net.VLANSpec
+				}
 			}
 		}
 
@@ -457,4 +518,157 @@ func (a *IncrementalApplier) parseGuestNet(val any, snap *TopologySnapshot) []do
 	}
 
 	return nics
+}
+
+// parseHardwareDevices extracts network interfaces from virtual hardware device changes.
+func (a *IncrementalApplier) parseHardwareDevices(val any, snap *TopologySnapshot) []domain.NetworkInterfaceRecord {
+	var devices []types.BaseVirtualDevice
+	switch v := val.(type) {
+	case []types.BaseVirtualDevice:
+		devices = v
+	case *types.ArrayOfVirtualDevice:
+		if v != nil {
+			devices = v.VirtualDevice
+		}
+	case types.VirtualHardware:
+		devices = v.Device
+	case *types.VirtualHardware:
+		if v != nil {
+			devices = v.Device
+		}
+	}
+
+	if len(devices) == 0 {
+		return nil
+	}
+
+	var nics []domain.NetworkInterfaceRecord
+	for _, dev := range devices {
+		if eth, ok := dev.(types.BaseVirtualEthernetCard); ok {
+			card := eth.GetVirtualEthernetCard()
+			if card == nil {
+				continue
+			}
+
+			mac := strings.ToLower(strings.TrimSpace(card.MacAddress))
+			var netMoRef, pgMoRef, netID, pgID, vlanSpec, netName string
+
+			if card.Backing != nil {
+				switch b := card.Backing.(type) {
+				case *types.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+					pgMoRef = b.Port.PortgroupKey
+				case *types.VirtualEthernetCardNetworkBackingInfo:
+					if b.Network != nil {
+						netMoRef = b.Network.Value
+					}
+					netName = b.DeviceName
+				}
+			}
+
+			if snap != nil {
+				if pgMoRef != "" {
+					if pg, ok := snap.Portgroups[pgMoRef]; ok {
+						pgID = pg.ID
+						if pgID == "" {
+							pgID = snap.PortgroupIDByMoRef[pgMoRef]
+						}
+						vlanSpec = pg.VLANSpec
+						if pg.Name != "" {
+							netName = pg.Name
+						}
+					} else if id, ok := snap.PortgroupIDByMoRef[pgMoRef]; ok {
+						pgID = id
+					}
+				}
+				if netMoRef != "" {
+					if net, ok := snap.Networks[netMoRef]; ok {
+						netID = net.ID
+						if netID == "" {
+							netID = snap.NetworkIDByMoRef[netMoRef]
+						}
+						if vlanSpec == "" {
+							vlanSpec = net.VLANSpec
+						}
+						if net.Name != "" {
+							netName = net.Name
+						}
+					} else if id, ok := snap.NetworkIDByMoRef[netMoRef]; ok {
+						netID = id
+					}
+				}
+				if netName != "" {
+					if pg, ok := snap.PortgroupByName[netName]; ok {
+						if pgID == "" {
+							pgID = pg.ID
+							if pgID == "" {
+								pgID = snap.PortgroupIDByMoRef[pg.MoRef]
+							}
+						}
+						if vlanSpec == "" {
+							vlanSpec = pg.VLANSpec
+						}
+					} else if net, ok := snap.NetworkByName[netName]; ok {
+						if netID == "" {
+							netID = net.ID
+							if netID == "" {
+								netID = snap.NetworkIDByMoRef[net.MoRef]
+							}
+						}
+						if vlanSpec == "" {
+							vlanSpec = net.VLANSpec
+						}
+					}
+				}
+			}
+
+			var matchedMoRef string
+			if pgMoRef != "" {
+				matchedMoRef = pgMoRef
+			} else if netMoRef != "" {
+				matchedMoRef = netMoRef
+			}
+
+			nics = append(nics, domain.NetworkInterfaceRecord{
+				DeviceKey:    card.Key,
+				MacAddress:   mac,
+				IPAddress:    "",
+				NetworkID:    netID,
+				PortgroupID:  pgID,
+				NetworkMoRef: matchedMoRef,
+				VLANSpec:     vlanSpec,
+			})
+		}
+	}
+	return nics
+}
+
+// calculateDiskCapacity totals the disk capacity from virtual hardware devices.
+func (a *IncrementalApplier) calculateDiskCapacity(val any) int64 {
+	var devices []types.BaseVirtualDevice
+	switch v := val.(type) {
+	case []types.BaseVirtualDevice:
+		devices = v
+	case *types.ArrayOfVirtualDevice:
+		if v != nil {
+			devices = v.VirtualDevice
+		}
+	case types.VirtualHardware:
+		devices = v.Device
+	case *types.VirtualHardware:
+		if v != nil {
+			devices = v.Device
+		}
+	}
+
+	var total int64
+	for _, dev := range devices {
+		if disk, ok := dev.(*types.VirtualDisk); ok {
+			if disk.CapacityInBytes > 0 {
+				total += disk.CapacityInBytes
+			} else if disk.CapacityInKB > 0 {
+				total += disk.CapacityInKB * 1024
+			}
+		}
+	}
+	return total
 }

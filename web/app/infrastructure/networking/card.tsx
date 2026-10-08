@@ -1,5 +1,5 @@
 import React from "react";
-import { Network, Tag } from "lucide-react";
+import { Network, Tag, Monitor } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -8,6 +8,7 @@ import {
   CardFooter,
 } from "@/components/ui/card";
 import { type NetworkItem } from "../columns";
+import { formatVlanDisplay } from "@/lib/vlan";
 
 interface NetworkCardProps {
   network: NetworkItem;
@@ -53,6 +54,32 @@ export const NetworkCard: React.FC<NetworkCardProps> = ({ network, onClick }) =>
           <span className="text-zinc-500 font-normal">Network Type</span>
           <span className="font-semibold text-zinc-200 text-xs font-mono">
             {network.type || "Standard"}
+          </span>
+        </div>
+
+        {network.switchName && (
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500 font-normal">DVS Switch</span>
+            <span className="font-semibold text-zinc-200 text-xs font-mono">
+              {network.switchName}
+            </span>
+          </div>
+        )}
+
+        {network.vlanIds && network.vlanIds !== "{}" && formatVlanDisplay(network.vlanIds) !== "None" && (
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-500 font-normal">VLAN Allocation</span>
+            <span className="font-mono text-xs font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 border border-amber-500/20">
+              VLAN {formatVlanDisplay(network.vlanIds)}
+            </span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <span className="text-zinc-500 font-normal">Attached Workloads</span>
+          <span className="font-semibold text-zinc-100 font-mono text-xs flex items-center gap-1.5">
+            <Monitor className="h-3.5 w-3.5 text-yellow-500" />
+            {network.vmCount || 0} VMs
           </span>
         </div>
       </CardContent>

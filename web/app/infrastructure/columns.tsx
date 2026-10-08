@@ -1,6 +1,7 @@
 "use client";
 
 import { createColumnHelper } from "@tanstack/react-table";
+import Link from "next/link";
 import {
   Server,
   Layers,
@@ -12,9 +13,11 @@ import {
   Zap,
   ArrowUpDown,
   Power,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { type DataTableFeatures } from "@/components/ui/data-table-features";
+import { formatVlanDisplay } from "@/lib/vlan";
 
 // 1. Domain Interfaces Grounded in Real Backend Tables
 export interface Datacenter {
@@ -59,6 +62,7 @@ export interface Storage {
   capacityGB: number;
   usedGB: number;
   freeGB: number;
+  vmCount: number;
   status: "healthy" | "warning" | "critical" | string;
 }
 
@@ -71,6 +75,9 @@ export interface NetworkItem {
   datacenterId: string;
   datacenterName: string;
   type: string;
+  vlanIds?: string;
+  switchName?: string;
+  vmCount: number;
   status: "active" | "inactive" | string;
 }
 
@@ -453,6 +460,26 @@ export const storageColumns = [
     },
   }),
 
+  // Attached VMs / Workloads
+  storageHelper.accessor("vmCount", {
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        className="font-mono text-xs uppercase text-zinc-300 hover:text-white px-0"
+      >
+        Attached Workloads
+        <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-zinc-500" />
+      </Button>
+    ),
+    cell: (info) => (
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
+        <Monitor className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+        <span>{info.getValue() || 0} VMs</span>
+      </div>
+    ),
+  }),
+
   // Status Badge
   storageHelper.accessor("status", {
     header: "Status",
@@ -532,6 +559,63 @@ export const netColumns = [
     ),
   }),
 
+  // Distributed Switch / Switch Name
+  netHelper.accessor("switchName", {
+    header: "Switch / DVS",
+    cell: (info) => (
+      <span className="text-xs font-mono font-semibold text-zinc-300">
+        {info.getValue() || "Standard vSwitch"}
+      </span>
+    ),
+  }),
+
+  // VLAN IDs
+  netHelper.accessor("vlanIds", {
+    header: "VLAN",
+    cell: (info) => {
+      const val = info.getValue();
+      const display = formatVlanDisplay(val);
+      if (display === "None") {
+        return <span className="text-xs font-mono text-zinc-500">None</span>;
+      }
+      return (
+        <Link
+          href={`/compute/vms?vlan=${encodeURIComponent(display)}`}
+          className="inline-block text-xs font-mono font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 border border-amber-500/20 hover:border-amber-400 hover:bg-amber-400/20 transition-colors"
+          title={`Filter VMs on VLAN ${display}`}
+        >
+          VLAN {display}
+        </Link>
+      );
+    },
+  }),
+
+  // Attached Workloads (VMs)
+  netHelper.accessor("vmCount", {
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        className="font-mono text-xs uppercase text-zinc-300 hover:text-white px-0"
+      >
+        Attached Workloads
+        <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-zinc-500" />
+      </Button>
+    ),
+    cell: (info) => (
+      <Link
+        href={`/compute/vms?network_id=${info.row.original.id}&network_name=${encodeURIComponent(info.row.original.name)}`}
+        className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100 hover:text-yellow-400 transition-colors group"
+        title={`View VMs connected to ${info.row.original.name}`}
+      >
+        <Monitor className="h-3.5 w-3.5 text-yellow-500 shrink-0 group-hover:scale-110 transition-transform" />
+        <span className="underline decoration-zinc-700 underline-offset-4 group-hover:decoration-yellow-400">
+          {info.getValue() || 0} VMs
+        </span>
+      </Link>
+    ),
+  }),
+
   // Status Badge
   netHelper.accessor("status", {
     header: "Status",
@@ -608,13 +692,27 @@ export const hostColumns = [
 
   // Workloads (VM count)
   hostHelper.accessor("vmCount", {
-    header: "Virtual Machines",
+    header: ({ column }) => (
+      <Button
+        variant="ghost"
+        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+        className="font-mono text-xs uppercase text-zinc-300 hover:text-white px-0"
+      >
+        Workloads
+        <ArrowUpDown className="ml-2 h-3.5 w-3.5 text-zinc-500" />
+      </Button>
+    ),
     cell: (info) => (
-      <div className="flex items-center gap-1.5 text-sm font-semibold text-zinc-100">
-        <Monitor className="h-3.5 w-3.5 text-yellow-500" />
-        <span>{info.getValue()}</span>
-        <span className="text-xs text-zinc-500 font-normal">VMs</span>
-      </div>
+      <Link
+        href={`/compute/vms?host_id=${info.row.original.id}&host_name=${encodeURIComponent(info.row.original.name)}`}
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-yellow-500 hover:text-yellow-400 hover:underline"
+        title={`Filter virtual machines on ${info.row.original.name}`}
+      >
+        <Monitor className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
+        <span>{info.getValue() || 0}</span>
+        <span className="text-xs text-zinc-400 font-normal">VMs</span>
+      </Link>
     ),
   }),
 
@@ -660,5 +758,21 @@ export const hostColumns = [
         </span>
       );
     },
+  }),
+
+  // Action column to directly view host VMs
+  hostHelper.display({
+    id: "actions",
+    header: "Filter",
+    cell: (info) => (
+      <Link
+        href={`/compute/vms?host_id=${info.row.original.id}&host_name=${encodeURIComponent(info.row.original.name)}`}
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1 text-xs font-mono text-zinc-400 hover:text-yellow-400 border border-zinc-800 hover:border-yellow-500/40 px-2 py-1 bg-zinc-900/60 transition-colors"
+      >
+        View VMs
+        <ChevronRight className="h-3 w-3" />
+      </Link>
+    ),
   }),
 ];

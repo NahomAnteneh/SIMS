@@ -59,6 +59,7 @@ export interface DataTableProps<TData extends RowData> {
   filterComponent?: React.ReactNode;
   customSearch?: React.ReactNode;
   tableContainerClassName?: string;
+  hideHeader?: boolean;
 }
 
 export function DataTable<TData extends RowData>({
@@ -73,6 +74,7 @@ export function DataTable<TData extends RowData>({
   filterComponent,
   customSearch,
   tableContainerClassName,
+  hideHeader,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -142,65 +144,67 @@ export function DataTable<TData extends RowData>({
   return (
     <div className="overflow-hidden border border-zinc-800 bg-[#0c0c0c] shadow-sm rounded-none w-full">
       {/* Table Header Bar (Filters & Column Visibility) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 sm:p-3 border-b border-zinc-800/80 gap-2.5">
-        <div className="flex items-center gap-2.5 flex-1 w-full">
-          {customSearch ? (
-            customSearch
-          ) : onSearchChange ? (
-            <Input
-              placeholder={searchPlaceholder ?? "Search..."}
-              value={searchValue ?? ""}
-              onChange={(event) => onSearchChange(event.target.value)}
-              className="max-w-xs bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-8 text-xs rounded-none"
-            />
-          ) : activeSearchCol ? (
-            <Input
-              placeholder={searchPlaceholder ?? `Filter by ${activeSearchCol}...`}
-              value={
-                (table.getColumn(activeSearchCol)?.getFilterValue() as string) ?? ""
-              }
-              onChange={(event) =>
-                table.getColumn(activeSearchCol)?.setFilterValue(event.target.value)
-              }
-              className="max-w-xs bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-8 text-xs rounded-none"
-            />
-          ) : null}
-          {filterComponent}
-        </div>
+      {!hideHeader && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 sm:p-3 border-b border-zinc-800/80 gap-2.5">
+          <div className="flex items-center gap-2.5 flex-1 w-full">
+            {customSearch ? (
+              customSearch
+            ) : onSearchChange ? (
+              <Input
+                placeholder={searchPlaceholder ?? "Search..."}
+                value={searchValue ?? ""}
+                onChange={(event) => onSearchChange(event.target.value)}
+                className="max-w-xs bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-8 text-xs rounded-none"
+              />
+            ) : activeSearchCol ? (
+              <Input
+                placeholder={searchPlaceholder ?? `Filter by ${activeSearchCol}...`}
+                value={
+                  (table.getColumn(activeSearchCol)?.getFilterValue() as string) ?? ""
+                }
+                onChange={(event) =>
+                  table.getColumn(activeSearchCol)?.setFilterValue(event.target.value)
+                }
+                className="max-w-xs bg-zinc-900/60 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 h-8 text-xs rounded-none"
+              />
+            ) : null}
+            {filterComponent}
+          </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="bg-zinc-900 border-zinc-800 text-zinc-300 rounded-none"
             >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Columns
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="bg-zinc-900 border-zinc-800 text-zinc-300 rounded-none"
-          >
-            {table
-              .getAllColumns()
-              .filter((column) => column.getCanHide())
-              .map((column) => (
-                <DropdownMenuCheckboxItem
-                  key={column.id}
-                  className="capitalize text-zinc-300 focus:bg-zinc-800 focus:text-white text-xs rounded-none"
-                  checked={column.getIsVisible()}
-                  onCheckedChange={(value) =>
-                    column.toggleVisibility(!!value)
-                  }
-                >
-                  {column.id}
-                </DropdownMenuCheckboxItem>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+              {table
+                .getAllColumns()
+                .filter((column) => column.getCanHide())
+                .map((column) => (
+                  <DropdownMenuCheckboxItem
+                    key={column.id}
+                    className="capitalize text-zinc-300 focus:bg-zinc-800 focus:text-white text-xs rounded-none"
+                    checked={column.getIsVisible()}
+                    onCheckedChange={(value) =>
+                      column.toggleVisibility(!!value)
+                    }
+                  >
+                    {column.id}
+                  </DropdownMenuCheckboxItem>
+                ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
 
       {/* Scrollable Table Viewport */}
       <div
@@ -341,7 +345,7 @@ export function DataTable<TData extends RowData>({
             ) : (
               <span className="text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-emerald-400 inline-block" />
-                All {pagination.total || data.length} records loaded
+                All {pagination.total || data.length} {pagination.entityName || "records"} loaded
               </span>
             )}
           </div>

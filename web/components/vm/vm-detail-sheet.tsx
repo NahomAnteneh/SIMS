@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { simsApi } from "@/lib/api/client";
 import { VMDetailResponse } from "@/lib/api/types";
+import { formatVlanDisplay } from "@/lib/vlan";
 import {
   X,
   Server,
@@ -32,6 +34,7 @@ interface VMDetailSheetProps {
 
 export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
   const [vm, setVM] = useState<VMDetailResponse | null>(null);
+  const [hostInfo, setHostInfo] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -71,6 +74,25 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
     loadVM();
   }, [vmId]);
 
+  useEffect(() => {
+    if (!vm?.host_id) {
+      setHostInfo(null);
+      return;
+    }
+    let isCancelled = false;
+    simsApi
+      .getHost(vm.host_id)
+      .then((h) => {
+        if (!isCancelled) setHostInfo({ id: h.id, name: h.name });
+      })
+      .catch(() => {
+        if (!isCancelled) setHostInfo(null);
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, [vm?.host_id]);
+
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -84,10 +106,11 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
   const isOn = vm?.power_state === "poweredOn";
   const isSuspended = vm?.power_state === "suspended";
 
-  // Calculate total disk capacity
-  const totalDiskBytes =
-    vm?.datastores?.reduce((acc, ds) => acc + (ds.capacity_bytes || 0), 0) || 0;
-  const totalDiskGB = (totalDiskBytes / (1024 * 1024 * 1024)).toFixed(1);
+  // Accurate VM storage calculation from PropertyCollector summary
+  const provisionedBytes = vm?.provisioned_storage_bytes || 0;
+  const committedBytes = vm?.committed_storage_bytes || 0;
+  const provisionedGB = (provisionedBytes / (1024 * 1024 * 1024)).toFixed(1);
+  const committedGB = (committedBytes / (1024 * 1024 * 1024)).toFixed(1);
 
   return (
     <>
@@ -220,12 +243,12 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                 </div>
 
                 <div className="bg-[#0e0e0e] border border-zinc-800 p-2.5 flex flex-col items-center text-center">
-                  <HardDrive className="h-4 w-4 text-zinc-400 mb-1" />
+                  <HardDrive className="h-4 w-4 text-cyan-400 mb-1" />
                   <span className="text-sm font-bold text-zinc-100 font-mono">
-                    {vm.datastores?.length || 0} ({totalDiskGB} GB)
+                    {provisionedBytes > 0 ? `${provisionedGB} GB` : `${vm.datastores?.length || 0} pools`}
                   </span>
                   <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">
-                    Storage
+                    {committedBytes > 0 ? `${committedGB} GB used` : "Storage"}
                   </span>
                 </div>
 
@@ -327,6 +350,25 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                     </div>
 
                     <div className="flex justify-between py-1.5 border-b border-zinc-850">
+                      <span className="text-zinc-500">Hypervisor Host</span>
+                      {vm.host_id ? (
+                        <div className="flex items-center gap-1.5 font-mono text-zinc-200 truncate max-w-[320px]">
+                          <Server className="h-3 w-3 text-yellow-500 shrink-0" />
+                          <Link
+                            href={`/compute/vms?host_id=${vm.host_id}&host_name=${encodeURIComponent(hostInfo?.name || vm.host_id)}`}
+                            onClick={onClose}
+                            className="text-yellow-400 hover:text-yellow-300 hover:underline truncate"
+                            title="Filter virtual machines on this ESXi host"
+                          >
+                            {hostInfo?.name || vm.host_id}
+                          </Link>
+                        </div>
+                      ) : (
+                        <span className="text-zinc-500 font-mono">Unassigned</span>
+                      )}
+                    </div>
+
+                    <div className="flex justify-between py-1.5 border-b border-zinc-850">
                       <span className="text-zinc-500">Instance UUID</span>
                       <div className="flex items-center gap-1.5 font-mono text-zinc-400 truncate max-w-[320px]">
                         <span className="truncate">{vm.instance_uuid}</span>
@@ -385,18 +427,32 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                 </TabsContent>
 
                 {/* Disks & Storage Tab */}
-                <TabsContent value="disks" className="mt-3 space-y-2">
+                <TabsContent value="disks" className="mt-3 space-y-3">
+                  <div className="p-3 border border-zinc-800 bg-[#121212] flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-semibold text-zinc-100 font-mono">Virtual Disk Footprint</div>
+                      <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                        Provisioned: <span className="text-cyan-400 font-bold">{provisionedGB} GB</span> • Committed (Used): <span className="text-emerald-400 font-bold">{committedGB} GB</span>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono text-[10px] text-zinc-500">
+                      {vm.datastores?.length || 0} Storage Pool{vm.datastores?.length === 1 ? "" : "s"}
+                    </div>
+                  </div>
                   {vm.datastores && vm.datastores.length > 0 ? (
                     vm.datastores.map((ds) => {
-                      const capGB = Number(
-                        (ds.capacity_bytes / (1024 * 1024 * 1024)).toFixed(1)
-                      );
-                      const freeGB = Number(
-                        (ds.free_bytes / (1024 * 1024 * 1024)).toFixed(1)
-                      );
-                      const usedGB = Math.max(0, capGB - freeGB);
-                      const usedPercent =
-                        capGB > 0 ? Math.round((usedGB / capGB) * 100) : 0;
+                      const capBytes = ds.capacity_bytes || 0;
+                      const freeBytes = ds.free_bytes || 0;
+                      const usedBytes = Math.max(0, capBytes - freeBytes);
+                      const hasCap = capBytes > 0;
+                      const usedPercent = hasCap ? Math.round((usedBytes / capBytes) * 100) : 0;
+
+                      const formatBytes = (b: number) => {
+                        if (b <= 0) return "0 GB";
+                        const gb = b / (1024 * 1024 * 1024);
+                        if (gb >= 1000) return `${(gb / 1024).toFixed(1)} TB`;
+                        return `${gb.toFixed(1)} GB`;
+                      };
 
                       return (
                         <div
@@ -405,45 +461,47 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                              <HardDrive className="h-4 w-4 text-yellow-500" />
+                              <HardDrive className="h-4 w-4 text-cyan-400" />
                               <div>
                                 <div className="text-xs font-semibold text-zinc-100 font-mono">
                                   {ds.name}
                                 </div>
                                 <div className="text-[10px] text-zinc-500 font-mono">
-                                  {ds.type} • {ds.moref}
+                                  {ds.type || "VMFS"} • {ds.moref}
                                 </div>
                               </div>
                             </div>
                             <div className="text-right font-mono">
                               <div className="text-xs font-bold text-zinc-200">
-                                {capGB} GB
+                                {formatBytes(capBytes)}
                               </div>
                               <div className="text-[10px] text-zinc-500">
-                                {freeGB} GB free ({100 - usedPercent}%)
+                                {formatBytes(freeBytes)} free ({100 - usedPercent}%)
                               </div>
                             </div>
                           </div>
 
                           {/* Storage Utilization Bar */}
-                          <div className="space-y-1 pt-1">
-                            <div className="h-1.5 w-full bg-zinc-900 overflow-hidden">
-                              <div
-                                className={`h-full ${
-                                  usedPercent > 85
-                                    ? "bg-rose-500"
-                                    : usedPercent > 70
-                                    ? "bg-amber-500"
-                                    : "bg-yellow-500"
-                                }`}
-                                style={{ width: `${usedPercent}%` }}
-                              />
+                          {hasCap && (
+                            <div className="space-y-1 pt-1">
+                              <div className="h-1.5 w-full bg-zinc-900 overflow-hidden">
+                                <div
+                                  className={`h-full ${
+                                    usedPercent > 85
+                                      ? "bg-rose-500"
+                                      : usedPercent > 70
+                                      ? "bg-amber-500"
+                                      : "bg-cyan-500"
+                                  }`}
+                                  style={{ width: `${usedPercent}%` }}
+                                />
+                              </div>
+                              <div className="flex justify-between text-[10px] font-mono text-zinc-500">
+                                <span>Used: {formatBytes(usedBytes)} ({usedPercent}%)</span>
+                                <span>Total: {formatBytes(capBytes)}</span>
+                              </div>
                             </div>
-                            <div className="flex justify-between text-[10px] font-mono text-zinc-500">
-                              <span>Used: {usedGB.toFixed(1)} GB ({usedPercent}%)</span>
-                              <span>Capacity: {capGB} GB</span>
-                            </div>
-                          </div>
+                          )}
                         </div>
                       );
                     })
@@ -457,20 +515,50 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                 {/* Network Interfaces Tab */}
                 <TabsContent value="nics" className="mt-3 space-y-2">
                   {vm.network_interfaces && vm.network_interfaces.length > 0 ? (
-                    vm.network_interfaces.map((nic) => (
-                      <div
-                        key={nic.id}
-                        className="p-3 border border-zinc-800 bg-[#0e0e0e] flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Network className="h-4 w-4 text-blue-400" />
-                          <div>
-                            <div className="text-xs font-mono font-bold text-zinc-100 flex items-center gap-1.5">
+                    vm.network_interfaces.map((nic) => {
+                      const netId = nic.portgroup_id || nic.network_id;
+                      const netName = nic.network_name || "Standard Network";
+
+                      return (
+                        <div
+                          key={nic.id}
+                          className="p-3 border border-zinc-800 bg-[#0e0e0e] space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <Network className="h-4 w-4 text-emerald-400 shrink-0" />
+                              <div>
+                                <div className="text-xs font-mono font-bold text-zinc-100 flex items-center gap-1.5">
+                                  <span>{netName}</span>
+                                  {nic.vlan_ids && formatVlanDisplay(nic.vlan_ids) !== "None" && (
+                                    <span className="text-[10px] font-mono font-semibold text-amber-400 bg-amber-400/10 px-1.5 py-0.2 border border-amber-500/20">
+                                      VLAN {formatVlanDisplay(nic.vlan_ids)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-zinc-500 font-mono flex items-center gap-2 mt-0.5">
+                                  <span>Device Key: {nic.device_key}</span>
+                                  {netId && <span>• ID: {netId.slice(0, 8)}</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right font-mono">
+                              <div className="text-xs font-bold text-zinc-200">
+                                {nic.ip_address || "No Guest IP"}
+                              </div>
+                              <div className="text-[10px] text-zinc-500">
+                                Assigned IP
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="pt-1.5 border-t border-zinc-850 flex items-center justify-between text-[11px] font-mono">
+                            <span className="text-zinc-500">Hardware MAC</span>
+                            <div className="flex items-center gap-1.5 text-zinc-300">
                               <span>{nic.mac_address}</span>
                               <button
-                                onClick={() =>
-                                  copyToClipboard(nic.mac_address, nic.id)
-                                }
+                                onClick={() => copyToClipboard(nic.mac_address, nic.id)}
                                 className="text-zinc-500 hover:text-white p-0.5"
                                 title="Copy MAC address"
                               >
@@ -481,18 +569,10 @@ export function VMDetailSheet({ vmId, onClose }: VMDetailSheetProps) {
                                 )}
                               </button>
                             </div>
-                            <div className="text-[10px] text-zinc-500 font-mono">
-                              Device Key: {nic.device_key}
-                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs font-mono text-zinc-200">
-                            {nic.ip_address || "No Guest IP"}
-                          </div>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className="p-8 text-center text-xs font-mono text-zinc-500 border border-zinc-800 bg-[#0e0e0e]">
                       No network interfaces reported by property collector.

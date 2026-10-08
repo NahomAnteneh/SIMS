@@ -55,18 +55,34 @@ export default function InfrastructureOverviewPage() {
           vcenterMap[vc.id] = vc.name;
         }
 
+        const dcListForVc: Record<string, string[]> = {};
+        for (const dc of rawDcs) {
+          if (!dcListForVc[dc.vcenter_id]) {
+            dcListForVc[dc.vcenter_id] = [];
+          }
+          dcListForVc[dc.vcenter_id].push(dc.id);
+        }
+
         const clusterCountByDc: Record<string, number> = {};
         for (const cl of rawCls) {
-          if (cl.datacenter_id) {
-            clusterCountByDc[cl.datacenter_id] = (clusterCountByDc[cl.datacenter_id] || 0) + 1;
+          let targetDcId = cl.datacenter_id;
+          if (!targetDcId && cl.vcenter_id && dcListForVc[cl.vcenter_id]?.length === 1) {
+            targetDcId = dcListForVc[cl.vcenter_id][0];
+          }
+          if (targetDcId) {
+            clusterCountByDc[targetDcId] = (clusterCountByDc[targetDcId] || 0) + 1;
           }
         }
 
         const hostCountByDc: Record<string, number> = {};
         const hostCountByCluster: Record<string, number> = {};
         for (const h of rawHosts) {
-          if (h.datacenter_id) {
-            hostCountByDc[h.datacenter_id] = (hostCountByDc[h.datacenter_id] || 0) + 1;
+          let targetDcId = h.datacenter_id;
+          if (!targetDcId && h.vcenter_id && dcListForVc[h.vcenter_id]?.length === 1) {
+            targetDcId = dcListForVc[h.vcenter_id][0];
+          }
+          if (targetDcId) {
+            hostCountByDc[targetDcId] = (hostCountByDc[targetDcId] || 0) + 1;
           }
           if (h.cluster_id) {
             hostCountByCluster[h.cluster_id] = (hostCountByCluster[h.cluster_id] || 0) + 1;
@@ -76,17 +92,25 @@ export default function InfrastructureOverviewPage() {
         const datastoreCountByDc: Record<string, number> = {};
         const storageBytesByDc: Record<string, number> = {};
         for (const ds of rawDss) {
-          if (ds.datacenter_id) {
-            datastoreCountByDc[ds.datacenter_id] = (datastoreCountByDc[ds.datacenter_id] || 0) + 1;
-            storageBytesByDc[ds.datacenter_id] =
-              (storageBytesByDc[ds.datacenter_id] || 0) + (ds.capacity_bytes || 0);
+          let targetDcId = ds.datacenter_id;
+          if (!targetDcId && ds.vcenter_id && dcListForVc[ds.vcenter_id]?.length === 1) {
+            targetDcId = dcListForVc[ds.vcenter_id][0];
+          }
+          if (targetDcId) {
+            datastoreCountByDc[targetDcId] = (datastoreCountByDc[targetDcId] || 0) + 1;
+            storageBytesByDc[targetDcId] =
+              (storageBytesByDc[targetDcId] || 0) + (ds.capacity_bytes || 0);
           }
         }
 
         const networkCountByDc: Record<string, number> = {};
         for (const net of rawNets) {
-          if (net.datacenter_id) {
-            networkCountByDc[net.datacenter_id] = (networkCountByDc[net.datacenter_id] || 0) + 1;
+          let targetDcId = net.datacenter_id;
+          if (!targetDcId && net.vcenter_id && dcListForVc[net.vcenter_id]?.length === 1) {
+            targetDcId = dcListForVc[net.vcenter_id][0];
+          }
+          if (targetDcId) {
+            networkCountByDc[targetDcId] = (networkCountByDc[targetDcId] || 0) + 1;
           }
         }
 
@@ -109,7 +133,7 @@ export default function InfrastructureOverviewPage() {
           vcenterName: vcenterMap[dc.vcenter_id] || "Primary vCenter",
           clusterCount: clusterCountByDc[dc.id] || 0,
           hostCount: hostCountByDc[dc.id] || 0,
-          vmCount: vmCountByDc[dc.name] || 0,
+          vmCount: vmCountByDc[dc.name] ?? vmCountByDc[dc.id] ?? (rawDcs.length === 1 ? Object.values(vmCountByDc).reduce((a, b) => a + b, 0) : 0),
           datastoreCount: datastoreCountByDc[dc.id] || 0,
           totalStorageBytes: storageBytesByDc[dc.id] || 0,
           networkCount: networkCountByDc[dc.id] || 0,
@@ -147,6 +171,7 @@ export default function InfrastructureOverviewPage() {
             capacityGB: capGB,
             usedGB: usedGB,
             freeGB: freeGB,
+            vmCount: ds.vm_count || 0,
             status: capGB > 0 && freeGB / capGB < 0.1 ? "warning" : "healthy",
           };
         });
@@ -160,9 +185,13 @@ export default function InfrastructureOverviewPage() {
           datacenterId: net.datacenter_id || "",
           datacenterName: (net.datacenter_id ? dcMap[net.datacenter_id] : "") || "Datacenter",
           type:
-            net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed")
+            net.type ||
+            (net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed")
               ? "Distributed Virtual Portgroup"
-              : "Standard Network",
+              : "Standard Network"),
+          vlanIds: net.vlan_ids,
+          switchName: net.switch_name,
+          vmCount: net.vm_count || 0,
           status: "active",
         }));
 

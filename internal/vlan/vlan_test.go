@@ -115,3 +115,51 @@ func TestInvalidInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresMultirangeParsing(t *testing.T) {
+	tests := []struct {
+		input       string
+		expectedLit string
+		expectedHum string
+	}{
+		{
+			input:       "{[100,101)}",
+			expectedLit: "{[100,100]}",
+			expectedHum: "100",
+		},
+		{
+			input:       "{[10,21),[100,201)}",
+			expectedLit: "{[10,20],[100,200]}",
+			expectedHum: "10-20, 100-200",
+		},
+		{
+			input:       "{[1,4095)}",
+			expectedLit: "{[1,4094]}",
+			expectedHum: "1-4094",
+		},
+		{
+			input:       "{[500,551)}",
+			expectedLit: "{[500,550]}",
+			expectedHum: "500-550",
+		},
+		{
+			input:       "{[100,100]}",
+			expectedLit: "{[100,100]}",
+			expectedHum: "100",
+		},
+	}
+
+	for _, tt := range tests {
+		gotLit, err := vlan.NormalizeSpec(tt.input)
+		if err != nil {
+			t.Fatalf("unexpected error normalizing %q: %v", tt.input, err)
+		}
+		if gotLit != tt.expectedLit {
+			t.Errorf("input %q: got literal %q, expected %q", tt.input, gotLit, tt.expectedLit)
+		}
+		gotHum := vlan.FormatHumanSpec(tt.input)
+		if gotHum != tt.expectedHum {
+			t.Errorf("input %q: got human %q, expected %q", tt.input, gotHum, tt.expectedHum)
+		}
+	}
+}

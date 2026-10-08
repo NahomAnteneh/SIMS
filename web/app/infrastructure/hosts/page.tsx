@@ -20,12 +20,11 @@ export default function HostsPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const [rawHosts, rawClusters, rawDcs, rawVCenters, facetsRes] = await Promise.all([
+        const [rawHosts, rawClusters, rawDcs, rawVCenters] = await Promise.all([
           simsApi.listHosts(),
           simsApi.listClusters(),
           simsApi.listDatacenters(),
           simsApi.listVCenters().catch(() => []),
-          simsApi.getVMFacets("host").catch(() => null),
         ]);
 
         const dcMap: Record<string, string> = {};
@@ -43,13 +42,6 @@ export default function HostsPage() {
           clusterNameMap[cl.id] = cl.name;
         }
 
-        const vmCountByHost: Record<string, number> = {};
-        if (facetsRes && facetsRes.facets) {
-          for (const b of facetsRes.facets.host || []) {
-            vmCountByHost[b.value] = b.count;
-          }
-        }
-
         const mappedHosts: Host[] = rawHosts.map((h) => ({
           id: h.id,
           name: h.name,
@@ -60,7 +52,7 @@ export default function HostsPage() {
           clusterName: (h.cluster_id ? clusterNameMap[h.cluster_id] : "") || "Standalone",
           datacenterId: h.datacenter_id || "",
           datacenterName: (h.datacenter_id ? dcMap[h.datacenter_id] : "") || "Datacenter",
-          vmCount: vmCountByHost[h.name] || 0,
+          vmCount: typeof h.vm_count === "number" ? h.vm_count : 0,
           status: h.connection_state === "connected" ? "connected" : "disconnected",
           powerState: h.power_state || "poweredOn",
           connectionState: h.connection_state || "connected",

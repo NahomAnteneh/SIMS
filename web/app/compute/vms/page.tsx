@@ -1,132 +1,267 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import {
-  LayoutList,
-  LayoutGrid,
-  RefreshCw,
-  Loader2,
-  Search,
-  X,
-  Filter,
-} from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 import { vmColumns, type VirtualMachine } from "./columns";
 import { DataTable } from "@/components/ui/data-table";
-import { VmCard } from "./card";
 import { VMDetailSheet } from "@/components/vm/vm-detail-sheet";
 import { simsApi } from "@/lib/api/client";
-import { Button } from "@/components/ui/button";
 import { parseSearchQuery } from "@/lib/search/parser";
 import { SearchFilter } from "@/lib/api/types";
 
-interface TopologyFilter {
-  type: "datacenter" | "cluster" | "host" | "datastore" | "network" | "folder";
+interface ActiveFilterDisplay {
   id: string;
-  name: string;
+  label: string;
+  onRemove: () => void;
+}
+
+function compileQueryFilter(q: string): SearchFilter {
+  const trimmed = q.trim();
+  const parsed = parseSearchQuery(trimmed);
+
+  if (parsed.isStructured && parsed.filter) {
+    if (parsed.freeText) {
+      const freeMatches: SearchFilter[] = [
+        { op: "CONTAINS", field: "name", value: parsed.freeText },
+        { op: "CONTAINS", field: "guest_host_name", value: parsed.freeText },
+        { op: "CONTAINS", field: "moref", value: parsed.freeText },
+      ];
+      if (/[0-9.:]/.test(parsed.freeText)) {
+        freeMatches.push({
+          op: "CIDR_CONTAINS",
+          field: "guest_ip_address",
+          value: parsed.freeText,
+        });
+      }
+      return {
+        op: "AND",
+        operands: [parsed.filter, { op: "OR", operands: freeMatches }],
+      };
+    }
+    return parsed.filter;
+  }
+
+  const textMatches: SearchFilter[] = [
+    { op: "CONTAINS", field: "name", value: trimmed },
+    { op: "CONTAINS", field: "guest_host_name", value: trimmed },
+    { op: "CONTAINS", field: "moref", value: trimmed },
+  ];
+  if (/[0-9.:]/.test(trimmed)) {
+    textMatches.push({
+      op: "CIDR_CONTAINS",
+      field: "guest_ip_address",
+      value: trimmed,
+    });
+  }
+  return textMatches.length === 1 ? textMatches[0] : { op: "OR", operands: textMatches };
 }
 
 function VmsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [view, setView] = useState<"table" | "card">("table");
   const [vms, setVms] = useState<VirtualMachine[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadingAll, setLoadingAll] = useState(false);
-  const [totalFleetCount, setTotalFleetCount] = useState<number | null>(null);
-  const [limit, setLimit] = useState(100);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [powerState, setPowerState] = useState<string>("all");
 
+  // Pagination state
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [selectedVMId, setSelectedVMId] = useState<string | null>(null);
 
-  const [topologyFilter, setTopologyFilter] = useState<TopologyFilter | null>(null);
-
-  // Fetch total fleet count on mount
-  useEffect(() => {
-    async function fetchTotalCount() {
-      try {
-        const facetsRes = await simsApi.getVMFacets("power_state");
-        const buckets = facetsRes.facets?.power_state || [];
-        const total = buckets.reduce((sum, b) => sum + b.count, 0);
-        if (total > 0) setTotalFleetCount(total);
-      } catch {
-        // ignore facets error
-      }
-    }
-    fetchTotalCount();
-  }, []);
-
-  // Read URL search parameters on mount and when searchParams changes
-  useEffect(() => {
-    const dsId = searchParams.get("datastore_id");
-    const clusterId = searchParams.get("cluster_id");
-    const hostId = searchParams.get("host_id");
-    const dcId = searchParams.get("datacenter_id");
-    const netId = searchParams.get("network_id");
-    const folderId = searchParams.get("folder_id");
-
-    if (dsId) {
-      setTopologyFilter({
-        type: "datastore",
-        id: dsId,
-        name: searchParams.get("datastore_name") || dsId,
-      });
-    } else if (clusterId) {
-      setTopologyFilter({
-        type: "cluster",
-        id: clusterId,
-        name: searchParams.get("cluster_name") || clusterId,
-      });
-    } else if (hostId) {
-      setTopologyFilter({
-        type: "host",
-        id: hostId,
-        name: searchParams.get("host_name") || hostId,
-      });
-    } else if (dcId) {
-      setTopologyFilter({
-        type: "datacenter",
-        id: dcId,
-        name: searchParams.get("datacenter_name") || dcId,
-      });
-    } else if (netId) {
-      setTopologyFilter({
-        type: "network",
-        id: netId,
-        name: searchParams.get("network_name") || netId,
-      });
-    } else if (folderId) {
-      setTopologyFilter({
-        type: "folder",
-        id: folderId,
-        name: searchParams.get("folder_name") || folderId,
-      });
-    } else {
-      setTopologyFilter(null);
-    }
-
-    const q = searchParams.get("q");
-    if (q) {
-      setSearchTerm(q);
-      setDebouncedSearch(q);
-    }
+  // Extract all query filters from URL
+  const queryList = useMemo(() => {
+    return searchParams ? searchParams.getAll("q").filter(Boolean) : [];
   }, [searchParams]);
 
-  // Debounce search term changes (250ms)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
+  // Extract topology filters from URL
+  const hostId = searchParams?.get("host_id");
+  const hostName = searchParams?.get("host_name");
+  const clusterId = searchParams?.get("cluster_id");
+  const clusterName = searchParams?.get("cluster_name");
+  const dsId = searchParams?.get("datastore_id");
+  const dsName = searchParams?.get("datastore_name");
+  const netId = searchParams?.get("network_id");
+  const netName = searchParams?.get("network_name");
+  const dcId = searchParams?.get("datacenter_id");
+  const dcName = searchParams?.get("datacenter_name");
+  const folderId = searchParams?.get("folder_id");
+  const folderName = searchParams?.get("folder_name");
+  const powerState = searchParams?.get("power_state");
+  const vlanParam = searchParams?.get("vlan");
 
+  const isFiltered = Boolean(
+    queryList.length > 0 ||
+    hostId ||
+    clusterId ||
+    dsId ||
+    netId ||
+    dcId ||
+    folderId ||
+    powerState ||
+    vlanParam
+  );
+
+  // Build active filter chips for display
+  const activeFilters = useMemo<ActiveFilterDisplay[]>(() => {
+    const list: ActiveFilterDisplay[] = [];
+
+    // Global search query filters
+    queryList.forEach((q, idx) => {
+      list.push({
+        id: `q-${idx}-${q}`,
+        label: q,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          const remaining = params.getAll("q").filter((item) => item !== q);
+          params.delete("q");
+          remaining.forEach((item) => params.append("q", item));
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    });
+
+    if (hostId) {
+      list.push({
+        id: `host-${hostId}`,
+        label: `host:${hostName || hostId}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("host_id");
+          params.delete("host_name");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (clusterId) {
+      list.push({
+        id: `cluster-${clusterId}`,
+        label: `cluster:${clusterName || clusterId}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("cluster_id");
+          params.delete("cluster_name");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (dsId) {
+      list.push({
+        id: `ds-${dsId}`,
+        label: `datastore:${dsName || dsId}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("datastore_id");
+          params.delete("datastore_name");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (netId) {
+      list.push({
+        id: `net-${netId}`,
+        label: `network:${netName || netId}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("network_id");
+          params.delete("network_name");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (dcId) {
+      list.push({
+        id: `dc-${dcId}`,
+        label: `dc:${dcName || dcId}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("datacenter_id");
+          params.delete("datacenter_name");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (folderId) {
+      list.push({
+        id: `folder-${folderId}`,
+        label: `folder:${folderName || folderId}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("folder_id");
+          params.delete("folder_name");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (powerState) {
+      list.push({
+        id: `power-${powerState}`,
+        label: `power:${powerState}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("power_state");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    if (vlanParam) {
+      list.push({
+        id: `vlan-${vlanParam}`,
+        label: `vlan:${vlanParam}`,
+        onRemove: () => {
+          const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+          params.delete("vlan");
+          const qs = params.toString();
+          router.push(`/compute/vms${qs ? `?${qs}` : ""}`);
+        },
+      });
+    }
+
+    return list;
+  }, [
+    queryList,
+    hostId,
+    hostName,
+    clusterId,
+    clusterName,
+    dsId,
+    dsName,
+    netId,
+    netName,
+    dcId,
+    dcName,
+    folderId,
+    folderName,
+    powerState,
+    vlanParam,
+    searchParams,
+    router,
+  ]);
+
+  const handleClearAllFilters = useCallback(() => {
+    router.push("/compute/vms");
+    window.dispatchEvent(new Event("sims-clear-search"));
+  }, [router]);
+
+  // Main data loader
   const loadData = useCallback(
     async (cursor?: string, append = false) => {
       if (append) {
@@ -135,112 +270,74 @@ function VmsContent() {
         setLoading(true);
       }
       try {
-        const trimmed = debouncedSearch.trim();
-        const hasPower = powerState !== "all";
-
         let items: VirtualMachine[] = [];
         let more = false;
         let nextCur: string | undefined = undefined;
 
-        if (trimmed) {
-          const parsed = parseSearchQuery(trimmed);
+        if (isFiltered) {
+          const operands: SearchFilter[] = [];
 
-          if (parsed.isStructured && parsed.filter) {
-            let finalFilter = parsed.filter;
-            const extraOperands: SearchFilter[] = [];
-
-            if (hasPower) {
-              extraOperands.push({ op: "EQ", field: "power_state", value: powerState });
-            }
-            if (topologyFilter) {
-              const fieldName = `${topologyFilter.type}_id`;
-              extraOperands.push({ op: "EQ", field: fieldName, value: topologyFilter.id });
-            }
-
-            if (extraOperands.length > 0) {
-              const existingOperands =
-                finalFilter.op === "AND" && finalFilter.operands ? finalFilter.operands : [finalFilter];
-              finalFilter = {
-                op: "AND",
-                operands: [...existingOperands, ...extraOperands],
-              };
-            }
-
-            const res = await simsApi.structuredSearchVMs({
-              filter: finalFilter,
-              limit,
-              cursor,
-            });
-            items = (res.items || []) as VirtualMachine[];
-            more = res.hasMore;
-            nextCur = res.nextCursor;
-          } else {
-            // Free-text query
-            if (topologyFilter || hasPower) {
-              const operands: SearchFilter[] = [
-                { op: "CONTAINS", field: "name", value: trimmed },
-              ];
-              if (hasPower) {
-                operands.push({ op: "EQ", field: "power_state", value: powerState });
-              }
-              if (topologyFilter) {
-                operands.push({ op: "EQ", field: `${topologyFilter.type}_id`, value: topologyFilter.id });
-              }
-
-              const res = await simsApi.searchVMs({
-                filter: { op: "AND", operands },
-                limit,
-                cursor,
-              });
-              items = (res.items || []) as VirtualMachine[];
-              more = res.hasMore;
-              nextCur = res.nextCursor;
-            } else {
-              const res = await simsApi.quickSearchVMs(trimmed, limit, cursor);
-              items = (res.items || []) as VirtualMachine[];
-              more = res.hasMore;
-              nextCur = res.nextCursor;
-            }
+          // 1. Process all query filters from top search bar
+          for (const q of queryList) {
+            operands.push(compileQueryFilter(q));
           }
-        } else if (topologyFilter) {
-          if (hasPower) {
-            const res = await simsApi.searchVMs({
-              filter: {
-                op: "AND",
-                operands: [
-                  { op: "EQ", field: `${topologyFilter.type}_id`, value: topologyFilter.id },
-                  { op: "EQ", field: "power_state", value: powerState },
-                ],
-              },
-              limit,
-              cursor,
-            });
-            items = (res.items || []) as VirtualMachine[];
-            more = res.hasMore;
-            nextCur = res.nextCursor;
-          } else {
-            const res = await simsApi.listTopologyVMs(topologyFilter.type, topologyFilter.id, {
-              limit,
-              cursor,
-            });
-            items = (res.items || []) as VirtualMachine[];
-            more = res.pagination.has_more;
-            nextCur = res.pagination.next_cursor;
+
+          // 2. Process topology filters
+          if (hostId) {
+            operands.push({ op: "EQ", field: "host_id", value: hostId });
           }
-        } else if (hasPower) {
-          const res = await simsApi.searchVMs({
-            filter: { op: "EQ", field: "power_state", value: powerState },
-            limit,
+          if (clusterId) {
+            operands.push({ op: "EQ", field: "cluster_id", value: clusterId });
+          }
+          if (dsId) {
+            operands.push({ op: "EQ", field: "datastore_id", value: dsId });
+          }
+          if (netId) {
+            operands.push({ op: "EQ", field: "network_id", value: netId });
+          }
+          if (dcId) {
+            operands.push({ op: "EQ", field: "datacenter_id", value: dcId });
+          }
+          if (folderId) {
+            operands.push({ op: "EQ", field: "folder_id", value: folderId });
+          }
+          if (powerState) {
+            operands.push({ op: "EQ", field: "power_state", value: powerState });
+          }
+          if (vlanParam) {
+            operands.push({ op: "VLAN_OVERLAP", field: "vlan_ids", value: vlanParam });
+          }
+
+          const combinedFilter: SearchFilter =
+            operands.length === 1 ? operands[0] : { op: "AND", operands };
+
+          const res = await simsApi.structuredSearchVMs({
+            filter: combinedFilter,
+            limit: 100,
             cursor,
           });
+
           items = (res.items || []) as VirtualMachine[];
           more = res.hasMore;
           nextCur = res.nextCursor;
         } else {
-          const res = await simsApi.listVMs({ limit, cursor });
+          // Unfiltered fleet listing
+          const res = await simsApi.listVMs({
+            limit: 100,
+            cursor,
+          });
+
           items = (res.items || []) as VirtualMachine[];
-          more = res.pagination.has_more;
-          nextCur = res.pagination.next_cursor;
+          more = Boolean(
+            res.pagination?.has_more ??
+              (res as any).has_more ??
+              (res as any).hasMore ??
+              false
+          );
+          nextCur =
+            res.pagination?.next_cursor ??
+              (res as any).next_cursor ??
+              (res as any).nextCursor;
         }
 
         setVms((prev) => {
@@ -249,6 +346,7 @@ function VmsContent() {
           const newItems = items.filter((vm) => !existingIds.has(vm.id));
           return [...prev, ...newItems];
         });
+
         setHasMore(more);
         setNextCursor(nextCur);
         return { more, nextCur };
@@ -260,7 +358,17 @@ function VmsContent() {
         setLoadingMore(false);
       }
     },
-    [limit, debouncedSearch, powerState, topologyFilter]
+    [
+      isFiltered,
+      queryList,
+      hostId,
+      clusterId,
+      dsId,
+      netId,
+      dcId,
+      folderId,
+      powerState,
+    ]
   );
 
   useEffect(() => {
@@ -289,210 +397,69 @@ function VmsContent() {
     }
   };
 
-  const handleClearTopologyFilter = () => {
-    setTopologyFilter(null);
-    router.replace("/compute/vms");
-  };
-
-  const activeQueryBadge = debouncedSearch ? (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-yellow-500/10 border border-yellow-600/30 text-yellow-300 text-xs font-mono">
-      <Search className="h-3 w-3 text-yellow-400" />
-      <span className="text-zinc-400">Query:</span>
-      <span className="font-semibold text-white">{debouncedSearch}</span>
-      <button
-        type="button"
-        onClick={() => {
-          setSearchTerm("");
-          setDebouncedSearch("");
-          const url = new URL(window.location.href);
-          url.searchParams.delete("q");
-          router.replace(url.pathname + (url.search ? url.search : ""));
-        }}
-        className="ml-1 text-zinc-400 hover:text-white"
-        title="Clear query"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
-  ) : null;
-
-  const filterControl = (
-    <div className="flex items-center gap-2 shrink-0">
-      <select
-        value={powerState}
-        onChange={(e) => setPowerState(e.target.value)}
-        className="h-8 border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-700 rounded-none font-mono"
-      >
-        <option value="all">All States</option>
-        <option value="poweredOn">poweredOn</option>
-        <option value="poweredOff">poweredOff</option>
-        <option value="suspended">suspended</option>
-      </select>
-      {(searchTerm || powerState !== "all" || topologyFilter) && (
-        <button
-          onClick={() => {
-            setSearchTerm("");
-            setDebouncedSearch("");
-            setPowerState("all");
-            if (topologyFilter) handleClearTopologyFilter();
-          }}
-          className="text-xs text-zinc-400 hover:text-yellow-400 font-mono underline decoration-dotted whitespace-nowrap"
-        >
-          Reset
-        </button>
-      )}
-    </div>
-  );
-
   return (
-    <div className="space-y-4 w-full">
-      {/* Page Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-            Virtual Machines
-            <span className="text-xs font-mono font-normal text-zinc-500">
-              ({vms.length}{totalFleetCount ? ` of ${totalFleetCount}` : ""} loaded)
+    <div className="w-full space-y-2">
+      {/* Slim Active Filter Chips Bar (rendered ONLY when filters are active) */}
+      {activeFilters.length > 0 && (
+        <div className="flex items-center justify-between p-2 px-3 bg-[#0d0d0d] border border-zinc-800 text-xs font-mono gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">
+              Filters:
             </span>
-            {topologyFilter && (
-              <span className="text-xs font-mono font-normal px-2 py-0.5 bg-yellow-500/10 border border-yellow-500/30 text-yellow-400">
-                scope: {topologyFilter.type}
+            {activeFilters.map((f) => (
+              <span
+                key={f.id}
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-zinc-900 border border-zinc-700 text-zinc-200"
+              >
+                <span className="text-yellow-400 font-semibold">{f.label}</span>
+                <button
+                  type="button"
+                  onClick={f.onRemove}
+                  className="text-zinc-500 hover:text-rose-400 transition-colors p-0.5 ml-0.5"
+                  title={`Remove filter ${f.label}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </span>
-            )}
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => loadData(undefined, false)}
-            disabled={loading}
-            className="border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:text-white hover:bg-zinc-800 gap-1.5 h-8 text-xs rounded-none"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-
-          {/* View Toggle */}
-          <div className="flex items-center border border-zinc-800 bg-zinc-900/50 p-0.5">
+            ))}
             <button
               type="button"
-              onClick={() => setView("table")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
-                view === "table"
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
+              onClick={handleClearAllFilters}
+              className="text-zinc-400 hover:text-yellow-400 underline decoration-dotted text-xs ml-1"
             >
-              <LayoutList className="h-3.5 w-3.5" />
-              Table
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("card")}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors ${
-                view === "card"
-                  ? "bg-zinc-800 text-zinc-100"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Card
+              Clear filters
             </button>
           </div>
-        </div>
-      </div>
 
-      {/* Topology Active Filter Chip Banner */}
-      {topologyFilter && (
-        <div className="flex items-center justify-between p-2.5 px-3 border border-yellow-600/50 bg-yellow-950/20 text-yellow-200">
-          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-            <Filter className="h-3.5 w-3.5 text-yellow-400 shrink-0" />
-            <span className="font-semibold text-zinc-400 uppercase tracking-wider text-[11px]">
-              Drill-Down Scope:
-            </span>
-            <span className="px-1.5 py-0.2 bg-yellow-500/20 text-yellow-300 font-bold capitalize">
-              {topologyFilter.type}
-            </span>
-            <span className="font-semibold text-white">
-              {topologyFilter.name}
-            </span>
-            <span className="text-zinc-500 text-xs">
-              ({topologyFilter.id})
-            </span>
+          <div className="text-zinc-400 text-xs font-mono shrink-0">
+            <span className="text-white font-bold">{vms.length}</span>
+            {hasMore ? "+" : ""} matching
           </div>
-
-          <button
-            type="button"
-            onClick={handleClearTopologyFilter}
-            className="flex items-center gap-1 px-2 py-0.5 bg-zinc-900 border border-zinc-700 text-xs font-mono text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
-          >
-            <X className="h-3 w-3" />
-            <span>Reset to Fleet</span>
-          </button>
         </div>
       )}
 
-      {/* Main View */}
+      {/* Main Table */}
       {loading && vms.length === 0 ? (
         <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
           <Loader2 className="h-6 w-6 animate-spin text-yellow-600" />
-          <span className="text-sm">Fetching virtual machine fleet...</span>
+          <span className="text-sm font-mono">Fetching virtual machines...</span>
         </div>
-      ) : view === "table" ? (
+      ) : (
         <DataTable
           columns={vmColumns}
           data={vms}
-          customSearch={activeQueryBadge}
-          filterComponent={filterControl}
           onRowClick={(row) => setSelectedVMId(row.id)}
           pagination={{
             hasMore,
             loadingMore,
             onNext: handleShowMore,
-            total: totalFleetCount ?? undefined,
             onLoadAll: hasMore ? handleLoadAll : undefined,
             loadingAll,
-            entityName: "virtual machines",
+            entityName: isFiltered ? "matching virtual machines" : "virtual machines",
           }}
-          tableContainerClassName="max-h-[calc(100vh-250px)] min-h-[360px]"
+          tableContainerClassName="max-h-[calc(100vh-140px)] min-h-[400px]"
+          hideHeader={true}
         />
-      ) : (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-2.5 border border-zinc-800 bg-[#0c0c0c] gap-3">
-            <div className="flex-1">{activeQueryBadge}</div>
-            {filterControl}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {vms.map((vm) => (
-              <VmCard key={vm.id} vm={vm} onClick={() => setSelectedVMId(vm.id)} />
-            ))}
-          </div>
-          {hasMore && (
-            <div className="flex items-center justify-center gap-3 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleShowMore}
-                disabled={loadingMore || loadingAll}
-                className="h-8 px-5 text-xs font-mono rounded-none border-zinc-800 bg-zinc-900/60 text-yellow-400 hover:bg-zinc-800 hover:border-yellow-600 gap-1.5"
-              >
-                {loadingMore && <Loader2 className="h-3 w-3 animate-spin" />}
-                {loadingMore ? "Loading..." : "Show more"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleLoadAll}
-                disabled={loadingMore || loadingAll}
-                className="h-8 px-4 text-xs font-mono rounded-none text-zinc-400 hover:text-white"
-              >
-                {loadingAll ? "Loading all..." : "Load all remaining"}
-              </Button>
-            </div>
-          )}
-        </div>
       )}
 
       {/* VM Detail Flyout Sheet */}
@@ -510,7 +477,7 @@ export default function VmsPage() {
       fallback={
         <div className="h-64 flex flex-col items-center justify-center gap-3 text-zinc-500">
           <Loader2 className="h-6 w-6 animate-spin text-yellow-600" />
-          <span className="text-sm">Loading virtual machines...</span>
+          <span className="text-sm font-mono">Loading virtual machines...</span>
         </div>
       }
     >

@@ -139,7 +139,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-              Fleet Overview & Platform Telemetry
+              Overview
             </h1>
             <p className="text-[11px] font-mono text-zinc-500 mt-0.5">
               Real-time vSphere inventory state across all synchronized vCenter endpoints

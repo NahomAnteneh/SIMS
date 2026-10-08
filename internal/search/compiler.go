@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"net/netip"
 	"sort"
 	"strings"
 
@@ -150,7 +151,8 @@ func CompileVMQuery(filter *FilterNode, opts CompileOptions) (*CompiledQuery, er
     vm.name, vm.power_state, vm.connection_state, vm.cpu_cores, vm.memory_mb,
     vm.folder_id, vm.folder_path::text, vm.host_id, vm.cluster_id, vm.datacenter_id,
     vm.guest_os, vm.guest_host_name, vm.guest_ip_address::text, vm.annotation,
-    vm.created_at, vm.updated_at, vm.first_seen_at
+    vm.created_at, vm.updated_at, vm.first_seen_at,
+    vm.committed_storage_bytes, vm.provisioned_storage_bytes
 FROM virtual_machines vm
 WHERE %s
 %s
@@ -263,10 +265,66 @@ func (c *Compiler) compileNode(node *FilterNode) (string, error) {
 		return fmt.Sprintf("NOT (%s)", childSQL), nil
 
 	case OpEQ:
+		if node.Field == "datastore_id" {
+			p := c.addArg(node.Value)
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_datastores vmd WHERE vmd.vm_id = vm.id AND vmd.datastore_id = %s::uuid)", p), nil
+		}
+		if node.Field == "network_id" {
+			p := c.addArg(node.Value)
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_network_interfaces vnic WHERE vnic.vm_id = vm.id AND (vnic.network_id = %s::uuid OR vnic.portgroup_id = %s::uuid))", p, p), nil
+		}
+		if node.Field == "network" || node.Field == "network_name" {
+			p := c.addArg(node.Value)
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_network_interfaces vnic LEFT JOIN networks n ON vnic.network_id = n.id LEFT JOIN portgroups pg ON vnic.portgroup_id = pg.id WHERE vnic.vm_id = vm.id AND (n.name = %s OR pg.name = %s))", p, p), nil
+		}
+		if node.Field == "guest_ip_address" {
+			valStr := strings.TrimSpace(fmt.Sprintf("%v", node.Value))
+			if valStr == "" {
+				return "1=1", nil
+			}
+			if _, err := netip.ParsePrefix(valStr); err == nil {
+				p := c.addArg(valStr)
+				return fmt.Sprintf("vm.guest_ip_address <<= %s::inet", p), nil
+			}
+			if _, err := netip.ParseAddr(valStr); err == nil {
+				p := c.addArg(valStr)
+				return fmt.Sprintf("vm.guest_ip_address = %s::inet", p), nil
+			}
+			p := c.addArg(valStr + "%")
+			return fmt.Sprintf("(vm.guest_ip_address IS NOT NULL AND host(vm.guest_ip_address) ILIKE %s)", p), nil
+		}
 		p := c.addArg(node.Value)
 		return fmt.Sprintf("vm.%s = %s", node.Field, p), nil
 
 	case OpNE:
+		if node.Field == "datastore_id" {
+			p := c.addArg(node.Value)
+			return fmt.Sprintf("NOT EXISTS (SELECT 1 FROM vm_datastores vmd WHERE vmd.vm_id = vm.id AND vmd.datastore_id = %s::uuid)", p), nil
+		}
+		if node.Field == "network_id" {
+			p := c.addArg(node.Value)
+			return fmt.Sprintf("NOT EXISTS (SELECT 1 FROM vm_network_interfaces vnic WHERE vnic.vm_id = vm.id AND (vnic.network_id = %s::uuid OR vnic.portgroup_id = %s::uuid))", p, p), nil
+		}
+		if node.Field == "network" || node.Field == "network_name" {
+			p := c.addArg(node.Value)
+			return fmt.Sprintf("NOT EXISTS (SELECT 1 FROM vm_network_interfaces vnic LEFT JOIN networks n ON vnic.network_id = n.id LEFT JOIN portgroups pg ON vnic.portgroup_id = pg.id WHERE vnic.vm_id = vm.id AND (n.name = %s OR pg.name = %s))", p, p), nil
+		}
+		if node.Field == "guest_ip_address" {
+			valStr := strings.TrimSpace(fmt.Sprintf("%v", node.Value))
+			if valStr == "" {
+				return "1=1", nil
+			}
+			if _, err := netip.ParsePrefix(valStr); err == nil {
+				p := c.addArg(valStr)
+				return fmt.Sprintf("(vm.guest_ip_address IS NULL OR NOT (vm.guest_ip_address <<= %s::inet))", p), nil
+			}
+			if _, err := netip.ParseAddr(valStr); err == nil {
+				p := c.addArg(valStr)
+				return fmt.Sprintf("(vm.guest_ip_address IS NULL OR vm.guest_ip_address != %s::inet)", p), nil
+			}
+			p := c.addArg(valStr + "%")
+			return fmt.Sprintf("(vm.guest_ip_address IS NULL OR NOT (host(vm.guest_ip_address) ILIKE %s))", p), nil
+		}
 		p := c.addArg(node.Value)
 		return fmt.Sprintf("vm.%s != %s", node.Field, p), nil
 
@@ -281,27 +339,75 @@ func (c *Compiler) compileNode(node *FilterNode) (string, error) {
 		for i, v := range values {
 			params[i] = c.addArg(v)
 		}
+		if node.Field == "datastore_id" {
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_datastores vmd WHERE vmd.vm_id = vm.id AND vmd.datastore_id IN (%s))", strings.Join(params, ", ")), nil
+		}
+		if node.Field == "network_id" {
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_network_interfaces vnic WHERE vnic.vm_id = vm.id AND (vnic.network_id IN (%s) OR vnic.portgroup_id IN (%s)))", strings.Join(params, ", "), strings.Join(params, ", ")), nil
+		}
 		return fmt.Sprintf("vm.%s IN (%s)", node.Field, strings.Join(params, ", ")), nil
 
 	case OpContains:
+		if node.Field == "network" || node.Field == "network_name" {
+			valStr := fmt.Sprintf("%v", node.Value)
+			p := c.addArg("%" + valStr + "%")
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_network_interfaces vnic LEFT JOIN networks n ON vnic.network_id = n.id LEFT JOIN portgroups pg ON vnic.portgroup_id = pg.id WHERE vnic.vm_id = vm.id AND (n.name ILIKE %s OR pg.name ILIKE %s))", p, p), nil
+		}
+		if node.Field == "guest_ip_address" {
+			valStr := strings.TrimSpace(fmt.Sprintf("%v", node.Value))
+			p := c.addArg("%" + valStr + "%")
+			return fmt.Sprintf("(vm.guest_ip_address IS NOT NULL AND host(vm.guest_ip_address) ILIKE %s)", p), nil
+		}
 		valStr := fmt.Sprintf("%v", node.Value)
 		p := c.addArg("%" + valStr + "%")
 		return fmt.Sprintf("vm.%s ILIKE %s", node.Field, p), nil
 
 	case OpPrefix:
+		if node.Field == "network" || node.Field == "network_name" {
+			valStr := fmt.Sprintf("%v", node.Value)
+			p := c.addArg(valStr + "%")
+			return fmt.Sprintf("EXISTS (SELECT 1 FROM vm_network_interfaces vnic LEFT JOIN networks n ON vnic.network_id = n.id LEFT JOIN portgroups pg ON vnic.portgroup_id = pg.id WHERE vnic.vm_id = vm.id AND (n.name LIKE %s OR pg.name LIKE %s))", p, p), nil
+		}
+		if node.Field == "guest_ip_address" {
+			valStr := strings.TrimSpace(fmt.Sprintf("%v", node.Value))
+			p := c.addArg(valStr + "%")
+			return fmt.Sprintf("(vm.guest_ip_address IS NOT NULL AND host(vm.guest_ip_address) ILIKE %s)", p), nil
+		}
 		valStr := fmt.Sprintf("%v", node.Value)
 		p := c.addArg(valStr + "%")
 		return fmt.Sprintf("vm.%s LIKE %s", node.Field, p), nil
 
 	case OpCIDRContains:
-		valStr := fmt.Sprintf("%v", node.Value)
-		p := c.addArg(valStr)
-		return fmt.Sprintf("vm.guest_ip_address <<= %s::inet", p), nil
+		valStr := strings.TrimSpace(fmt.Sprintf("%v", node.Value))
+		if valStr == "" {
+			return "1=1", nil
+		}
+		if _, err := netip.ParsePrefix(valStr); err == nil {
+			p := c.addArg(valStr)
+			return fmt.Sprintf("vm.guest_ip_address <<= %s::inet", p), nil
+		}
+		if _, err := netip.ParseAddr(valStr); err == nil {
+			p := c.addArg(valStr)
+			return fmt.Sprintf("vm.guest_ip_address = %s::inet", p), nil
+		}
+		p := c.addArg(valStr + "%")
+		return fmt.Sprintf("(vm.guest_ip_address IS NOT NULL AND host(vm.guest_ip_address) ILIKE %s)", p), nil
 
 	case OpCIDROverlap:
-		valStr := fmt.Sprintf("%v", node.Value)
-		p := c.addArg(valStr)
-		return fmt.Sprintf("vm.guest_ip_address && %s::inet", p), nil
+		valStr := strings.TrimSpace(fmt.Sprintf("%v", node.Value))
+		if valStr == "" {
+			return "1=1", nil
+		}
+		if _, err := netip.ParsePrefix(valStr); err == nil {
+			p := c.addArg(valStr)
+			return fmt.Sprintf("vm.guest_ip_address && %s::inet", p), nil
+		}
+		if _, err := netip.ParseAddr(valStr); err == nil {
+			p := c.addArg(valStr)
+			return fmt.Sprintf("vm.guest_ip_address = %s::inet", p), nil
+		}
+		p := c.addArg(valStr + "%")
+		return fmt.Sprintf("(vm.guest_ip_address IS NOT NULL AND host(vm.guest_ip_address) ILIKE %s)", p), nil
 
 	case OpVLANOverlap:
 		valStr := fmt.Sprintf("%v", node.Value)

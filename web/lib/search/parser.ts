@@ -30,6 +30,8 @@ export const SYNTAX_TOKENS: SyntaxHelperItem[] = [
   { prefix: "ds:", label: "Datastore", example: "ds:vsan-prod", description: "Filter by attached datastore" },
   { prefix: "os:", label: "Guest OS", example: "os:linux", description: "Filter by operating system" },
   { prefix: "tag:", label: "vSphere Tag", example: "tag:Tier:Web", description: "Filter by tag category or tag:category:value" },
+  { prefix: "vlan:", label: "VLAN ID", example: "vlan:100", description: "Filter by VLAN ID or range" },
+  { prefix: "net:", label: "Network", example: "net:Prod-Network", description: "Filter by network or portgroup name" },
 ];
 
 const KNOWN_PREFIXES = new Set([
@@ -41,6 +43,9 @@ const KNOWN_PREFIXES = new Set([
   "host",
   "ds",
   "storage",
+  "net",
+  "network",
+  "vlan",
   "os",
   "tag",
   "dc",
@@ -113,30 +118,25 @@ export function parseSearchQuery(raw: string): ParseResult {
   const operands: SearchFilter[] = [];
 
   for (const token of tokens) {
+    const val = token.value.trim();
+    if (!val) continue;
+
     switch (token.key) {
       case "vm":
       case "name":
         operands.push({
           op: "CONTAINS",
           field: "name",
-          value: token.value,
+          value: val,
         });
         break;
 
       case "ip":
-        if (token.value.includes("/")) {
-          operands.push({
-            op: "CIDR_CONTAINS",
-            field: "guest_ip_address",
-            value: token.value,
-          });
-        } else {
-          operands.push({
-            op: "EQ",
-            field: "guest_ip_address",
-            value: token.value,
-          });
-        }
+        operands.push({
+          op: "CIDR_CONTAINS",
+          field: "guest_ip_address",
+          value: val,
+        });
         break;
 
       case "power":
@@ -232,6 +232,31 @@ export function parseSearchQuery(raw: string): ParseResult {
         }
         break;
       }
+
+      case "vlan":
+        operands.push({
+          op: "VLAN_OVERLAP",
+          field: "vlan_ids",
+          value: token.value,
+        });
+        break;
+
+      case "net":
+      case "network":
+        if (isUUID(token.value)) {
+          operands.push({
+            op: "EQ",
+            field: "network_id",
+            value: token.value,
+          });
+        } else {
+          operands.push({
+            op: "CONTAINS",
+            field: "network_name",
+            value: token.value,
+          });
+        }
+        break;
     }
   }
 
@@ -257,7 +282,7 @@ export function parseSearchQuery(raw: string): ParseResult {
   return {
     tokens,
     freeText,
-    isStructured: true,
+    isStructured: Boolean(filter),
     filter,
     rawQuery: raw,
   };

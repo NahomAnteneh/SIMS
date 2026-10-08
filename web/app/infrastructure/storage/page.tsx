@@ -55,6 +55,7 @@ export default function StoragePage() {
             capacityGB: capGB,
             usedGB: usedGB,
             freeGB: freeGB,
+            vmCount: ds.vm_count || 0,
             status: (capGB > 0 && freeGB / capGB < 0.1) ? "warning" : "healthy",
           };
         });

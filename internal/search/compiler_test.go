@@ -205,6 +205,26 @@ func TestSQLCompiler_AllOperators(t *testing.T) {
 			node:      &FilterNode{Op: OpHasAttribute, Name: "Owner"},
 			expectSub: "EXISTS (SELECT 1 FROM vm_custom_attributes vca WHERE vca.vm_id = vm.id AND vca.name = $1)",
 		},
+		{
+			name:      "EQ valid full IP",
+			node:      &FilterNode{Op: OpEQ, Field: "guest_ip_address", Value: "10.0.0.1"},
+			expectSub: "vm.guest_ip_address = $1::inet",
+		},
+		{
+			name:      "EQ partial IP",
+			node:      &FilterNode{Op: OpEQ, Field: "guest_ip_address", Value: "10.0.0"},
+			expectSub: "host(vm.guest_ip_address) ILIKE $1",
+		},
+		{
+			name:      "EQ single digit partial IP",
+			node:      &FilterNode{Op: OpEQ, Field: "guest_ip_address", Value: "2"},
+			expectSub: "host(vm.guest_ip_address) ILIKE $1",
+		},
+		{
+			name:      "CIDR_CONTAINS partial IP",
+			node:      &FilterNode{Op: OpCIDRContains, Field: "guest_ip_address", Value: "10.0."},
+			expectSub: "host(vm.guest_ip_address) ILIKE $1",
+		},
 	}
 
 	for _, tt := range tests {

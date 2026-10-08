@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   Search,
   RefreshCw,
@@ -21,8 +21,10 @@ import { VMListItem, AuditEventItem } from "@/lib/api/types";
 import { VMDetailSheet } from "@/components/vm/vm-detail-sheet";
 import { parseSearchQuery, SYNTAX_TOKENS } from "@/lib/search/parser";
 
-export const Topbar = () => {
+const TopbarContent = () => {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Search state
@@ -68,6 +70,17 @@ export const Topbar = () => {
     try {
       setRecentSearches([]);
       localStorage.removeItem("sims_recent_searches");
+    } catch {
+      // ignore
+    }
+  };
+
+  const removeRecentSearch = (e: React.MouseEvent, q: string) => {
+    e.stopPropagation();
+    try {
+      const updated = recentSearches.filter((item) => item !== q);
+      setRecentSearches(updated);
+      localStorage.setItem("sims_recent_searches", JSON.stringify(updated));
     } catch {
       // ignore
     }
@@ -179,6 +192,16 @@ export const Topbar = () => {
     return () => clearTimeout(timeout);
   }, [searchQuery]);
 
+  // Sync with global clear event
+  useEffect(() => {
+    const onClear = () => {
+      setSearchQuery("");
+      setResults([]);
+    };
+    window.addEventListener("sims-clear-search", onClear);
+    return () => window.removeEventListener("sims-clear-search", onClear);
+  }, []);
+
   const handleSelectVm = (vmId: string) => {
     if (searchQuery.trim()) {
       saveRecentSearch(searchQuery.trim());
@@ -192,7 +215,27 @@ export const Topbar = () => {
     if (!q) return;
     saveRecentSearch(q);
     setIsOpen(false);
-    router.push(`/compute/vms?q=${encodeURIComponent(q)}`);
+    setSearchQuery("");
+
+    if (pathname === "/compute/vms") {
+      const currentParams = new URLSearchParams(searchParams ? searchParams.toString() : "");
+      const existing = currentParams.getAll("q");
+      if (!existing.includes(q)) {
+        currentParams.append("q", q);
+        router.push(`/compute/vms?${currentParams.toString()}`);
+      }
+    } else {
+      router.push(`/compute/vms?q=${encodeURIComponent(q)}`);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery("");
+    setResults([]);
+    if (pathname === "/compute/vms") {
+      router.push("/compute/vms");
+    }
+    window.dispatchEvent(new Event("sims-clear-search"));
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -219,6 +262,29 @@ export const Topbar = () => {
     });
     setIsOpen(true);
     searchInputRef.current?.focus();
+  };
+
+  // Contextual autocomplete suggestions for active syntax tokens
+  const activeTokenMatch = searchQuery.match(/(?:^|\s)([a-zA-Z0-9_-]+):(\S*)$/);
+  const activeTokenKey = activeTokenMatch ? activeTokenMatch[1].toLowerCase() : null;
+
+  const tokenSuggestions: Record<string, string[]> = {
+    power: ["on", "off", "suspended"],
+    ip: ["10.", "10.0.0.0/24", "192.168.1.0/24", "172.16.0.0/16"],
+    os: ["linux", "windows", "photon", "rhel", "ubuntu"],
+    vm: ["worker", "web", "db", "app", "gateway"],
+  };
+
+  const handleApplySuggestion = (val: string) => {
+    if (!activeTokenMatch) return;
+    const prefix = `${activeTokenMatch[1]}:`;
+    const fullPrefixWithVal = `${prefix}${val}`;
+    const lastIndex = searchQuery.lastIndexOf(prefix);
+    if (lastIndex !== -1) {
+      const updated = searchQuery.slice(0, lastIndex) + fullPrefixWithVal + " ";
+      setSearchQuery(updated);
+      searchInputRef.current?.focus();
+    }
   };
 
   const handleMarkAllRead = () => {
@@ -262,7 +328,13 @@ export const Topbar = () => {
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search fleet by name, IP, power state, host, datastore, tags... (Press '/' to search)"
+              placeholder={
+                pathname === "/compute/vms"
+                  ? (searchParams?.has("q") || searchParams?.has("host_id") || searchParams?.has("cluster_id") || searchParams?.has("datastore_id") || searchParams?.has("network_id") || searchParams?.has("datacenter_id"))
+                    ? "Type to add another filter... (e.g. power:on, 10.0.0.0/24, spark) [Press Enter]"
+                    : "Global search / filter VMs... (e.g. spark, power:on, 10.0.0.0/24) [Press Enter]"
+                  : "Search fleet by name, IP, power state, host... (Press '/' to search)"
+              }
               value={searchQuery}
               onFocus={() => setIsOpen(true)}
               onKeyDown={handleSearchKeyDown}
@@ -273,17 +345,14 @@ export const Topbar = () => {
               className="w-full h-9 pl-9 pr-16 bg-[#0f0f0f] border border-zinc-800 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-yellow-500/80 focus:bg-[#121212] transition-colors font-mono text-xs rounded-none"
             />
             <div className="absolute right-2.5 flex items-center gap-1">
-              {searchQuery ? (
+              {searchQuery || (pathname === "/compute/vms" && (searchParams?.has("q") || searchParams?.has("host_id") || searchParams?.has("cluster_id") || searchParams?.has("datastore_id") || searchParams?.has("network_id") || searchParams?.has("datacenter_id"))) ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    setSearchQuery("");
-                    setResults([]);
-                  }}
-                  className="p-1 text-zinc-500 hover:text-zinc-300"
-                  title="Clear query"
+                  onClick={handleClearSearch}
+                  className="p-1 text-zinc-500 hover:text-yellow-400 transition-colors"
+                  title="Clear search and filters"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3.5 w-3.5" />
                 </button>
               ) : (
                 <kbd className="px-1.5 py-0.5 text-[10px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 rounded-none">
@@ -326,6 +395,28 @@ export const Topbar = () => {
                   </div>
                 </div>
 
+                {/* Contextual Autocomplete Suggestions for active token */}
+                {activeTokenKey && tokenSuggestions[activeTokenKey] && (
+                  <div className="px-3 py-1.5 bg-yellow-500/10 border-b border-yellow-500/20 flex items-center gap-2">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-yellow-400 font-semibold flex items-center gap-1 shrink-0">
+                      <Terminal className="h-3 w-3" />
+                      Suggestions for {activeTokenKey}:
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {tokenSuggestions[activeTokenKey].map((sug) => (
+                        <button
+                          key={sug}
+                          type="button"
+                          onClick={() => handleApplySuggestion(sug)}
+                          className="px-1.5 py-0.5 text-xs font-mono bg-zinc-900 border border-yellow-600/50 text-yellow-200 hover:bg-yellow-500/20 rounded-none transition-colors"
+                        >
+                          {sug}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Quick Filters & Recent Searches when query is empty */}
                 {!searchQuery.trim() && (
                   <div className="p-3 border-b border-zinc-900 bg-[#0a0a0a] space-y-3">
@@ -365,19 +456,26 @@ export const Topbar = () => {
                             onClick={clearRecentSearches}
                             className="hover:text-zinc-300 transition-colors"
                           >
-                            Clear
+                            Clear All
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {recentSearches.map((sq) => (
-                            <button
+                            <div
                               key={sq}
-                              type="button"
                               onClick={() => handleExecuteSearch(sq)}
-                              className="px-2 py-0.5 text-xs font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 hover:text-yellow-400 hover:border-yellow-500/50 transition-colors rounded-none"
+                              className="group flex items-center gap-1.5 px-2 py-0.5 text-xs font-mono bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-yellow-400 hover:border-yellow-500/50 transition-colors rounded-none cursor-pointer"
                             >
-                              {sq}
-                            </button>
+                              <span>{sq}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => removeRecentSearch(e, sq)}
+                                className="opacity-40 group-hover:opacity-100 hover:text-red-400 transition-opacity p-0.5"
+                                title="Remove search"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -406,51 +504,74 @@ export const Topbar = () => {
                             key={vm.id}
                             onClick={() => handleSelectVm(vm.id)}
                             onMouseEnter={() => setSelectedIndex(index)}
-                            className={`px-3 py-2 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900 ${
+                            className={`px-3 py-2.5 cursor-pointer flex items-center justify-between transition-colors border-b border-zinc-900 ${
                               isSelected
-                                ? "bg-zinc-800/80 text-white"
+                                ? "bg-zinc-800/90 text-white border-l-2 border-l-yellow-500 pl-[10px]"
                                 : "hover:bg-zinc-900/60 text-zinc-300"
                             }`}
                           >
-                            <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
                               <span
                                 className={`h-2.5 w-2.5 shrink-0 rounded-none ${
                                   isOn
-                                    ? "bg-emerald-400"
+                                    ? "bg-emerald-400 ring-2 ring-emerald-500/20"
                                     : isSuspended
-                                    ? "bg-amber-400"
+                                    ? "bg-amber-400 ring-2 ring-amber-500/20"
                                     : "bg-zinc-600"
                                 }`}
                                 title={vm.power_state}
                               />
-                              <div className="min-w-0">
+                              <div className="min-w-0 flex-1">
                                 <div className="text-xs font-semibold text-zinc-100 truncate flex items-center gap-2">
-                                  <span>{vm.name}</span>
+                                  <span className="font-mono">{vm.name}</span>
                                   {vm.guest_ip_address && (
-                                    <span className="text-[11px] font-mono px-1 py-0.2 bg-zinc-900 border border-zinc-800 text-zinc-300 rounded-none">
+                                    <span className="text-[11px] font-mono px-1.5 py-0.2 bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 rounded-none">
                                       {vm.guest_ip_address}
                                     </span>
                                   )}
                                 </div>
                                 <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-2 mt-0.5">
-                                  <span>{vm.moref}</span>
+                                  <span className="text-zinc-400">{vm.moref}</span>
                                   <span>•</span>
                                   <span>{vm.cpu_cores || 1} vCPU</span>
                                   <span>•</span>
-                                  <span>{Math.round((vm.memory_mb || 1024) / 1024)} GB</span>
-                                  <span>•</span>
-                                  <span className="truncate max-w-[240px]">
-                                    {vm.guest_os || vm.instance_uuid}
-                                  </span>
+                                  <span>{Math.round((vm.memory_mb || 1024) / 1024)} GB RAM</span>
+                                  {vm.guest_host_name && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-zinc-400 truncate max-w-[140px]">
+                                        {vm.guest_host_name}
+                                      </span>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-[10px] font-mono uppercase text-zinc-500 px-1 py-0.5 border border-zinc-800 rounded-none">
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              <span
+                                className={`text-[10px] font-mono uppercase px-1.5 py-0.5 border rounded-none ${
+                                  isOn
+                                    ? "border-emerald-800/60 text-emerald-400 bg-emerald-950/20"
+                                    : isSuspended
+                                    ? "border-amber-800/60 text-amber-400 bg-amber-950/20"
+                                    : "border-zinc-800 text-zinc-500 bg-zinc-900/40"
+                                }`}
+                              >
                                 {vm.power_state}
                               </span>
-                              <ArrowRight className="h-3 w-3 text-zinc-500" />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleExecuteSearch(vm.name);
+                                }}
+                                title="Filter in Table"
+                                className="p-1 text-zinc-500 hover:text-yellow-400 hover:bg-zinc-800 rounded-none transition-colors"
+                              >
+                                <Layers className="h-3 w-3" />
+                              </button>
+                              <ArrowRight className={`h-3 w-3 ${isSelected ? "text-yellow-400" : "text-zinc-600"}`} />
                             </div>
                           </div>
                         );
@@ -461,8 +582,11 @@ export const Topbar = () => {
                         <span>Querying inventory fleet...</span>
                       </div>
                     ) : (
-                      <div className="py-8 text-center text-xs text-zinc-500 font-mono">
-                        No virtual machines match &quot;{searchQuery}&quot;. Press Enter to view full search results.
+                      <div className="py-8 text-center text-xs text-zinc-500 font-mono space-y-1">
+                        <div>No virtual machines match &quot;{searchQuery}&quot;.</div>
+                        <div className="text-[11px] text-zinc-600">
+                          Try matching an IP prefix (e.g. <code className="text-zinc-400">10.</code>), power state (e.g. <code className="text-zinc-400">power:on</code>), or press Enter to search full table.
+                        </div>
                       </div>
                     )}
 
@@ -642,5 +766,17 @@ export const Topbar = () => {
       {/* Global VM Detail Sheet */}
       <VMDetailSheet vmId={selectedVmId} onClose={() => setSelectedVmId(null)} />
     </>
+  );
+};
+
+export const Topbar = () => {
+  return (
+    <Suspense
+      fallback={
+        <header className="h-14 border-b border-zinc-900 bg-[#0a0a0a] flex items-center justify-between px-4 gap-4 shrink-0 select-none" />
+      }
+    >
+      <TopbarContent />
+    </Suspense>
   );
 };

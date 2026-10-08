@@ -199,31 +199,33 @@ type Vcenter struct {
 }
 
 type VirtualMachine struct {
-	ID              pgtype.UUID
-	VcenterID       pgtype.UUID
-	Moref           string
-	InstanceUuid    string
-	BiosUuid        pgtype.Text
-	Name            string
-	PowerState      string
-	ConnectionState string
-	CpuCores        int32
-	MemoryMb        int64
-	FolderID        pgtype.UUID
-	FolderPath      pgtype.Text
-	HostID          pgtype.UUID
-	ClusterID       pgtype.UUID
-	DatacenterID    pgtype.UUID
-	GuestOs         string
-	GuestHostName   string
-	GuestIpAddress  *netip.Addr
-	Annotation      string
-	DeletedAt       pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	CreatedBy       string
-	LastSeenAt      pgtype.Timestamptz
-	FirstSeenAt     pgtype.Timestamptz
+	ID                      pgtype.UUID
+	VcenterID               pgtype.UUID
+	Moref                   string
+	InstanceUuid            string
+	BiosUuid                pgtype.Text
+	Name                    string
+	PowerState              string
+	ConnectionState         string
+	CpuCores                int32
+	MemoryMb                int64
+	FolderID                pgtype.UUID
+	FolderPath              pgtype.Text
+	HostID                  pgtype.UUID
+	ClusterID               pgtype.UUID
+	DatacenterID            pgtype.UUID
+	GuestOs                 string
+	GuestHostName           string
+	GuestIpAddress          *netip.Addr
+	Annotation              string
+	DeletedAt               pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	UpdatedAt               pgtype.Timestamptz
+	CreatedBy               string
+	LastSeenAt              pgtype.Timestamptz
+	FirstSeenAt             pgtype.Timestamptz
+	CommittedStorageBytes   int64
+	ProvisionedStorageBytes int64
 }
 
 type VmCustomAttribute struct {

@@ -47,6 +47,8 @@ export interface VMListItem {
   guest_host_name?: string;
   guest_ip_address?: string;
   annotation?: string;
+  committed_storage_bytes?: number;
+  provisioned_storage_bytes?: number;
   created_at: string;
   updated_at: string;
   first_seen_at?: string;
@@ -79,6 +81,8 @@ export interface NICAttachment {
   ip_address?: string;
   network_id?: string;
   portgroup_id?: string;
+  network_name?: string;
+  vlan_ids?: string;
 }
 
 export interface TagItem {
@@ -184,6 +188,9 @@ export interface TopologyItem {
   capacity_bytes?: number;
   free_bytes?: number;
   type?: string;
+  vm_count?: number;
+  vlan_ids?: string;
+  switch_name?: string;
 }
 
 export interface TopologyListResponse {

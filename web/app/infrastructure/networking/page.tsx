@@ -8,15 +8,17 @@ import { netColumns, type NetworkItem } from "../columns";
 import { DataTable } from "@/components/ui/data-table";
 import { NetworkCard } from "./card";
 import { simsApi } from "@/lib/api/client";
+import { NetworkDetailSheet } from "@/components/network/network-detail-sheet";
 
 export default function NetworkingPage() {
   const router = useRouter();
   const [view, setView] = useState<"table" | "card">("table");
   const [networks, setNetworks] = useState<NetworkItem[]>([]);
+  const [selectedNetwork, setSelectedNetwork] = useState<NetworkItem | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const handleSelectNetwork = (net: { id: string; name: string }) => {
-    router.push(`/compute/vms?network_id=${net.id}&network_name=${encodeURIComponent(net.name)}`);
+  const handleSelectNetwork = (net: NetworkItem) => {
+    setSelectedNetwork(net);
   };
 
   useEffect(() => {
@@ -47,9 +49,12 @@ export default function NetworkingPage() {
           vcenterName: vcenterMap[net.vcenter_id] || "Primary vCenter",
           datacenterId: net.datacenter_id || "",
           datacenterName: (net.datacenter_id ? dcMap[net.datacenter_id] : "") || "Datacenter",
-          type: net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed")
+          type: net.type || (net.name.toLowerCase().includes("dvs") || net.name.toLowerCase().includes("distributed")
             ? "Distributed Virtual Portgroup"
-            : "Standard Network",
+            : "Standard Network"),
+          vlanIds: net.vlan_ids,
+          switchName: net.switch_name,
+          vmCount: net.vm_count || 0,
           status: "active",
         }));
         setNetworks(mapped);
@@ -126,6 +131,13 @@ export default function NetworkingPage() {
             />
           ))}
         </div>
+      )}
+
+      {selectedNetwork && (
+        <NetworkDetailSheet
+          network={selectedNetwork}
+          onClose={() => setSelectedNetwork(null)}
+        />
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/infrastructure/sims/internal/vlan"
@@ -106,7 +107,7 @@ var AllowedFields = map[string]FieldDef{
 	"moref": {
 		Name:             "moref",
 		Type:             TypeString,
-		AllowedOperators: []Operator{OpEQ, OpNE, OpIN, OpPrefix},
+		AllowedOperators: []Operator{OpEQ, OpNE, OpIN, OpContains, OpPrefix},
 		Description:      "vSphere Managed Object Reference (e.g. vm-42)",
 	},
 	"instance_uuid": {
@@ -181,6 +182,30 @@ var AllowedFields = map[string]FieldDef{
 		AllowedOperators: []Operator{OpEQ, OpNE, OpIN},
 		Description:      "Assigned datacenter UUID",
 	},
+	"datastore_id": {
+		Name:             "datastore_id",
+		Type:             TypeUUID,
+		AllowedOperators: []Operator{OpEQ, OpNE, OpIN},
+		Description:      "Attached datastore UUID",
+	},
+	"network_id": {
+		Name:             "network_id",
+		Type:             TypeUUID,
+		AllowedOperators: []Operator{OpEQ, OpNE, OpIN},
+		Description:      "Attached network or portgroup UUID",
+	},
+	"network": {
+		Name:             "network",
+		Type:             TypeString,
+		AllowedOperators: []Operator{OpEQ, OpNE, OpContains, OpPrefix},
+		Description:      "Attached network or portgroup name",
+	},
+	"network_name": {
+		Name:             "network_name",
+		Type:             TypeString,
+		AllowedOperators: []Operator{OpEQ, OpNE, OpContains, OpPrefix},
+		Description:      "Attached network or portgroup name",
+	},
 	"guest_os": {
 		Name:             "guest_os",
 		Type:             TypeString,
@@ -196,7 +221,7 @@ var AllowedFields = map[string]FieldDef{
 	"guest_ip_address": {
 		Name:             "guest_ip_address",
 		Type:             TypeIP,
-		AllowedOperators: []Operator{OpEQ, OpNE, OpIN, OpCIDRContains, OpCIDROverlap},
+		AllowedOperators: []Operator{OpEQ, OpNE, OpIN, OpCIDRContains, OpCIDROverlap, OpContains, OpPrefix},
 		Description:      "Primary guest IP address or CIDR network",
 	},
 	"annotation": {
@@ -271,6 +296,11 @@ func validateWithLimit(node *FilterNode, depth int, nodeCount *int) error {
 			Code:    "query_too_complex",
 			Message: fmt.Sprintf("maximum AST node count %d exceeded", MaxASTNodes),
 		}
+	}
+
+	// Normalize operator aliases
+	if node.Op == "OVERLAP" {
+		node.Op = OpVLANOverlap
 	}
 
 	switch node.Op {
@@ -416,13 +446,16 @@ func validateWithLimit(node *FilterNode, depth int, nodeCount *int) error {
 		valStr := fmt.Sprintf("%v", node.Value)
 		switch node.Op {
 		case OpCIDRContains, OpCIDROverlap:
-			// Must be valid IP address or prefix
+			// Must be valid IP address, prefix, or partial IP digits/dots
 			if _, err := netip.ParsePrefix(valStr); err != nil {
 				if _, errAddr := netip.ParseAddr(valStr); errAddr != nil {
-					return &ValidationError{
-						Code:    "invalid_filter",
-						Field:   node.Field,
-						Message: fmt.Sprintf("invalid CIDR/IP syntax %q: %v", valStr, err),
+					trimmed := strings.TrimSpace(valStr)
+					if !isPartialIP(trimmed) {
+						return &ValidationError{
+							Code:    "invalid_filter",
+							Field:   node.Field,
+							Message: fmt.Sprintf("invalid CIDR/IP syntax %q: %v", valStr, err),
+						}
 					}
 				}
 			}
@@ -443,4 +476,48 @@ func validateWithLimit(node *FilterNode, depth int, nodeCount *int) error {
 			Message: fmt.Sprintf("unrecognized operator %q", node.Op),
 		}
 	}
+}
+
+func isPartialIP(s string) bool {
+	if s == "" {
+		return true
+	}
+	// If it contains a slash, check CIDR prefix
+	if strings.Contains(s, "/") {
+		parts := strings.SplitN(s, "/", 2)
+		ipPart := parts[0]
+		prefixPart := parts[1]
+		if prefixPart != "" {
+			mask, err := strconv.Atoi(prefixPart)
+			if err != nil || mask < 0 || mask > 128 {
+				return false
+			}
+		}
+		s = ipPart
+	}
+
+	// For IPv4 partial: octets separated by dots
+	if strings.Contains(s, ".") {
+		octets := strings.Split(s, ".")
+		if len(octets) > 4 {
+			return false
+		}
+		for _, oct := range octets {
+			if oct == "" {
+				continue
+			}
+			val, err := strconv.Atoi(oct)
+			if err != nil || val < 0 || val > 255 {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Single number without dot: must be 0-255 to be a valid partial IPv4 octet
+	if val, err := strconv.Atoi(s); err == nil {
+		return val >= 0 && val <= 255
+	}
+
+	return false
 }

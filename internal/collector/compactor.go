@@ -108,6 +108,12 @@ func mergeRecords(existing, incoming domain.VMRecord) domain.VMRecord {
 	if incoming.Annotation != "" {
 		out.Annotation = incoming.Annotation
 	}
+	if incoming.CommittedStorageBytes > 0 {
+		out.CommittedStorageBytes = incoming.CommittedStorageBytes
+	}
+	if incoming.ProvisionedStorageBytes > 0 {
+		out.ProvisionedStorageBytes = incoming.ProvisionedStorageBytes
+	}
 	if incoming.FolderID != "" {
 		out.FolderID = incoming.FolderID
 	}
