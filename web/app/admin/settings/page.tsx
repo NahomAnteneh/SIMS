@@ -560,7 +560,7 @@ export default function SettingsPage() {
         title="Provision User Account"
         icon={<UserPlus className="h-4 w-4 text-yellow-500" />}
       >
-        <form onSubmit={handleCreateUser} className="space-y-4 font-sans">
+        <form onSubmit={handleCreateUser} className="space-y-4 font-sans" autoComplete="off">
           {addUserError && (
             <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -575,11 +575,12 @@ export default function SettingsPage() {
             <input
               type="text"
               required
-              placeholder="e.g. s_ops_01"
+              placeholder="Username"
               value={userFormData.username}
               onChange={(e) =>
                 setUserFormData({ ...userFormData, username: e.target.value })
               }
+              autoComplete="off"
               className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
             />
           </div>
@@ -591,11 +592,12 @@ export default function SettingsPage() {
             <input
               type="password"
               required
-              placeholder="••••••••••••"
+              placeholder="Password"
               value={userFormData.password}
               onChange={(e) =>
                 setUserFormData({ ...userFormData, password: e.target.value })
               }
+              autoComplete="new-password"
               className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
             />
           </div>
@@ -606,11 +608,12 @@ export default function SettingsPage() {
             </label>
             <input
               type="email"
-              placeholder="operator@datacenter.net"
+              placeholder="Email address"
               value={userFormData.email}
               onChange={(e) =>
                 setUserFormData({ ...userFormData, email: e.target.value })
               }
+              autoComplete="off"
               className="w-full bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
             />
           </div>

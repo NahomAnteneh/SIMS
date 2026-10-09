@@ -301,7 +301,7 @@ export default function DataSourcesPage() {
           <Server className="h-10 w-10 text-zinc-600 mx-auto" />
           <h3 className="text-base font-semibold text-zinc-200">No vCenter Instances Registered</h3>
           <p className="text-sm text-zinc-500 max-w-md mx-auto">
-            Connect a vCenter Server management endpoint or simulator to begin continuous streaming ingestion.
+            Connect a vCenter Server management endpoint to begin continuous streaming ingestion.
           </p>
           <Button
             onClick={() => setIsModalOpen(true)}
@@ -358,15 +358,16 @@ export default function DataSourcesPage() {
               </div>
             )}
 
-            <form onSubmit={handleSave} className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-4" autoComplete="off">
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1">Instance Name</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. vc-prod-01 or vcsim-local"
+                  placeholder="e.g. vc-prod-01"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  autoComplete="off"
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
@@ -377,9 +378,10 @@ export default function DataSourcesPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. vcsim or 10.0.0.10"
+                    placeholder="e.g. 10.0.0.10 or vcenter.corp.internal"
                     value={formData.host}
                     onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                    autoComplete="off"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600 font-mono"
                   />
                 </div>
@@ -403,9 +405,10 @@ export default function DataSourcesPage() {
                   <input
                     type="text"
                     required={!editingSource}
-                    placeholder="administrator@vsphere.local"
+                    placeholder="Username (e.g. svc-sims@vsphere.local)"
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    autoComplete="off"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                   />
                 </div>
@@ -416,9 +419,10 @@ export default function DataSourcesPage() {
                   <input
                     type="password"
                     required={!editingSource}
-                    placeholder="••••••••••••"
+                    placeholder="Password"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    autoComplete="new-password"
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                   />
                 </div>
@@ -433,7 +437,7 @@ export default function DataSourcesPage() {
                   className="rounded border-zinc-800 bg-zinc-900 text-yellow-600 focus:ring-0"
                 />
                 <label htmlFor="insecure_tls" className="text-xs text-zinc-400 cursor-pointer">
-                  Skip TLS verification (Self-signed certificates or vcsim)
+                  Skip TLS certificate verification (Self-signed certificates)
                 </label>
               </div>
 

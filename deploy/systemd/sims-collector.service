@@ -1,0 +1,24 @@
+[Unit]
+Description=SIMS vSphere PropertyCollector Synchronizer
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=sims
+Group=sims
+WorkingDirectory=/opt/sims
+EnvironmentFile=/etc/sims/collector.env
+ExecStart=/opt/sims/current/bin/collector
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+
+# System & Process Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

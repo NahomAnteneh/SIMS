@@ -1,0 +1,24 @@
+[Unit]
+Description=SIMS Web Console Frontend
+After=network.target sims-query-api.service
+Wants=sims-query-api.service
+
+[Service]
+Type=simple
+User=sims
+Group=sims
+WorkingDirectory=/opt/sims/current/web
+EnvironmentFile=/etc/sims/web.env
+ExecStart=/usr/bin/node /opt/sims/current/web/server.js
+Restart=always
+RestartSec=5s
+LimitNOFILE=32768
+
+# System & Process Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

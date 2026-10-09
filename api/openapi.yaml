@@ -1840,7 +1840,7 @@ components:
         password:
           type: string
           format: password
-          example: admin123
+          example: "<secret-password>"
 
     LoginResponse:
       type: object

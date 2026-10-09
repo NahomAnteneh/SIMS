@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/api"
@@ -18,6 +22,18 @@ import (
 )
 
 const version = "1.0.0"
+
+func generateSecurePassword(length int) string {
+	const charset = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*"
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "SimsAdmin" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b)
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -43,6 +59,12 @@ func run() error {
 		slog.String("port", cfg.Port),
 		slog.String("database_url", logging.RedactURL(cfg.DatabaseURL)),
 	)
+
+	if cfg.DatabaseURL == "" {
+		err := fmt.Errorf("DATABASE_URL environment variable is required")
+		logger.Error("missing database configuration", slog.String("error", err.Error()))
+		return err
+	}
 
 	// Configure pgxpool for read-only queries with startup initialization context
 	initCtx, initCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -75,9 +97,56 @@ func run() error {
 	// Local Authentication & JWT Token Signer
 	queries := db.New(pool)
 	userStore := auth.NewDBUserStore(queries)
+
+	// Bootstrap administrator user if users table is completely empty
+	existingUsers, listErr := queries.ListUsers(initCtx)
+	if listErr == nil && len(existingUsers) == 0 {
+		initialPassword := os.Getenv("ADMIN_INITIAL_PASSWORD")
+		if initialPassword == "" {
+			initialPassword = os.Getenv("SIMS_ADMIN_PASSWORD")
+		}
+		generated := false
+		if initialPassword == "" {
+			initialPassword = generateSecurePassword(16)
+			generated = true
+		}
+		pwdHash, hashErr := auth.HashPassword(initialPassword)
+		if hashErr != nil {
+			logger.Error("failed to hash initial admin password", slog.String("error", hashErr.Error()))
+		} else {
+			_, createErr := queries.CreateUser(initCtx, db.CreateUserParams{
+				Username:     "admin",
+				PasswordHash: pwdHash,
+				Email:        pgtype.Text{String: "admin@local", Valid: true},
+				Role:         string(auth.RoleAdmin),
+			})
+			if createErr != nil {
+				logger.Warn("failed to bootstrap admin user", slog.String("error", createErr.Error()))
+			} else if generated {
+				logger.Warn("================================================================================")
+				logger.Warn("BOOTSTRAP: Initial administrator account provisioned.")
+				logger.Warn("Username: admin")
+				logger.Warn("Password: " + initialPassword)
+				logger.Warn("IMPORTANT: Save this password and change it immediately after initial login.")
+				logger.Warn("================================================================================")
+			} else {
+				logger.Info("bootstrapped initial admin user from environment configuration", slog.String("username", "admin"))
+			}
+		}
+	}
+
 	tokenSecret := []byte(os.Getenv("JWT_SECRET"))
 	if len(tokenSecret) == 0 {
-		tokenSecret = auth.DefaultJWTSecret
+		if os.Getenv("ENV") == "test" || os.Getenv("ENV") == "testing" {
+			tokenSecret = auth.DefaultJWTSecret
+		} else {
+			randomSecret := make([]byte, 32)
+			if _, err := rand.Read(randomSecret); err != nil {
+				return fmt.Errorf("failed to generate random JWT secret: %w", err)
+			}
+			tokenSecret = randomSecret
+			logger.Warn("JWT_SECRET not configured; generated ephemeral random 32-byte signing secret for this session")
+		}
 	}
 	tokenSigner := auth.NewTokenSigner(tokenSecret, 24*time.Hour)
 

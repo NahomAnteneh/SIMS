@@ -239,15 +239,16 @@ export default function AccessPage() {
               </div>
             )}
 
-            <form onSubmit={handleCreateUser} className="space-y-4">
+            <form onSubmit={handleCreateUser} className="space-y-4" autoComplete="off">
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1">Username</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. operator1"
+                  placeholder="Username"
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  autoComplete="off"
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
@@ -257,9 +258,10 @@ export default function AccessPage() {
                 <input
                   type="password"
                   required
-                  placeholder="••••••••••••"
+                  placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  autoComplete="new-password"
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>
@@ -268,9 +270,10 @@ export default function AccessPage() {
                 <label className="block text-xs font-medium text-zinc-400 mb-1">Email (Optional)</label>
                 <input
                   type="email"
-                  placeholder="operator@company.com"
+                  placeholder="Email address"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  autoComplete="off"
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-none px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-yellow-600"
                 />
               </div>

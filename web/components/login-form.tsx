@@ -27,8 +27,8 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"div">) {
   const router = useRouter();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +65,7 @@ export function LoginForm({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} autoComplete="on">
             <FieldGroup>
               {error && (
                 <div className="flex items-center gap-2 rounded-none border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
@@ -79,9 +79,10 @@ export function LoginForm({
                 <Input
                   id="username"
                   type="text"
-                  placeholder="admin"
+                  placeholder="Enter username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
                   required
                   className="bg-zinc-900 border-zinc-800 text-zinc-100"
                 />
@@ -92,8 +93,10 @@ export function LoginForm({
                 <Input
                   id="password"
                   type="password"
+                  placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                   required
                   className="bg-zinc-900 border-zinc-800 text-zinc-100"
                 />
@@ -114,9 +117,6 @@ export function LoginForm({
                     "Sign In"
                   )}
                 </Button>
-                <FieldDescription className="text-center text-zinc-500 text-xs mt-3">
-                  Default bootstrap credentials: <span className="text-zinc-400 font-mono">admin</span> / <span className="text-zinc-400 font-mono">admin123</span>
-                </FieldDescription>
               </Field>
             </FieldGroup>
           </form>

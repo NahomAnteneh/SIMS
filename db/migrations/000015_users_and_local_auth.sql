@@ -15,11 +15,6 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);
 
--- Bootstrap default admin user if not present (username: admin, password: admin123)
-INSERT INTO users (username, password_hash, email, role)
-VALUES ('admin', '$2a$10$yumf2.g1cGQdiOQKODxySOy7B95gd4Z72Q6azRY1BvN9ZIT8j26aK', 'admin@sims.local', 'inventory-admin')
-ON CONFLICT (username) DO NOTHING;
-
 -- Grant role permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON users TO collector_rw;
 GRANT SELECT ON users TO query_ro;

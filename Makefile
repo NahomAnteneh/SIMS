@@ -12,7 +12,7 @@ GOVULNCHECK := $(BIN_DIR)/govulncheck
 .PHONY: sqlc-generate sqlc-verify test-migration test-db-integration test-vcsim-integration
 .PHONY: test-gate-s4 test-scale-s4 demo-s4
 .PHONY: test-perf-query test-perf-ingest
-.PHONY: vulncheck container-build dev-up dev-down dev-reset tools
+.PHONY: vulncheck container-build package-release dev-up dev-down dev-reset tools
 
 all: help
 
@@ -124,6 +124,9 @@ container-build: ## Build production multi-stage container images for all servic
 	docker build -f deploy/Dockerfile.migration -t sims-migration:1.0.0 .
 	docker build -f deploy/Dockerfile.vcsim -t sims-vcsim:1.0.0 .
 	docker build -f deploy/Dockerfile.web -t sims-web:1.0.0 ./web
+
+package-release: tools ## Package release tarball with binaries, Next.js standalone, and migrations
+	@VERSION=$${VERSION:-1.0.0}; ./scripts/package-release.sh "$$VERSION"
 
 
 dev-up: ## Start the full local development stack with Docker Compose

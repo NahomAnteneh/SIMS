@@ -51,6 +51,12 @@ func run() error {
 		slog.Bool("insecure_tls", cfg.InsecureTLS),
 	)
 
+	if cfg.DatabaseURL == "" {
+		err := fmt.Errorf("DATABASE_URL environment variable is required")
+		logger.Error("missing database configuration", slog.String("error", err.Error()))
+		return err
+	}
+
 	// Configure pgxpool for bulk write operations
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
