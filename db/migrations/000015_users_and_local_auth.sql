@@ -15,9 +15,18 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);
 
--- Grant role permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON users TO collector_rw;
-GRANT SELECT ON users TO query_ro;
+-- Grant role permissions (conditional if roles exist)
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'collector_rw') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON users TO collector_rw';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'query_ro') THEN
+        EXECUTE 'GRANT SELECT ON users TO query_ro';
+    END IF;
+END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 DROP TABLE IF EXISTS users;

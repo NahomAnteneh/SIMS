@@ -45,9 +45,18 @@ CREATE TABLE collector_state (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Least privilege role grants
-GRANT SELECT, INSERT, UPDATE, DELETE ON vcenters, collector_targets, collector_leases, collector_state TO collector_rw;
-GRANT SELECT ON vcenters, collector_targets, collector_leases, collector_state TO query_ro;
+-- Least privilege role grants (conditional if roles exist)
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'collector_rw') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON vcenters, collector_targets, collector_leases, collector_state TO collector_rw';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'query_ro') THEN
+        EXECUTE 'GRANT SELECT ON vcenters, collector_targets, collector_leases, collector_state TO query_ro';
+    END IF;
+END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 DROP TABLE IF EXISTS collector_state;

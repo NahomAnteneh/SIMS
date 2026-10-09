@@ -101,23 +101,37 @@ func run() error {
 	// Bootstrap administrator user if users table is completely empty
 	existingUsers, listErr := queries.ListUsers(initCtx)
 	if listErr == nil && len(existingUsers) == 0 {
-		initialPassword := os.Getenv("ADMIN_INITIAL_PASSWORD")
-		if initialPassword == "" {
-			initialPassword = os.Getenv("SIMS_ADMIN_PASSWORD")
+		adminUsername := os.Getenv("ADMIN_USERNAME")
+		if adminUsername == "" {
+			adminUsername = os.Getenv("ADMIN_INITIAL_USERNAME")
+		}
+		if adminUsername == "" {
+			adminUsername = os.Getenv("SIMS_ADMIN_USERNAME")
+		}
+		if adminUsername == "" {
+			adminUsername = "admin"
+		}
+
+		adminPassword := os.Getenv("ADMIN_PASSWORD")
+		if adminPassword == "" {
+			adminPassword = os.Getenv("ADMIN_INITIAL_PASSWORD")
+		}
+		if adminPassword == "" {
+			adminPassword = os.Getenv("SIMS_ADMIN_PASSWORD")
 		}
 		generated := false
-		if initialPassword == "" {
-			initialPassword = generateSecurePassword(16)
+		if adminPassword == "" {
+			adminPassword = generateSecurePassword(16)
 			generated = true
 		}
-		pwdHash, hashErr := auth.HashPassword(initialPassword)
+		pwdHash, hashErr := auth.HashPassword(adminPassword)
 		if hashErr != nil {
 			logger.Error("failed to hash initial admin password", slog.String("error", hashErr.Error()))
 		} else {
 			_, createErr := queries.CreateUser(initCtx, db.CreateUserParams{
-				Username:     "admin",
+				Username:     adminUsername,
 				PasswordHash: pwdHash,
-				Email:        pgtype.Text{String: "admin@local", Valid: true},
+				Email:        pgtype.Text{String: adminUsername + "@local", Valid: true},
 				Role:         string(auth.RoleAdmin),
 			})
 			if createErr != nil {
@@ -125,12 +139,12 @@ func run() error {
 			} else if generated {
 				logger.Warn("================================================================================")
 				logger.Warn("BOOTSTRAP: Initial administrator account provisioned.")
-				logger.Warn("Username: admin")
-				logger.Warn("Password: " + initialPassword)
+				logger.Warn("Username: " + adminUsername)
+				logger.Warn("Password: " + adminPassword)
 				logger.Warn("IMPORTANT: Save this password and change it immediately after initial login.")
 				logger.Warn("================================================================================")
 			} else {
-				logger.Info("bootstrapped initial admin user from environment configuration", slog.String("username", "admin"))
+				logger.Info("bootstrapped initial admin user from environment configuration", slog.String("username", adminUsername))
 			}
 		}
 	}

@@ -113,16 +113,18 @@ CREATE TABLE networks (
 -- Query Pattern: VLAN range overlap or containment search on networks
 CREATE INDEX idx_networks_vlan_ids_gist ON networks USING gist (vlan_ids);
 
--- Least privilege role grants
-GRANT SELECT, INSERT, UPDATE, DELETE ON
-    datacenters, inventory_folders, clusters, hosts, datastores,
-    distributed_switches, portgroups, networks
-TO collector_rw;
-
-GRANT SELECT ON
-    datacenters, inventory_folders, clusters, hosts, datastores,
-    distributed_switches, portgroups, networks
-TO query_ro;
+-- Least privilege role grants (conditional if roles exist)
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'collector_rw') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON datacenters, inventory_folders, clusters, hosts, datastores, distributed_switches, portgroups, networks TO collector_rw';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'query_ro') THEN
+        EXECUTE 'GRANT SELECT ON datacenters, inventory_folders, clusters, hosts, datastores, distributed_switches, portgroups, networks TO query_ro';
+    END IF;
+END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 DROP TABLE IF EXISTS networks;

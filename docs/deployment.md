@@ -17,10 +17,9 @@
   - `btree_gist` (for multidimensional range indexing)
   - `ltree` (for hierarchical folder and datacenter tree queries)
   - `pg_trgm` (for fast substring and fuzzy name matching)
-- **Role Isolation:**
-  - `migration_owner` (owns schema and applies migrations)
-  - `collector_rw` (DML on inventory and collector tables)
-  - `query_ro` (strictly read-only `SELECT` access)
+- **Unified Database User:**
+  - Configured via server environment variables (`DB_USER` and `DB_PASSWORD`).
+  - Owns the database schema and performs all operations (migrations, collection ingestion, and API queries) with zero pre-seeded clutter or extraneous roles.
 
 ---
 
@@ -70,6 +69,8 @@ securityContext:
 | `DATABASE_URL` | string | **Required** | PostgreSQL connection URL |
 | `AUTH_ENABLED` | bool | `true` | Enforce authentication (local username/password, Bearer JWT, or OIDC) |
 | `JWT_SECRET` | string | Optional | HMAC-SHA256 signing secret for local JWT tokens |
+| `ADMIN_USERNAME` | string | `admin` | Initial administrator username (configured via server env) |
+| `ADMIN_PASSWORD` | string | Optional | Initial administrator password (auto-generated if omitted) |
 | `OIDC_ISSUER_URL` | string | Optional | Upstream OIDC provider URL (for Active Directory / enterprise SSO integration) |
 | `OIDC_AUDIENCE` | string | Optional | Expected JWT audience claim |
 
@@ -85,9 +86,11 @@ securityContext:
 
 ### Initial Administrator Provisioning (Local Authentication Mode)
 When running without external Active Directory or OIDC integration, SIMS automatically provisions the initial administrator account on first startup:
-- **Username:** `admin`
-- **Password:** Set via `ADMIN_INITIAL_PASSWORD` in `/etc/sims/query-api.env`. If omitted, SIMS securely generates a random 16-character password and outputs it to the startup log.
+- **Username:** Configured via `ADMIN_USERNAME` (defaults to `admin`).
+- **Password:** Configured via `ADMIN_PASSWORD` (or `ADMIN_INITIAL_PASSWORD`). If omitted, SIMS securely generates a random password and outputs it to the startup log.
 - **Role:** `admin` (Full access)
+
+Zero pre-seeded accounts exist in database migrations. Only the administrator specified via environment variables is created.
 
 Passwords can be updated or new users provisioned via the Web Console or the REST API (`POST /v1/users` and `PATCH /v1/users/{id}`).
 

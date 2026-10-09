@@ -99,18 +99,20 @@ CREATE TABLE inventory_events (
 -- Query Pattern: event history collector replay and timeline queries
 CREATE INDEX idx_events_vcenter_time ON inventory_events (vcenter_id, created_time DESC);
 
--- Least privilege role grants
-GRANT SELECT, INSERT, UPDATE, DELETE ON
-    virtual_machines, vm_datastores, vm_network_interfaces, inventory_events
-TO collector_rw;
-
-GRANT USAGE, SELECT ON SEQUENCE inventory_events_id_seq TO collector_rw;
-
-GRANT SELECT ON
-    virtual_machines, vm_datastores, vm_network_interfaces, inventory_events
-TO query_ro;
-
-GRANT SELECT ON SEQUENCE inventory_events_id_seq TO query_ro;
+-- Least privilege role grants (conditional if roles exist)
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'collector_rw') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON virtual_machines, vm_datastores, vm_network_interfaces, inventory_events TO collector_rw';
+        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE inventory_events_id_seq TO collector_rw';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'query_ro') THEN
+        EXECUTE 'GRANT SELECT ON virtual_machines, vm_datastores, vm_network_interfaces, inventory_events TO query_ro';
+        EXECUTE 'GRANT SELECT ON SEQUENCE inventory_events_id_seq TO query_ro';
+    END IF;
+END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 DROP TABLE IF EXISTS inventory_events;

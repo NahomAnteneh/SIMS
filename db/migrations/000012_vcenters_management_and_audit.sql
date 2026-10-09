@@ -29,9 +29,18 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_created_at ON audit_events (created_
 CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events (action);
 CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events (actor);
 
--- Least privilege role grants
-GRANT SELECT, INSERT ON audit_events TO collector_rw;
-GRANT SELECT ON audit_events TO query_ro;
+-- Least privilege role grants (conditional if roles exist)
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'collector_rw') THEN
+        EXECUTE 'GRANT SELECT, INSERT ON audit_events TO collector_rw';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'query_ro') THEN
+        EXECUTE 'GRANT SELECT ON audit_events TO query_ro';
+    END IF;
+END $$;
+-- +goose StatementEnd
 
 -- +goose Down
 DROP TABLE IF EXISTS audit_events;

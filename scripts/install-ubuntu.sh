@@ -48,66 +48,79 @@ mkdir -p /opt/sims/shared
 mkdir -p /etc/sims
 mkdir -p /var/log/sims
 
-# 3. Configure PostgreSQL Engine
-echo "--> [3/8] Configuring PostgreSQL database and isolated service roles..."
+# Load existing configuration if present
+if [ -f "/etc/sims/database.env" ]; then
+  # shellcheck disable=SC1091
+  source /etc/sims/database.env
+fi
+if [ -f "/etc/sims/sims.env" ]; then
+  # shellcheck disable=SC1091
+  source /etc/sims/sims.env
+fi
+
+# Detect Database Configuration (Single unified user for all operations)
+DB_USER="${DB_USER:-${DATABASE_USER:-${SIMS_DB_USER:-sims}}}"
+DB_NAME="${DB_NAME:-${DATABASE_NAME:-${SIMS_DB_NAME:-sims}}}"
+DB_HOST="${DB_HOST:-${DATABASE_HOST:-127.0.0.1}}"
+DB_PORT="${DB_PORT:-${DATABASE_PORT:-5432}}"
+
+DB_PASSWORD="${DB_PASSWORD:-${DATABASE_PASSWORD:-${SIMS_DB_PASSWORD:-}}}"
+if [ -z "${DB_PASSWORD}" ]; then
+  DB_PASSWORD=$(openssl rand -hex 16)
+fi
+
+# Detect Application Administrator Credentials
+ADMIN_USERNAME="${ADMIN_USERNAME:-${ADMIN_INITIAL_USERNAME:-${SIMS_ADMIN_USERNAME:-admin}}}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-${ADMIN_INITIAL_PASSWORD:-${SIMS_ADMIN_PASSWORD:-}}}"
+if [ -z "${ADMIN_PASSWORD}" ]; then
+  ADMIN_PASSWORD=$(openssl rand -hex 12)
+fi
+
+GEN_JWT_SECRET="${JWT_SECRET:-$(openssl rand -hex 32)}"
+
+# 3. Configure PostgreSQL Engine & Single Unified Role
+echo "--> [3/8] Configuring PostgreSQL database and single user (${DB_USER})..."
 systemctl start postgresql
 systemctl enable postgresql
 
-# Generate cryptographically secure passwords
-GEN_MIGRATION_PASS=$(openssl rand -hex 16)
-GEN_COLLECTOR_PASS=$(openssl rand -hex 16)
-GEN_QUERY_PASS=$(openssl rand -hex 16)
-GEN_JWT_SECRET=$(openssl rand -hex 32)
-GEN_ADMIN_PASS=$(openssl rand -hex 12)
-
 sudo -u postgres psql -v ON_ERROR_STOP=1 <<EOF
 -- Create Database
-SELECT 'CREATE DATABASE sims' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'sims')\gexec
+SELECT 'CREATE DATABASE ${DB_NAME}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
 
 -- Connect to database and configure extensions
-\c sims
+\c ${DB_NAME}
 CREATE EXTENSION IF NOT EXISTS ltree;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- Create Roles with strong random passwords
+-- Create ONLY ONE user for all operations
 DO \$\$
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'migration_owner') THEN
-    CREATE ROLE migration_owner WITH LOGIN PASSWORD '${GEN_MIGRATION_PASS}' CREATEDB;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
+    CREATE ROLE "${DB_USER}" WITH LOGIN PASSWORD '${DB_PASSWORD}' CREATEDB;
   ELSE
-    ALTER ROLE migration_owner WITH PASSWORD '${GEN_MIGRATION_PASS}';
-  END IF;
-
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'collector_rw') THEN
-    CREATE ROLE collector_rw WITH LOGIN PASSWORD '${GEN_COLLECTOR_PASS}';
-  ELSE
-    ALTER ROLE collector_rw WITH PASSWORD '${GEN_COLLECTOR_PASS}';
-  END IF;
-
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'query_ro') THEN
-    CREATE ROLE query_ro WITH LOGIN PASSWORD '${GEN_QUERY_PASS}';
-  ELSE
-    ALTER ROLE query_ro WITH PASSWORD '${GEN_QUERY_PASS}';
+    ALTER ROLE "${DB_USER}" WITH PASSWORD '${DB_PASSWORD}';
   END IF;
 END
 \$\$;
 
-GRANT ALL PRIVILEGES ON DATABASE sims TO migration_owner;
-GRANT ALL ON SCHEMA public TO migration_owner;
+GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO "${DB_USER}";
+GRANT ALL ON SCHEMA public TO "${DB_USER}";
+ALTER SCHEMA public OWNER TO "${DB_USER}";
+ALTER DATABASE ${DB_NAME} OWNER TO "${DB_USER}";
 EOF
 
 # 4. Generate Production Configuration Files
 echo "--> [4/8] Generating secure service environment files in /etc/sims/..."
 
 cat > /etc/sims/migration.env <<EOF
-MIGRATION_DATABASE_URL=postgres://migration_owner:${GEN_MIGRATION_PASS}@127.0.0.1:5432/sims?sslmode=disable
+MIGRATION_DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable
 EOF
 
 cat > /etc/sims/collector.env <<EOF
 PORT=8081
 LOG_LEVEL=info
-DATABASE_URL=postgres://collector_rw:${GEN_COLLECTOR_PASS}@127.0.0.1:5432/sims?sslmode=disable
+DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable
 VCENTER_URL=
 VCENTER_USER=
 VCENTER_PASSWORD=
@@ -122,10 +135,11 @@ EOF
 cat > /etc/sims/query-api.env <<EOF
 PORT=8080
 LOG_LEVEL=info
-DATABASE_URL=postgres://query_ro:${GEN_QUERY_PASS}@127.0.0.1:5432/sims?sslmode=disable
+DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable
 AUTH_ENABLED=true
 JWT_SECRET=${GEN_JWT_SECRET}
-ADMIN_INITIAL_PASSWORD=${GEN_ADMIN_PASS}
+ADMIN_USERNAME=${ADMIN_USERNAME}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
 CORS_ALLOWED_ORIGINS=
 EOF
 
@@ -168,7 +182,7 @@ chmod +x "${TARGET_DIR}/bin/"*
 
 # 6. Apply Schema Migrations
 echo "--> [6/8] Executing database schema migrations via Goose..."
-"${TARGET_DIR}/bin/goose" -dir "${TARGET_DIR}/migrations" postgres "postgres://migration_owner:${GEN_MIGRATION_PASS}@127.0.0.1:5432/sims?sslmode=disable" up
+"${TARGET_DIR}/bin/goose" -dir "${TARGET_DIR}/migrations" postgres "postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable" up
 
 # Atomic symlink
 ln -sfn "${TARGET_DIR}" /opt/sims/current
@@ -218,8 +232,12 @@ if [ "$HEALTHY" = true ]; then
   echo "Query API Endpoint:     http://$(hostname -I | awk '{print $1}')/v1/"
   echo ""
   echo "INITIAL BOOTSTRAP ADMINISTRATOR CREDENTIALS:"
-  echo "  Username: admin"
-  echo "  Password: ${GEN_ADMIN_PASS}"
+  echo "  Username: ${ADMIN_USERNAME}"
+  echo "  Password: ${ADMIN_PASSWORD}"
+  echo ""
+  echo "DATABASE CREDENTIALS (SINGLE UNIFIED USER):"
+  echo "  Username: ${DB_USER}"
+  echo "  Database: ${DB_NAME}"
   echo ""
   echo "IMPORTANT: Save these credentials securely. They will not be displayed again."
   echo "Configurations saved in /etc/sims/*.env"
