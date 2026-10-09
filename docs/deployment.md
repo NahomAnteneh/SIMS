@@ -73,6 +73,16 @@ securityContext:
 | `OIDC_ISSUER_URL` | string | Optional | Upstream OIDC provider URL (for Active Directory / enterprise SSO integration) |
 | `OIDC_AUDIENCE` | string | Optional | Expected JWT audience claim |
 
+### Web Console Service (`sims-web`)
+
+| Variable | Type | Default | Description |
+|:---|:---|:---|:---|
+| `PORT` | int | `8082` | HTTP listen port (internal loopback only) |
+| `HOSTNAME` | string | `127.0.0.1` | Loopback binding (never exposed externally) |
+| `NODE_ENV` | string | `production` | Node.js production runtime environment |
+| `INTERNAL_QUERY_API_URL` | string | `http://127.0.0.1:8080` | Internal Query API URL for server-side rendering |
+| `QUERY_API_URL` | string | `http://127.0.0.1:8080` | Client/browser Query API URL |
+
 ### Initial Administrator Provisioning (Local Authentication Mode)
 When running without external Active Directory or OIDC integration, SIMS automatically provisions the initial administrator account on first startup:
 - **Username:** `admin`
@@ -87,7 +97,20 @@ Passwords can be updated or new users provisioned via the Web Console or the RES
 
 SIMS supports production bare-metal deployment on Ubuntu 22.04 / 24.04 LTS without Docker or container runtimes, utilizing native systemd units, PostgreSQL 16+, Node.js 20+, and Nginx.
 
-### 4.1 Architecture & Directory Layout
+### 4.1 Network Port Allocation Matrix
+
+> **Design Invariant:** SIMS never uses or binds to port `3000` when deployed. All internal services bind exclusively to `127.0.0.1` (loopback) and are reverse-proxied by Nginx on standard HTTP (80) or HTTPS (443) ports.
+
+| Port | Protocol | Binding | Exposure | Service | Description |
+|:---|:---|:---|:---|:---|:---|
+| **80** | HTTP | `0.0.0.0` | **Public / Ingress** | Nginx | Production web ingress & reverse proxy |
+| **443** | HTTPS | `0.0.0.0` | **Public / Ingress** | Nginx | Production TLS ingress (when SSL enabled) |
+| **8080** | HTTP | `127.0.0.1` | Internal Loopback | `sims-query-api` | Core REST API & `/readyz` |
+| **8081** | HTTP | `127.0.0.1` | Internal Loopback | `sims-collector` | Metrics & collector `/readyz` |
+| **8082** | HTTP | `127.0.0.1` | Internal Loopback | `sims-web` | Next.js Standalone Console |
+| **5432** | TCP | `127.0.0.1` | Internal Loopback | PostgreSQL | Database server |
+
+### 4.2 Directory Layout
 
 ```
 /opt/sims/
@@ -101,7 +124,7 @@ SIMS supports production bare-metal deployment on Ubuntu 22.04 / 24.04 LTS witho
 └── logs/                                    # Service logs
 ```
 
-### 4.2 Automated Host Installation
+### 4.3 Automated Host Installation
 
 1. Generate the release package on your build host:
    ```bash
@@ -115,7 +138,7 @@ SIMS supports production bare-metal deployment on Ubuntu 22.04 / 24.04 LTS witho
 
 The script automatically provisions PostgreSQL roles with strong random credentials, sets up restricted configuration files (`/etc/sims/*.env`, `0600`), installs systemd units, applies schema migrations, configures Nginx, and prints the generated `admin` password.
 
-### 4.3 Zero-Downtime Release Upgrades
+### 4.4 Zero-Downtime Release Upgrades
 
 To upgrade to a new version (e.g., `v1.1.0`):
 ```bash
