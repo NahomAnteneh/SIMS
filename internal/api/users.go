@@ -160,15 +160,15 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	normRole := strings.ToLower(strings.TrimSpace(req.Role))
 	switch normRole {
 	case "", "user", "viewer":
-		req.Role = "viewer"
+		req.Role = string(auth.RoleUser)
 	case "operator":
 		req.Role = "operator"
 	case "admin", "inventory-admin":
-		req.Role = "admin"
+		req.Role = string(auth.RoleAdmin)
 	case "suspended":
 		req.Role = "suspended"
 	default:
-		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be one of: 'admin', 'operator', 'viewer', or 'suspended'", "invalid_role")
+		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be one of: 'admin', 'operator', 'user', or 'suspended'", "invalid_role")
 		return
 	}
 
@@ -408,11 +408,11 @@ func (h *Handler) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		case "operator":
 			targetRole = "operator"
 		case "viewer", "user":
-			targetRole = "viewer"
+			targetRole = "user"
 		case "suspended":
 			targetRole = "suspended"
 		default:
-			h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be one of: 'admin', 'operator', 'viewer', or 'suspended'", "invalid_role")
+			h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be one of: 'admin', 'operator', 'user', or 'suspended'", "invalid_role")
 			return
 		}
 
