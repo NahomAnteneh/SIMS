@@ -29,6 +29,10 @@ func (s *DBUserStore) AuthenticateUser(ctx context.Context, username, password s
 		return nil, ErrInvalidCredentials
 	}
 
+	if user.Role == "suspended" {
+		return nil, ErrInvalidCredentials
+	}
+
 	if !CheckPassword(password, user.PasswordHash) {
 		return nil, ErrInvalidCredentials
 	}

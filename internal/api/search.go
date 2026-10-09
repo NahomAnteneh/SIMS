@@ -42,7 +42,14 @@ func (h *Handler) handleQuickSearchVMs(w http.ResponseWriter, r *http.Request) {
 
 	limit := DefaultPageLimit
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= MaxPageLimit {
+		parsed, err := strconv.Atoi(limitStr)
+		if err != nil || parsed <= 0 {
+			h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+			return
+		}
+		if parsed > MaxPageLimit {
+			limit = MaxPageLimit
+		} else {
 			limit = parsed
 		}
 	}
@@ -65,12 +72,20 @@ func (h *Handler) handleQuickSearchVMs(w http.ResponseWriter, r *http.Request) {
 
 	case search.ClassMoRef:
 		filter = &search.FilterNode{
-			Op: search.OpEQ, Field: "moref", Value: classification.Normalized,
+			Op: search.OpOr,
+			Operands: []*search.FilterNode{
+				{Op: search.OpEQ, Field: "moref", Value: classification.Normalized},
+				{Op: search.OpContains, Field: "name", Value: classification.Normalized},
+			},
 		}
 
 	case search.ClassIPv4, search.ClassIPv6:
 		filter = &search.FilterNode{
-			Op: search.OpCIDRContains, Field: "guest_ip_address", Value: classification.Normalized,
+			Op: search.OpOr,
+			Operands: []*search.FilterNode{
+				{Op: search.OpCIDRContains, Field: "guest_ip_address", Value: classification.Normalized},
+				{Op: search.OpContains, Field: "name", Value: classification.Normalized},
+			},
 		}
 
 	case search.ClassMAC:
@@ -101,12 +116,27 @@ func (h *Handler) handleQuickSearchVMs(w http.ResponseWriter, r *http.Request) {
 
 	case search.ClassHostname:
 		filter = &search.FilterNode{
-			Op: search.OpEQ, Field: "guest_host_name", Value: classification.Normalized,
+			Op: search.OpOr,
+			Operands: []*search.FilterNode{
+				{Op: search.OpEQ, Field: "guest_host_name", Value: classification.Normalized},
+				{Op: search.OpContains, Field: "name", Value: classification.Normalized},
+			},
 		}
 
 	default: // search.ClassSubstring
+		operands := []*search.FilterNode{
+			{Op: search.OpContains, Field: "name", Value: classification.Normalized},
+			{Op: search.OpContains, Field: "guest_host_name", Value: classification.Normalized},
+			{Op: search.OpContains, Field: "moref", Value: classification.Normalized},
+		}
+		if hasDigitOrDot(classification.Normalized) {
+			operands = append(operands, &search.FilterNode{
+				Op: search.OpContains, Field: "guest_ip_address", Value: classification.Normalized,
+			})
+		}
 		filter = &search.FilterNode{
-			Op: search.OpContains, Field: "name", Value: classification.Normalized,
+			Op:       search.OpOr,
+			Operands: operands,
 		}
 	}
 
@@ -131,10 +161,12 @@ func (h *Handler) handleStructuredSearchVMs(w http.ResponseWriter, r *http.Reque
 	}
 
 	limit := req.Limit
-	if limit <= 0 {
+	if limit == 0 {
 		limit = DefaultPageLimit
-	}
-	if limit > MaxPageLimit {
+	} else if limit < 0 {
+		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+		return
+	} else if limit > MaxPageLimit {
 		limit = MaxPageLimit
 	}
 
@@ -295,6 +327,7 @@ func scanVMListItemDirect(rows pgx.Rows) (VMListItem, error) {
 		cpuCores                                                          int32
 		memoryMB                                                          int64
 		createdAt, updatedAt, firstSeenAt                                 time.Time
+		committedStorageBytes, provisionedStorageBytes                    int64
 	)
 
 	err := rows.Scan(
@@ -303,24 +336,27 @@ func scanVMListItemDirect(rows pgx.Rows) (VMListItem, error) {
 		&folderID, &folderPath, &hostID, &clusterID, &datacenterID,
 		&guestOS, &guestHostName, &guestIP, &annotation,
 		&createdAt, &updatedAt, &firstSeenAt,
+		&committedStorageBytes, &provisionedStorageBytes,
 	)
 	if err != nil {
 		return VMListItem{}, err
 	}
 
 	item := VMListItem{
-		ID:              id.String(),
-		VCenterID:       vcenterID.String(),
-		MoRef:           moref,
-		InstanceUUID:    instanceUUID,
-		Name:            name,
-		PowerState:      powerState,
-		ConnectionState: connState,
-		CPUCores:        cpuCores,
-		MemoryMB:        memoryMB,
-		CreatedAt:       createdAt.Format(time.RFC3339),
-		UpdatedAt:       updatedAt.Format(time.RFC3339),
-		FirstSeenAt:     firstSeenAt.Format(time.RFC3339),
+		ID:                      id.String(),
+		VCenterID:               vcenterID.String(),
+		MoRef:                   moref,
+		InstanceUUID:            instanceUUID,
+		Name:                    name,
+		PowerState:              powerState,
+		ConnectionState:         connState,
+		CPUCores:                cpuCores,
+		MemoryMB:                memoryMB,
+		CommittedStorageBytes:   committedStorageBytes,
+		ProvisionedStorageBytes: provisionedStorageBytes,
+		CreatedAt:               createdAt.Format(time.RFC3339),
+		UpdatedAt:               updatedAt.Format(time.RFC3339),
+		FirstSeenAt:             firstSeenAt.Format(time.RFC3339),
 	}
 
 	if biosUUID != nil {
@@ -355,4 +391,13 @@ func scanVMListItemDirect(rows pgx.Rows) (VMListItem, error) {
 	}
 
 	return item, nil
+}
+
+func hasDigitOrDot(s string) bool {
+	for _, c := range s {
+		if (c >= '0' && c <= '9') || c == '.' || c == ':' {
+			return true
+		}
+	}
+	return false
 }

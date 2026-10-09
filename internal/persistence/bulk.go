@@ -62,6 +62,7 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 	vcenterID := snap.VCenterID
 
 	// 0. Datacenters
+	datacenterUUIDByMoRef := make(map[string]string)
 	for moref, dc := range snap.Datacenters {
 		var id string
 		err := tx.QueryRow(ctx, `
@@ -75,14 +76,65 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 			return fmt.Errorf("failed to upsert datacenter %s: %w", moref, err)
 		}
 		snap.DatacenterIDByMoRef[moref] = id
+		datacenterUUIDByMoRef[moref] = id
+		dc.ID = id
+		snap.Datacenters[moref] = dc
+		snap.ByMoRef[moref] = dc
+		snap.ByID[id] = dc
 	}
 
-	// Resolve Datacenter IDs for all nodes in the topology snapshot
+	// Map all entity datacenter MoRefs to actual DB Datacenter UUIDs
+	for nodeMoref, val := range snap.DatacenterIDByMoRef {
+		if uuidVal, ok := datacenterUUIDByMoRef[val]; ok {
+			snap.DatacenterIDByMoRef[nodeMoref] = uuidVal
+		}
+	}
+	// Resolve Datacenter IDs for all nodes in the topology snapshot via tree traversal
 	for nodeMoref := range snap.ByMoRef {
-		dcMoref := snap.ResolveDatacenterMoRef(nodeMoref)
-		if dcMoref != "" {
-			if dcID, ok := snap.DatacenterIDByMoRef[dcMoref]; ok && dcID != "" {
-				snap.DatacenterIDByMoRef[nodeMoref] = dcID
+		if _, ok := snap.DatacenterIDByMoRef[nodeMoref]; !ok {
+			dcMoref := snap.ResolveDatacenterMoRef(nodeMoref)
+			if dcMoref != "" {
+				if dcID, ok := datacenterUUIDByMoRef[dcMoref]; ok && dcID != "" {
+					snap.DatacenterIDByMoRef[nodeMoref] = dcID
+				}
+			}
+		}
+	}
+	// Fallback if exactly 1 datacenter exists: map any unmapped entity to it
+	if len(snap.Datacenters) == 1 {
+		var singleUUID string
+		for _, u := range datacenterUUIDByMoRef {
+			singleUUID = u
+			break
+		}
+		for mRef := range snap.Datastores {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleUUID
+			}
+		}
+		for mRef := range snap.Networks {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleUUID
+			}
+		}
+		for mRef := range snap.Portgroups {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleUUID
+			}
+		}
+		for mRef := range snap.Clusters {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleUUID
+			}
+		}
+		for mRef := range snap.Hosts {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleUUID
+			}
+		}
+		for mRef := range snap.ByMoRef {
+			if strings.HasPrefix(mRef, "dvs-") && snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleUUID
 			}
 		}
 	}
@@ -106,44 +158,75 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		}
 		snap.FolderIDByMoRef[moref] = id
 		snap.FolderPathByMoRef[moref] = path
+		f.ID = id
+		snap.Folders[moref] = f
+		snap.ByMoRef[moref] = f
+		snap.ByID[id] = f
 	}
 
 	// 2. Datastores
 	for moref, ds := range snap.Datastores {
 		var id string
+		var dcUUID *string
+		if dcID, ok := snap.DatacenterIDByMoRef[moref]; ok && dcID != "" {
+			dcUUID = &dcID
+		}
+		dsInfo := snap.DatastoreInfoByMoRef[moref]
 		err := tx.QueryRow(ctx, `
-			INSERT INTO datastores (vcenter_id, moref, name, updated_at)
-			VALUES ($1::uuid, $2, $3, NOW())
+			INSERT INTO datastores (vcenter_id, datacenter_id, moref, name, type, capacity_bytes, free_bytes, accessible, updated_at)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, NOW())
 			ON CONFLICT (vcenter_id, moref) DO UPDATE
-			SET name = EXCLUDED.name, updated_at = NOW()
+			SET datacenter_id = EXCLUDED.datacenter_id, name = EXCLUDED.name, type = EXCLUDED.type,
+			    capacity_bytes = EXCLUDED.capacity_bytes, free_bytes = EXCLUDED.free_bytes,
+			    accessible = EXCLUDED.accessible, updated_at = NOW()
 			RETURNING id::text
-		`, vcenterID, moref, ds.Name).Scan(&id)
+		`, vcenterID, dcUUID, moref, ds.Name, dsInfo.Type, dsInfo.Capacity, dsInfo.FreeSpace, dsInfo.Accessible).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("failed to upsert datastore %s: %w", moref, err)
 		}
+		ds.ID = id
+		snap.Datastores[moref] = ds
+		snap.ByMoRef[moref] = ds
 		snap.DatastoreIDByMoRef[moref] = id
+		snap.ByID[id] = ds
+		if ds.Name != "" {
+			snap.DatastoreByName[ds.Name] = ds
+			snap.DatastoreIDByName[ds.Name] = id
+		}
 	}
 
 	// 3. Distributed Switches
+	switchIDByMoRef := make(map[string]string)
 	for moref, node := range snap.ByMoRef {
 		if strings.HasPrefix(moref, "dvs-") {
 			var id string
+			var dcUUID *string
+			if dcID, ok := snap.DatacenterIDByMoRef[moref]; ok && dcID != "" {
+				dcUUID = &dcID
+			}
 			err := tx.QueryRow(ctx, `
-				INSERT INTO distributed_switches (vcenter_id, moref, name, updated_at)
-				VALUES ($1::uuid, $2, $3, NOW())
+				INSERT INTO distributed_switches (vcenter_id, datacenter_id, moref, name, updated_at)
+				VALUES ($1::uuid, $2::uuid, $3, $4, NOW())
 				ON CONFLICT (vcenter_id, moref) DO UPDATE
-				SET name = EXCLUDED.name, updated_at = NOW()
+				SET datacenter_id = EXCLUDED.datacenter_id, name = EXCLUDED.name, updated_at = NOW()
 				RETURNING id::text
-			`, vcenterID, moref, node.Name).Scan(&id)
+			`, vcenterID, dcUUID, moref, node.Name).Scan(&id)
 			if err != nil {
 				return fmt.Errorf("failed to upsert switch %s: %w", moref, err)
 			}
+			switchIDByMoRef[moref] = id
 		}
 	}
 
 	// 4. Portgroups
 	for moref, pg := range snap.Portgroups {
 		var id string
+		var switchUUID *string
+		if pg.SwitchMoRef != "" {
+			if swID, ok := switchIDByMoRef[pg.SwitchMoRef]; ok && swID != "" {
+				switchUUID = &swID
+			}
+		}
 		vlanLit := "{}"
 		if pg.VLANSpec != "" {
 			if norm, err := vlan.NormalizeSpec(pg.VLANSpec); err == nil {
@@ -151,21 +234,40 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 			}
 		}
 		err := tx.QueryRow(ctx, `
-			INSERT INTO portgroups (vcenter_id, moref, name, vlan_ids, updated_at)
-			VALUES ($1::uuid, $2, $3, $4::int4multirange, NOW())
+			INSERT INTO portgroups (vcenter_id, switch_id, moref, name, vlan_ids, updated_at)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5::int4multirange, NOW())
 			ON CONFLICT (vcenter_id, moref) DO UPDATE
-			SET name = EXCLUDED.name, vlan_ids = EXCLUDED.vlan_ids, updated_at = NOW()
+			SET switch_id = COALESCE(EXCLUDED.switch_id, portgroups.switch_id),
+			    name = EXCLUDED.name, vlan_ids = EXCLUDED.vlan_ids, updated_at = NOW()
 			RETURNING id::text
-		`, vcenterID, moref, pg.Name, vlanLit).Scan(&id)
+		`, vcenterID, switchUUID, moref, pg.Name, vlanLit).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("failed to upsert portgroup %s: %w", moref, err)
 		}
+		pg.ID = id
+		snap.Portgroups[moref] = pg
+		snap.ByMoRef[moref] = pg
 		snap.PortgroupIDByMoRef[moref] = id
+		snap.ByID[id] = pg
+		if pg.Name != "" {
+			snap.PortgroupByName[pg.Name] = pg
+			snap.PortgroupIDByName[pg.Name] = id
+		}
 	}
 
 	// 5. Networks
 	for moref, netNode := range snap.Networks {
+		if _, isPG := snap.Portgroups[moref]; isPG {
+			continue
+		}
+		if strings.HasPrefix(moref, "dvportgroup-") {
+			continue
+		}
 		var id string
+		var dcUUID *string
+		if dcID, ok := snap.DatacenterIDByMoRef[moref]; ok && dcID != "" {
+			dcUUID = &dcID
+		}
 		vlanLit := "{}"
 		if netNode.VLANSpec != "" {
 			if norm, err := vlan.NormalizeSpec(netNode.VLANSpec); err == nil {
@@ -173,16 +275,24 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 			}
 		}
 		err := tx.QueryRow(ctx, `
-			INSERT INTO networks (vcenter_id, moref, name, vlan_ids, updated_at)
-			VALUES ($1::uuid, $2, $3, $4::int4multirange, NOW())
+			INSERT INTO networks (vcenter_id, datacenter_id, moref, name, vlan_ids, updated_at)
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5::int4multirange, NOW())
 			ON CONFLICT (vcenter_id, moref) DO UPDATE
-			SET name = EXCLUDED.name, vlan_ids = EXCLUDED.vlan_ids, updated_at = NOW()
+			SET datacenter_id = EXCLUDED.datacenter_id, name = EXCLUDED.name, vlan_ids = EXCLUDED.vlan_ids, updated_at = NOW()
 			RETURNING id::text
-		`, vcenterID, moref, netNode.Name, vlanLit).Scan(&id)
+		`, vcenterID, dcUUID, moref, netNode.Name, vlanLit).Scan(&id)
 		if err != nil {
 			return fmt.Errorf("failed to upsert network %s: %w", moref, err)
 		}
+		netNode.ID = id
+		snap.Networks[moref] = netNode
+		snap.ByMoRef[moref] = netNode
 		snap.NetworkIDByMoRef[moref] = id
+		snap.ByID[id] = netNode
+		if netNode.Name != "" {
+			snap.NetworkByName[netNode.Name] = netNode
+			snap.NetworkIDByName[netNode.Name] = id
+		}
 	}
 
 	// 6. Clusters
@@ -202,7 +312,11 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert cluster %s: %w", moref, err)
 		}
+		cl.ID = id
+		snap.Clusters[moref] = cl
+		snap.ByMoRef[moref] = cl
 		snap.ClusterIDByMoRef[moref] = id
+		snap.ByID[id] = cl
 	}
 
 	// 7. Hosts
@@ -226,7 +340,11 @@ func (p *BulkPersister) PersistTopology(ctx context.Context, snap *collector.Top
 		if err != nil {
 			return fmt.Errorf("failed to upsert host %s: %w", moref, err)
 		}
+		h.ID = id
+		snap.Hosts[moref] = h
+		snap.ByMoRef[moref] = h
 		snap.HostIDByMoRef[moref] = id
+		snap.ByID[id] = h
 		if clusterUUID != nil {
 			snap.ClusterIDByMoRef[moref] = *clusterUUID
 		}
@@ -294,6 +412,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_host_name TEXT NOT NULL,
 			guest_ip_address inet,
 			annotation TEXT NOT NULL,
+			committed_storage_bytes BIGINT NOT NULL DEFAULT 0,
+			provisioned_storage_bytes BIGINT NOT NULL DEFAULT 0,
 			deleted_at TIMESTAMPTZ
 		) ON COMMIT DELETE ROWS;
 	`)
@@ -320,6 +440,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 		"guest_host_name",
 		"guest_ip_address",
 		"annotation",
+		"committed_storage_bytes",
+		"provisioned_storage_bytes",
 		"deleted_at",
 	}
 
@@ -400,6 +522,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 				r.GuestHostName,
 				guestIP,
 				r.Annotation,
+				r.CommittedStorageBytes,
+				r.ProvisionedStorageBytes,
 				deletedAt,
 			}, nil
 		}),
@@ -474,14 +598,14 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			vcenter_id, moref, instance_uuid, bios_uuid, name, power_state,
 			connection_state, cpu_cores, memory_mb, folder_id, folder_path,
 			host_id, cluster_id, datacenter_id, guest_os, guest_host_name,
-			guest_ip_address, annotation, deleted_at, updated_at
+			guest_ip_address, annotation, committed_storage_bytes, provisioned_storage_bytes, deleted_at, updated_at
 		)
 		SELECT DISTINCT ON (vcenter_id, moref)
 			vcenter_id, moref, instance_uuid, bios_uuid, name, power_state,
 			connection_state, cpu_cores, memory_mb, folder_id,
 			CASE WHEN folder_path IS NOT NULL AND folder_path != '' THEN folder_path::ltree ELSE NULL END,
 			host_id, cluster_id, datacenter_id, guest_os, guest_host_name,
-			guest_ip_address, annotation, deleted_at, NOW()
+			guest_ip_address, annotation, committed_storage_bytes, provisioned_storage_bytes, deleted_at, NOW()
 		FROM staging_vms
 		WHERE deleted_at IS NULL
 		ORDER BY vcenter_id, moref
@@ -503,6 +627,8 @@ func (p *BulkPersister) PersistVMBatch(ctx context.Context, records []domain.VMR
 			guest_host_name = EXCLUDED.guest_host_name,
 			guest_ip_address = EXCLUDED.guest_ip_address,
 			annotation = EXCLUDED.annotation,
+			committed_storage_bytes = EXCLUDED.committed_storage_bytes,
+			provisioned_storage_bytes = EXCLUDED.provisioned_storage_bytes,
 			deleted_at = EXCLUDED.deleted_at,
 			updated_at = NOW(),
 			last_seen_at = NOW()

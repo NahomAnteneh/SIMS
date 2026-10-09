@@ -56,12 +56,12 @@ INSERT INTO virtual_machines (
     vcenter_id, moref, instance_uuid, bios_uuid, name, power_state,
     connection_state, cpu_cores, memory_mb, folder_id, folder_path,
     host_id, cluster_id, datacenter_id, guest_os, guest_host_name,
-    guest_ip_address, annotation, updated_at
+    guest_ip_address, annotation, committed_storage_bytes, provisioned_storage_bytes, updated_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11,
     $12, $13, $14, $15, $16,
-    $17, $18, NOW()
+    $17, $18, $19, $20, NOW()
 )
 ON CONFLICT (vcenter_id, moref) WHERE deleted_at IS NULL DO UPDATE
 SET instance_uuid = EXCLUDED.instance_uuid,
@@ -80,6 +80,8 @@ SET instance_uuid = EXCLUDED.instance_uuid,
     guest_host_name = EXCLUDED.guest_host_name,
     guest_ip_address = EXCLUDED.guest_ip_address,
     annotation = EXCLUDED.annotation,
+    committed_storage_bytes = EXCLUDED.committed_storage_bytes,
+    provisioned_storage_bytes = EXCLUDED.provisioned_storage_bytes,
     updated_at = NOW()
 RETURNING *;
 
@@ -111,9 +113,23 @@ INSERT INTO vm_network_interfaces (
 RETURNING *;
 
 -- name: ListNetworkInterfacesForVM :many
-SELECT * FROM vm_network_interfaces
-WHERE vm_id = $1
-ORDER BY device_key ASC, id ASC;
+SELECT 
+    vnic.id,
+    vnic.vm_id,
+    vnic.device_key,
+    vnic.mac_address,
+    vnic.ip_address,
+    vnic.network_id,
+    vnic.portgroup_id,
+    vnic.vlan_ids,
+    vnic.created_at,
+    vnic.updated_at,
+    COALESCE(NULLIF(pg.name, ''), NULLIF(net.name, ''), pg.moref, net.moref, '')::text AS network_name
+FROM vm_network_interfaces vnic
+LEFT JOIN portgroups pg ON vnic.portgroup_id = pg.id
+LEFT JOIN networks net ON vnic.network_id = net.id
+WHERE vnic.vm_id = $1
+ORDER BY vnic.device_key ASC, vnic.id ASC;
 
 -- name: DeleteNetworkInterfacesForVM :exec
 DELETE FROM vm_network_interfaces WHERE vm_id = $1;
@@ -184,7 +200,7 @@ SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE mac_address = $1;
 SELECT vm_id FROM vm_datastores WHERE datastore_id = $1;
 
 -- name: GetVMIDsByNetworkID :many
-SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE network_id = $1;
+SELECT DISTINCT vm_id FROM vm_network_interfaces WHERE network_id = $1 OR portgroup_id = $1;
 
 -- name: UpdateVMProvenance :exec
 UPDATE virtual_machines

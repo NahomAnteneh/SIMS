@@ -124,6 +124,16 @@ func (p *BulkPersister) ApplyVMIncrementalUpdate(ctx context.Context, vcenterID,
 		args = append(args, *mask.DatacenterID)
 		argIdx++
 	}
+	if mask.CommittedStorageBytes != nil {
+		setClauses = append(setClauses, fmt.Sprintf("committed_storage_bytes = $%d", argIdx))
+		args = append(args, *mask.CommittedStorageBytes)
+		argIdx++
+	}
+	if mask.ProvisionedStorageBytes != nil {
+		setClauses = append(setClauses, fmt.Sprintf("provisioned_storage_bytes = $%d", argIdx))
+		args = append(args, *mask.ProvisionedStorageBytes)
+		argIdx++
+	}
 	if mask.LastSeenAt != nil {
 		setClauses = append(setClauses, fmt.Sprintf("last_seen_at = $%d", argIdx))
 		args = append(args, *mask.LastSeenAt)

@@ -35,6 +35,9 @@ var (
 	// Hostname / FQDN pattern: valid DNS labels separated by dots (e.g. web-01.corp.local).
 	// Must contain at least one dot, or start with letters/digits and end with standard domain ending.
 	hostnameRegex = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
+
+	// Partial IPv4 address pattern (e.g. 10.0, 10.0.0, 192.168.).
+	partialIPv4Regex = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{0,3}){1,3}\.?$`)
 )
 
 // Classification contains the classified type and normalized parameters for query execution.
@@ -123,6 +126,16 @@ func Classify(raw string) Classification {
 				Normalized:  prefix.String(),
 				TargetField: "guest_ip_address",
 			}
+		}
+	}
+
+	// 4b. Partial IPv4 (e.g. 10.0, 10.0.0, 192.168.)
+	if partialIPv4Regex.MatchString(trimmed) {
+		return Classification{
+			Class:       ClassIPv4,
+			RawQuery:    raw,
+			Normalized:  trimmed,
+			TargetField: "guest_ip_address",
 		}
 	}
 

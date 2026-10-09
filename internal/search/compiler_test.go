@@ -205,6 +205,26 @@ func TestSQLCompiler_AllOperators(t *testing.T) {
 			node:      &FilterNode{Op: OpHasAttribute, Name: "Owner"},
 			expectSub: "EXISTS (SELECT 1 FROM vm_custom_attributes vca WHERE vca.vm_id = vm.id AND vca.name = $1)",
 		},
+		{
+			name:      "EQ valid full IP",
+			node:      &FilterNode{Op: OpEQ, Field: "guest_ip_address", Value: "10.0.0.1"},
+			expectSub: "vm.guest_ip_address = $1::inet",
+		},
+		{
+			name:      "EQ partial IP",
+			node:      &FilterNode{Op: OpEQ, Field: "guest_ip_address", Value: "10.0.0"},
+			expectSub: "host(vm.guest_ip_address) ILIKE $1",
+		},
+		{
+			name:      "EQ single digit partial IP",
+			node:      &FilterNode{Op: OpEQ, Field: "guest_ip_address", Value: "2"},
+			expectSub: "host(vm.guest_ip_address) ILIKE $1",
+		},
+		{
+			name:      "CIDR_CONTAINS partial IP",
+			node:      &FilterNode{Op: OpCIDRContains, Field: "guest_ip_address", Value: "10.0."},
+			expectSub: "host(vm.guest_ip_address) ILIKE $1",
+		},
 	}
 
 	for _, tt := range tests {
@@ -249,5 +269,66 @@ func TestSQLCompiler_KeysetPagination(t *testing.T) {
 	}
 	if !strings.Contains(q.SQL, "LIMIT $3") {
 		t.Errorf("expected LIMIT $3, got: %s", q.SQL)
+	}
+}
+
+func TestSQLCompiler_LimitProbePreservation(t *testing.T) {
+	// 1. When limit = MaxPageLimit + 1 (probe for hasMore at limit=100)
+	optsProbe := CompileOptions{
+		Limit: MaxPageLimit + 1,
+	}
+	qProbe, err := CompileVMQuery(nil, optsProbe)
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+
+	// The limit argument must be 101, preserving the +1 probe
+	found101 := false
+	for _, arg := range qProbe.Args {
+		if val, ok := arg.(int); ok && val == MaxPageLimit+1 {
+			found101 = true
+			break
+		}
+	}
+	if !found101 {
+		t.Errorf("expected limit argument %d to be preserved, args: %v", MaxPageLimit+1, qProbe.Args)
+	}
+
+	// 2. When limit = MaxPageLimit (100)
+	opts100 := CompileOptions{
+		Limit: MaxPageLimit,
+	}
+	q100, err := CompileVMQuery(nil, opts100)
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+	found100 := false
+	for _, arg := range q100.Args {
+		if val, ok := arg.(int); ok && val == MaxPageLimit {
+			found100 = true
+			break
+		}
+	}
+	if !found100 {
+		t.Errorf("expected limit argument %d, args: %v", MaxPageLimit, q100.Args)
+	}
+
+	// 3. Excess limit is clamped to MaxPageLimit + 1
+	optsExcess := CompileOptions{
+		Limit: 500,
+	}
+	qExcess, err := CompileVMQuery(nil, optsExcess)
+	if err != nil {
+		t.Fatalf("CompileVMQuery failed: %v", err)
+	}
+	foundClamped := false
+	for _, arg := range qExcess.Args {
+		if val, ok := arg.(int); ok && val == MaxPageLimit+1 {
+			foundClamped = true
+			break
+		}
+	}
+	if !foundClamped {
+		t.Errorf("expected excess limit to clamp to %d, args: %v", MaxPageLimit+1, qExcess.Args)
 	}
 }

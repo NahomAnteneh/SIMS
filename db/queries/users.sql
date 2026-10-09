@@ -34,3 +34,9 @@ WHERE id = $1;
 UPDATE users
 SET password_hash = $2, updated_at = NOW()
 WHERE id = $1;
+
+-- name: UpdateUserRole :exec
+UPDATE users
+SET role = $2, updated_at = NOW()
+WHERE id = $1;
+

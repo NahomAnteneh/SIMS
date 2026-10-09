@@ -75,6 +75,7 @@ services:
       VCENTER_PASSWORD: "pass"
       VCENTER_INSECURE: "true"
       DATABASE_URL: "postgres://sims:${POSTGRES_PASSWORD:-sims_password}@postgres:5432/sims?sslmode=disable"
+      SIMS_CREDENTIAL_KEY: "sims-secure-vcenter-vault-key-2026"
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,6 +93,8 @@ services:
       PORT: "8080"
       LOG_LEVEL: "debug"
       DATABASE_URL: "postgres://sims:${POSTGRES_PASSWORD:-sims_password}@postgres:5432/sims?sslmode=disable"
+      SIMS_CREDENTIAL_KEY: "sims-secure-vcenter-vault-key-2026"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,7 +108,8 @@ services:
       - "3000:3000"
     environment:
       PORT: "3000"
-      NEXT_PUBLIC_QUERY_API_URL: "http://localhost:8080"
+      INTERNAL_QUERY_API_URL: "http://query-api:8080"
+      QUERY_API_URL: "http://query-api:8080"
     depends_on:
       - query-api
 

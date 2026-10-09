@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	db "github.com/infrastructure/sims/generated/db"
+	"github.com/infrastructure/sims/internal/credentials"
 	"github.com/infrastructure/sims/internal/domain"
 	"github.com/infrastructure/sims/internal/telemetry"
 	"github.com/infrastructure/sims/internal/vsphere"
@@ -183,6 +185,11 @@ func (fm *FleetManager) orchestrationLoop(ctx context.Context) {
 					fm.stopTargetByVCenterID(vcUUID)
 				}
 			} else {
+				if ev.Action == "update" || ev.Action == "resync" {
+					if vcUUID, err := uuid.Parse(ev.VCenterID); err == nil {
+						fm.stopTargetByVCenterID(vcUUID)
+					}
+				}
 				fm.evaluateTargets(ctx)
 			}
 
@@ -288,12 +295,41 @@ func (fm *FleetManager) runPipeline(ctx context.Context, rt *runningTarget) {
 		return
 	}
 
+	// Resolve target credentials or fall back to fleet defaults
+	username := fm.cfg.DefaultVCenterUsername
+	password := fm.cfg.DefaultVCenterPassword
+	if vc.CredentialRef != "" {
+		if decUser, decPass, err := credentials.Decrypt(vc.CredentialRef); err == nil && decUser != "" {
+			username = decUser
+			password = decPass
+		}
+	}
+
+	// Parse TLS settings
+	insecure := fm.cfg.DefaultInsecureTLS
+	var rootCAs []byte
+	if len(vc.TlsSettings) > 0 {
+		var tlsMap struct {
+			Verify *bool  `json:"verify"`
+			CAPEM  string `json:"ca_pem"`
+		}
+		if err := json.Unmarshal(vc.TlsSettings, &tlsMap); err == nil {
+			if tlsMap.Verify != nil && !*tlsMap.Verify {
+				insecure = true
+			}
+			if tlsMap.CAPEM != "" {
+				rootCAs = []byte(tlsMap.CAPEM)
+			}
+		}
+	}
+
 	// Session configuration
 	sessCfg := vsphere.SessionConfig{
 		URL:            vc.ApiUrl,
-		Username:       fm.cfg.DefaultVCenterUsername,
-		Password:       fm.cfg.DefaultVCenterPassword,
-		Insecure:       fm.cfg.DefaultInsecureTLS,
+		Username:       username,
+		Password:       password,
+		Insecure:       insecure,
+		RootCAs:        rootCAs,
 		RequestTimeout: 30 * time.Second,
 	}
 

@@ -109,6 +109,28 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 		annotation = vm.Summary.Config.Annotation
 	}
 
+	// Storage sizing calculation
+	var committedStorageBytes, provisionedStorageBytes int64
+	if vm.Summary.Storage != nil {
+		committedStorageBytes = vm.Summary.Storage.Committed
+		provisionedStorageBytes = vm.Summary.Storage.Committed + vm.Summary.Storage.Uncommitted
+	}
+	var diskCapBytes int64
+	if vm.Config != nil && vm.Config.Hardware.Device != nil {
+		for _, dev := range vm.Config.Hardware.Device {
+			if disk, ok := dev.(*types.VirtualDisk); ok {
+				if disk.CapacityInBytes > 0 {
+					diskCapBytes += disk.CapacityInBytes
+				} else if disk.CapacityInKB > 0 {
+					diskCapBytes += disk.CapacityInKB * 1024
+				}
+			}
+		}
+	}
+	if provisionedStorageBytes <= 0 && diskCapBytes > 0 {
+		provisionedStorageBytes = diskCapBytes
+	}
+
 	// Topology resolution
 	var folderID, folderPath string
 	if vm.Parent != nil && snap != nil {
@@ -157,79 +179,71 @@ func NormalizeVM(vcenterID string, vm mo.VirtualMachine, snap *TopologySnapshot)
 	}
 
 	return domain.VMRecord{
-		VCenterID:         vcenterID,
-		MoRef:             moref,
-		InstanceUUID:      instanceUUID,
-		BiosUUID:          biosUUID,
-		Name:              name,
-		PowerState:        powerState,
-		ConnectionState:   connectionState,
-		CPUCores:          cpuCores,
-		MemoryMB:          memoryMB,
-		FolderID:          folderID,
-		FolderPath:        folderPath,
-		HostID:            hostID,
-		ClusterID:         clusterID,
-		DatacenterID:      datacenterID,
-		GuestOS:           guestOS,
-		GuestHostName:     guestHostName,
-		GuestIPAddress:    guestIP,
-		Annotation:        annotation,
-		DatastoreMoRefs:   dsMoRefs,
-		DatastoreIDs:      dsIDs,
-		NetworkInterfaces: nics,
-		CustomAttributes:  customAttrs,
+		VCenterID:               vcenterID,
+		MoRef:                   moref,
+		InstanceUUID:            instanceUUID,
+		BiosUUID:                biosUUID,
+		Name:                    name,
+		PowerState:              powerState,
+		ConnectionState:         connectionState,
+		CPUCores:                cpuCores,
+		MemoryMB:                memoryMB,
+		FolderID:                folderID,
+		FolderPath:              folderPath,
+		HostID:                  hostID,
+		ClusterID:               clusterID,
+		DatacenterID:            datacenterID,
+		GuestOS:                 guestOS,
+		GuestHostName:           guestHostName,
+		GuestIPAddress:          guestIP,
+		Annotation:              annotation,
+		CommittedStorageBytes:   committedStorageBytes,
+		ProvisionedStorageBytes: provisionedStorageBytes,
+		DatastoreMoRefs:         dsMoRefs,
+		DatastoreIDs:            dsIDs,
+		NetworkInterfaces:       nics,
+		CustomAttributes:        customAttrs,
 	}
 }
 
 // extractNetworkInterfaces extracts virtual NIC records.
-// It prioritizes guest.net information. If guest.net is empty or missing
-// (e.g. VM powered off or VMware Tools not running), it falls back to
-// hardware devices in vm.Config.Hardware.Device.
+// It prioritizes authoritative hardware devices in vm.Config.Hardware.Device,
+// correlating with guest.net for active IP address enrichment and resolving
+// VLAN specs from the topology snapshot.
 func extractNetworkInterfaces(vm mo.VirtualMachine, snap *TopologySnapshot) []domain.NetworkInterfaceRecord {
 	var nics []domain.NetworkInterfaceRecord
 
-	// Strategy 1: guest.net populated
+	// Index guest.net by DeviceConfigId and by MAC address for runtime IP enrichment
+	type guestNetInfo struct {
+		ips         []string
+		networkName string
+	}
+	guestByDevKey := make(map[int32]guestNetInfo)
+	guestByMAC := make(map[string]guestNetInfo)
+
 	if vm.Guest != nil && len(vm.Guest.Net) > 0 {
 		for _, gNet := range vm.Guest.Net {
 			mac := strings.ToLower(strings.TrimSpace(gNet.MacAddress))
-			netMoRef := gNet.Network
-
-			var netID, pgID string
-			if snap != nil {
-				netID = snap.NetworkIDByMoRef[netMoRef]
-			}
-
-			// If interface has multiple IPs, create an entry for each IP, or if 0 IPs, one with empty IP
-			if len(gNet.IpAddress) > 0 {
-				for _, ip := range gNet.IpAddress {
-					nics = append(nics, domain.NetworkInterfaceRecord{
-						DeviceKey:    gNet.DeviceConfigId,
-						MacAddress:   mac,
-						IPAddress:    cleanIP(ip),
-						NetworkID:    netID,
-						PortgroupID:  pgID,
-						NetworkMoRef: netMoRef,
-					})
+			var cleanIPs []string
+			for _, ip := range gNet.IpAddress {
+				if c := cleanIP(ip); c != "" {
+					cleanIPs = append(cleanIPs, c)
 				}
-			} else if mac != "" {
-				nics = append(nics, domain.NetworkInterfaceRecord{
-					DeviceKey:    gNet.DeviceConfigId,
-					MacAddress:   mac,
-					IPAddress:    "",
-					NetworkID:    netID,
-					PortgroupID:  pgID,
-					NetworkMoRef: netMoRef,
-				})
+			}
+			info := guestNetInfo{
+				ips:         cleanIPs,
+				networkName: gNet.Network,
+			}
+			if gNet.DeviceConfigId > 0 {
+				guestByDevKey[gNet.DeviceConfigId] = info
+			}
+			if mac != "" {
+				guestByMAC[mac] = info
 			}
 		}
 	}
 
-	if len(nics) > 0 {
-		return nics
-	}
-
-	// Strategy 2: Fallback to Hardware devices (VirtualEthernetCard)
+	// Strategy 1: Iterate hardware virtual ethernet devices (authoritative source of interfaces & backing)
 	if vm.Config != nil && vm.Config.Hardware.Device != nil {
 		for _, dev := range vm.Config.Hardware.Device {
 			if eth, ok := dev.(types.BaseVirtualEthernetCard); ok {
@@ -239,36 +253,204 @@ func extractNetworkInterfaces(vm mo.VirtualMachine, snap *TopologySnapshot) []do
 				}
 
 				mac := strings.ToLower(strings.TrimSpace(card.MacAddress))
-				var netMoRef, pgMoRef, netID, pgID string
+				var netMoRef, pgMoRef, netID, pgID, vlanSpec, netName string
 
 				if card.Backing != nil {
 					switch b := card.Backing.(type) {
+					case *types.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+						pgMoRef = b.Port.PortgroupKey
 					case *types.VirtualEthernetCardNetworkBackingInfo:
 						if b.Network != nil {
 							netMoRef = b.Network.Value
 						}
-					case *types.VirtualEthernetCardDistributedVirtualPortBackingInfo:
-						pgMoRef = b.Port.PortgroupKey
+						netName = b.DeviceName
 					}
 				}
 
 				if snap != nil {
-					if netMoRef != "" {
-						netID = snap.NetworkIDByMoRef[netMoRef]
-					}
 					if pgMoRef != "" {
-						pgID = snap.PortgroupIDByMoRef[pgMoRef]
+						if pg, ok := snap.Portgroups[pgMoRef]; ok {
+							pgID = pg.ID
+							if pgID == "" {
+								pgID = snap.PortgroupIDByMoRef[pgMoRef]
+							}
+							vlanSpec = pg.VLANSpec
+							if pg.Name != "" {
+								netName = pg.Name
+							}
+						} else if id, ok := snap.PortgroupIDByMoRef[pgMoRef]; ok {
+							pgID = id
+						}
+					}
+					if netMoRef != "" {
+						if net, ok := snap.Networks[netMoRef]; ok {
+							netID = net.ID
+							if netID == "" {
+								netID = snap.NetworkIDByMoRef[netMoRef]
+							}
+							if vlanSpec == "" {
+								vlanSpec = net.VLANSpec
+							}
+							if net.Name != "" {
+								netName = net.Name
+							}
+						} else if id, ok := snap.NetworkIDByMoRef[netMoRef]; ok {
+							netID = id
+						}
+					}
+					// If netName is known, attempt resolution against name lookups
+					if netName != "" {
+						if pg, ok := snap.PortgroupByName[netName]; ok {
+							if pgID == "" {
+								pgID = pg.ID
+								if pgID == "" {
+									pgID = snap.PortgroupIDByMoRef[pg.MoRef]
+								}
+							}
+							if vlanSpec == "" {
+								vlanSpec = pg.VLANSpec
+							}
+						} else if net, ok := snap.NetworkByName[netName]; ok {
+							if netID == "" {
+								netID = net.ID
+								if netID == "" {
+									netID = snap.NetworkIDByMoRef[net.MoRef]
+								}
+							}
+							if vlanSpec == "" {
+								vlanSpec = net.VLANSpec
+							}
+						}
 					}
 				}
 
+				// Find runtime IP enrichment from guest.net
+				var ips []string
+				if gInfo, ok := guestByDevKey[card.Key]; ok {
+					ips = gInfo.ips
+					if netName == "" && gInfo.networkName != "" {
+						netName = gInfo.networkName
+					}
+				} else if gInfo, ok := guestByMAC[mac]; ok {
+					ips = gInfo.ips
+					if netName == "" && gInfo.networkName != "" {
+						netName = gInfo.networkName
+					}
+				}
+
+				// Secondary name lookup if guest network name was found
+				if snap != nil && (netID == "" && pgID == "") && netName != "" {
+					if pg, ok := snap.PortgroupByName[netName]; ok {
+						pgID = pg.ID
+						if pgID == "" {
+							pgID = snap.PortgroupIDByMoRef[pg.MoRef]
+						}
+						if vlanSpec == "" {
+							vlanSpec = pg.VLANSpec
+						}
+					} else if net, ok := snap.NetworkByName[netName]; ok {
+						netID = net.ID
+						if netID == "" {
+							netID = snap.NetworkIDByMoRef[net.MoRef]
+						}
+						if vlanSpec == "" {
+							vlanSpec = net.VLANSpec
+						}
+					}
+				}
+
+				if len(ips) > 0 {
+					for _, ip := range ips {
+						nics = append(nics, domain.NetworkInterfaceRecord{
+							DeviceKey:      card.Key,
+							MacAddress:     mac,
+							IPAddress:      ip,
+							NetworkID:      netID,
+							PortgroupID:    pgID,
+							NetworkMoRef:   netMoRef,
+							PortgroupMoRef: pgMoRef,
+							VLANSpec:       vlanSpec,
+							NetworkName:    netName,
+						})
+					}
+				} else {
+					nics = append(nics, domain.NetworkInterfaceRecord{
+						DeviceKey:      card.Key,
+						MacAddress:     mac,
+						IPAddress:      "",
+						NetworkID:      netID,
+						PortgroupID:    pgID,
+						NetworkMoRef:   netMoRef,
+						PortgroupMoRef: pgMoRef,
+						VLANSpec:       vlanSpec,
+						NetworkName:    netName,
+					})
+				}
+			}
+		}
+	}
+
+	if len(nics) > 0 {
+		return nics
+	}
+
+	// Strategy 2: Fallback when vm.Config.Hardware.Device is absent (e.g. lightweight DTOs)
+	if vm.Guest != nil && len(vm.Guest.Net) > 0 {
+		for _, gNet := range vm.Guest.Net {
+			mac := strings.ToLower(strings.TrimSpace(gNet.MacAddress))
+			var netID, pgID, vlanSpec, netName string
+			netName = gNet.Network
+
+			if snap != nil && netName != "" {
+				if id, ok := snap.NetworkIDByMoRef[netName]; ok {
+					netID = id
+					if net, ok := snap.Networks[netName]; ok {
+						vlanSpec = net.VLANSpec
+					}
+				} else if id, ok := snap.PortgroupIDByMoRef[netName]; ok {
+					pgID = id
+					if pg, ok := snap.Portgroups[netName]; ok {
+						vlanSpec = pg.VLANSpec
+					}
+				} else if pg, ok := snap.PortgroupByName[netName]; ok {
+					pgID = snap.PortgroupIDByMoRef[pg.MoRef]
+					vlanSpec = pg.VLANSpec
+				} else if net, ok := snap.NetworkByName[netName]; ok {
+					netID = snap.NetworkIDByMoRef[net.MoRef]
+					vlanSpec = net.VLANSpec
+				} else if net, ok := snap.Networks[netName]; ok {
+					netID = snap.NetworkIDByMoRef[net.MoRef]
+					vlanSpec = net.VLANSpec
+				} else if pg, ok := snap.Portgroups[netName]; ok {
+					pgID = snap.PortgroupIDByMoRef[pg.MoRef]
+					vlanSpec = pg.VLANSpec
+				}
+			}
+
+			if len(gNet.IpAddress) > 0 {
+				for _, ip := range gNet.IpAddress {
+					cIP := cleanIP(ip)
+					nics = append(nics, domain.NetworkInterfaceRecord{
+						DeviceKey:    gNet.DeviceConfigId,
+						MacAddress:   mac,
+						IPAddress:    cIP,
+						NetworkID:    netID,
+						PortgroupID:  pgID,
+						NetworkMoRef: gNet.Network,
+						VLANSpec:     vlanSpec,
+						NetworkName:  netName,
+					})
+				}
+			} else if mac != "" {
 				nics = append(nics, domain.NetworkInterfaceRecord{
-					DeviceKey:      card.Key,
-					MacAddress:     mac,
-					IPAddress:      "", // Hardware config does not know guest runtime IP
-					NetworkID:      netID,
-					PortgroupID:    pgID,
-					NetworkMoRef:   netMoRef,
-					PortgroupMoRef: pgMoRef,
+					DeviceKey:    gNet.DeviceConfigId,
+					MacAddress:   mac,
+					IPAddress:    "",
+					NetworkID:    netID,
+					PortgroupID:  pgID,
+					NetworkMoRef: gNet.Network,
+					VLANSpec:     vlanSpec,
+					NetworkName:  netName,
 				})
 			}
 		}

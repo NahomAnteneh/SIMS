@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,10 +15,18 @@ import (
 
 // TopologyItem represents a general topology entity.
 type TopologyItem struct {
-	ID        string `json:"id"`
-	VCenterID string `json:"vcenter_id"`
-	Name      string `json:"name"`
-	MoRef     string `json:"moref,omitempty"`
+	ID            string  `json:"id"`
+	VCenterID     string  `json:"vcenter_id"`
+	Name          string  `json:"name"`
+	MoRef         string  `json:"moref,omitempty"`
+	DatacenterID  *string `json:"datacenter_id,omitempty"`
+	ClusterID     *string `json:"cluster_id,omitempty"`
+	Type          *string `json:"type,omitempty"`
+	CapacityBytes *int64  `json:"capacity_bytes,omitempty"`
+	FreeBytes     *int64  `json:"free_bytes,omitempty"`
+	VMCount       *int64  `json:"vm_count,omitempty"`
+	VlanIDs       *string `json:"vlan_ids,omitempty"`
+	SwitchName    *string `json:"switch_name,omitempty"`
 }
 
 // TopologyListResponse encapsulates lists of topology entities.
@@ -51,7 +60,65 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 			return
 		}
 
-		query := fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE 1=1", table)
+		var query string
+		switch table {
+		case "clusters":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id FROM clusters WHERE 1=1"
+		case "hosts":
+			query = `SELECT 
+				h.id, h.vcenter_id, h.name, h.moref, h.cluster_id, h.datacenter_id,
+				COUNT(DISTINCT vm.id) AS vm_count
+			FROM hosts h
+			LEFT JOIN virtual_machines vm ON vm.host_id = h.id AND vm.deleted_at IS NULL
+			WHERE 1=1`
+		case "datastores":
+			query = `SELECT 
+				ds.id, ds.vcenter_id, ds.name, ds.moref,
+				COALESCE(ds.datacenter_id, (SELECT id FROM datacenters WHERE vcenter_id = ds.vcenter_id LIMIT 1)) AS datacenter_id,
+				ds.type, ds.capacity_bytes, ds.free_bytes,
+				COUNT(DISTINCT vmd.vm_id) AS vm_count
+			FROM datastores ds
+			LEFT JOIN vm_datastores vmd ON ds.id = vmd.datastore_id
+			WHERE 1=1`
+		case "networks":
+			query = `SELECT
+				id, vcenter_id, name, moref, datacenter_id, type, vlan_ids, switch_name, vm_count
+			FROM (
+				SELECT
+					p.id,
+					p.vcenter_id,
+					CASE WHEN p.name = '' THEN p.moref ELSE p.name END AS name,
+					p.moref,
+					COALESCE(ds.datacenter_id, (SELECT id FROM datacenters WHERE vcenter_id = p.vcenter_id LIMIT 1)) AS datacenter_id,
+					'Distributed Virtual Portgroup' AS type,
+					p.vlan_ids::text AS vlan_ids,
+					ds.name AS switch_name,
+					COUNT(DISTINCT vnic.vm_id) AS vm_count
+				FROM portgroups p
+				LEFT JOIN distributed_switches ds ON p.switch_id = ds.id
+				LEFT JOIN vm_network_interfaces vnic ON vnic.portgroup_id = p.id
+				GROUP BY p.id, p.vcenter_id, p.name, p.moref, ds.datacenter_id, ds.name
+				UNION ALL
+				SELECT
+					n.id,
+					n.vcenter_id,
+					CASE WHEN n.name = '' THEN n.moref ELSE n.name END AS name,
+					n.moref,
+					COALESCE(n.datacenter_id, (SELECT id FROM datacenters WHERE vcenter_id = n.vcenter_id LIMIT 1)) AS datacenter_id,
+					'Standard Network' AS type,
+					n.vlan_ids::text AS vlan_ids,
+					NULL AS switch_name,
+					COUNT(DISTINCT vnic.vm_id) AS vm_count
+				FROM networks n
+				LEFT JOIN vm_network_interfaces vnic ON vnic.network_id = n.id
+				WHERE n.moref NOT IN (SELECT moref FROM portgroups WHERE vcenter_id = n.vcenter_id)
+				GROUP BY n.id, n.vcenter_id, n.name, n.moref, n.datacenter_id
+			) combined_networks
+			WHERE 1=1`
+		default:
+			query = fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE 1=1", table)
+		}
+
 		var args []any
 		if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
 			params := make([]string, len(scope.AllowedVCenterIDs))
@@ -59,9 +126,24 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 				args = append(args, vcid)
 				params[i] = fmt.Sprintf("$%d", len(args))
 			}
-			query += fmt.Sprintf(" AND vcenter_id IN (%s)", strings.Join(params, ", "))
+			if table == "datastores" {
+				query += fmt.Sprintf(" AND ds.vcenter_id IN (%s)", strings.Join(params, ", "))
+			} else if table == "hosts" {
+				query += fmt.Sprintf(" AND h.vcenter_id IN (%s)", strings.Join(params, ", "))
+			} else {
+				query += fmt.Sprintf(" AND vcenter_id IN (%s)", strings.Join(params, ", "))
+			}
 		}
-		query += " ORDER BY name ASC LIMIT 100"
+
+		if table == "datastores" {
+			query += " GROUP BY ds.id, ds.vcenter_id, ds.name, ds.moref, ds.datacenter_id, ds.type, ds.capacity_bytes, ds.free_bytes ORDER BY vm_count DESC, name ASC LIMIT 250"
+		} else if table == "hosts" {
+			query += " GROUP BY h.id, h.vcenter_id, h.name, h.moref, h.cluster_id, h.datacenter_id ORDER BY vm_count DESC, h.name ASC LIMIT 250"
+		} else if table == "networks" {
+			query += " ORDER BY vm_count DESC, name ASC LIMIT 250"
+		} else {
+			query += " ORDER BY name ASC LIMIT 250"
+		}
 
 		rows, err := h.pool.Query(r.Context(), query, args...)
 		if err != nil {
@@ -75,17 +157,86 @@ func (h *Handler) handleListTopology(table string) http.HandlerFunc {
 		for rows.Next() {
 			var id, vcenterID uuid.UUID
 			var name, moref string
-			if err := rows.Scan(&id, &vcenterID, &name, &moref); err != nil {
-				h.logger.Error("failed to scan topology item", "error", err)
-				h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
-				return
+			item := TopologyItem{}
+
+			switch table {
+			case "clusters":
+				var dcID *uuid.UUID
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &dcID); err != nil {
+					h.logger.Error("failed to scan cluster item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+			case "hosts":
+				var clID, dcID *uuid.UUID
+				var vmCount int64
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &clID, &dcID, &vmCount); err != nil {
+					h.logger.Error("failed to scan host item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if clID != nil {
+					s := clID.String()
+					item.ClusterID = &s
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+				item.VMCount = &vmCount
+			case "datastores":
+				var dcID *uuid.UUID
+				var dsType string
+				var capBytes, freeBytes int64
+				var vmCount int64
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &dcID, &dsType, &capBytes, &freeBytes, &vmCount); err != nil {
+					h.logger.Error("failed to scan datastore item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+				item.Type = &dsType
+				item.CapacityBytes = &capBytes
+				item.FreeBytes = &freeBytes
+				item.VMCount = &vmCount
+			case "networks":
+				var dcID *uuid.UUID
+				var netType string
+				var vlanIDs, switchName *string
+				var vmCount int64
+				if err := rows.Scan(&id, &vcenterID, &name, &moref, &dcID, &netType, &vlanIDs, &switchName, &vmCount); err != nil {
+					h.logger.Error("failed to scan network item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
+				if dcID != nil {
+					s := dcID.String()
+					item.DatacenterID = &s
+				}
+				item.Type = &netType
+				item.VlanIDs = vlanIDs
+				item.SwitchName = switchName
+				item.VMCount = &vmCount
+			default:
+				if err := rows.Scan(&id, &vcenterID, &name, &moref); err != nil {
+					h.logger.Error("failed to scan topology item", "error", err)
+					h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "scan error", "database_error")
+					return
+				}
 			}
-			items = append(items, TopologyItem{
-				ID:        id.String(),
-				VCenterID: vcenterID.String(),
-				Name:      name,
-				MoRef:     moref,
-			})
+
+			item.ID = id.String()
+			item.VCenterID = vcenterID.String()
+			item.Name = name
+			item.MoRef = moref
+			items = append(items, item)
 		}
 
 		h.writeJSON(w, http.StatusOK, TopologyListResponse{Items: items})
@@ -111,7 +262,65 @@ func (h *Handler) handleGetTopologyByID(table string) http.HandlerFunc {
 			return
 		}
 
-		query := fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE id = $1", table)
+		var query string
+		switch table {
+		case "clusters":
+			query = "SELECT id, vcenter_id, name, moref, datacenter_id FROM clusters WHERE id = $1"
+		case "hosts":
+			query = `SELECT 
+				h.id, h.vcenter_id, h.name, h.moref, h.cluster_id, h.datacenter_id,
+				COUNT(DISTINCT vm.id) AS vm_count
+			FROM hosts h
+			LEFT JOIN virtual_machines vm ON vm.host_id = h.id AND vm.deleted_at IS NULL
+			WHERE h.id = $1`
+		case "datastores":
+			query = `SELECT 
+				ds.id, ds.vcenter_id, ds.name, ds.moref,
+				COALESCE(ds.datacenter_id, (SELECT id FROM datacenters WHERE vcenter_id = ds.vcenter_id LIMIT 1)) AS datacenter_id,
+				ds.type, ds.capacity_bytes, ds.free_bytes,
+				COUNT(DISTINCT vmd.vm_id) AS vm_count
+			FROM datastores ds
+			LEFT JOIN vm_datastores vmd ON ds.id = vmd.datastore_id
+			WHERE ds.id = $1`
+		case "networks":
+			query = `SELECT
+				id, vcenter_id, name, moref, datacenter_id, type, vlan_ids, switch_name, vm_count
+			FROM (
+				SELECT
+					p.id,
+					p.vcenter_id,
+					CASE WHEN p.name = '' THEN p.moref ELSE p.name END AS name,
+					p.moref,
+					COALESCE(ds.datacenter_id, (SELECT id FROM datacenters WHERE vcenter_id = p.vcenter_id LIMIT 1)) AS datacenter_id,
+					'Distributed Virtual Portgroup' AS type,
+					p.vlan_ids::text AS vlan_ids,
+					ds.name AS switch_name,
+					COUNT(DISTINCT vnic.vm_id) AS vm_count
+				FROM portgroups p
+				LEFT JOIN distributed_switches ds ON p.switch_id = ds.id
+				LEFT JOIN vm_network_interfaces vnic ON vnic.portgroup_id = p.id
+				WHERE p.id = $1
+				GROUP BY p.id, p.vcenter_id, p.name, p.moref, ds.datacenter_id, ds.name
+				UNION ALL
+				SELECT
+					n.id,
+					n.vcenter_id,
+					CASE WHEN n.name = '' THEN n.moref ELSE n.name END AS name,
+					n.moref,
+					COALESCE(n.datacenter_id, (SELECT id FROM datacenters WHERE vcenter_id = n.vcenter_id LIMIT 1)) AS datacenter_id,
+					'Standard Network' AS type,
+					n.vlan_ids::text AS vlan_ids,
+					NULL AS switch_name,
+					COUNT(DISTINCT vnic.vm_id) AS vm_count
+				FROM networks n
+				LEFT JOIN vm_network_interfaces vnic ON vnic.network_id = n.id
+				WHERE n.id = $1 AND n.moref NOT IN (SELECT moref FROM portgroups WHERE vcenter_id = n.vcenter_id)
+				GROUP BY n.id, n.vcenter_id, n.name, n.moref, n.datacenter_id
+			) combined_networks WHERE 1=1`
+		default:
+			query = fmt.Sprintf("SELECT id, vcenter_id, name, moref FROM %s WHERE id = $1", table)
+		}
+
 		args := []any{id}
 		if scope != nil && len(scope.AllowedVCenterIDs) > 0 {
 			params := make([]string, len(scope.AllowedVCenterIDs))
@@ -119,12 +328,77 @@ func (h *Handler) handleGetTopologyByID(table string) http.HandlerFunc {
 				args = append(args, vcid)
 				params[i] = fmt.Sprintf("$%d", len(args))
 			}
-			query += fmt.Sprintf(" AND vcenter_id IN (%s)", strings.Join(params, ", "))
+			if table == "datastores" {
+				query += fmt.Sprintf(" AND ds.vcenter_id IN (%s)", strings.Join(params, ", "))
+			} else if table == "hosts" {
+				query += fmt.Sprintf(" AND h.vcenter_id IN (%s)", strings.Join(params, ", "))
+			} else {
+				query += fmt.Sprintf(" AND vcenter_id IN (%s)", strings.Join(params, ", "))
+			}
+		}
+
+		if table == "datastores" {
+			query += " GROUP BY ds.id, ds.vcenter_id, ds.name, ds.moref, ds.datacenter_id, ds.type, ds.capacity_bytes, ds.free_bytes"
+		} else if table == "hosts" {
+			query += " GROUP BY h.id, h.vcenter_id, h.name, h.moref, h.cluster_id, h.datacenter_id"
 		}
 
 		var item TopologyItem
 		var uid, vcid uuid.UUID
-		err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef)
+
+		switch table {
+		case "clusters":
+			var dcID *uuid.UUID
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &dcID)
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+		case "hosts":
+			var clID, dcID *uuid.UUID
+			var vmCount int64
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &clID, &dcID, &vmCount)
+			if clID != nil {
+				s := clID.String()
+				item.ClusterID = &s
+			}
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+			item.VMCount = &vmCount
+		case "datastores":
+			var dcID *uuid.UUID
+			var dsType string
+			var capBytes, freeBytes int64
+			var vmCount int64
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &dcID, &dsType, &capBytes, &freeBytes, &vmCount)
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+			item.Type = &dsType
+			item.CapacityBytes = &capBytes
+			item.FreeBytes = &freeBytes
+			item.VMCount = &vmCount
+		case "networks":
+			var dcID *uuid.UUID
+			var netType string
+			var vlanIDs, switchName *string
+			var vmCount int64
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef, &dcID, &netType, &vlanIDs, &switchName, &vmCount)
+			if dcID != nil {
+				s := dcID.String()
+				item.DatacenterID = &s
+			}
+			item.Type = &netType
+			item.VlanIDs = vlanIDs
+			item.SwitchName = switchName
+			item.VMCount = &vmCount
+		default:
+			err = h.pool.QueryRow(r.Context(), query, args...).Scan(&uid, &vcid, &item.Name, &item.MoRef)
+		}
+
 		if err != nil {
 			h.writeProblem(w, http.StatusNotFound, "Not Found", fmt.Sprintf("%s not found", table), "not_found")
 			return
@@ -314,7 +588,22 @@ func (h *Handler) handleListTopologyVMs(topologyType string) http.HandlerFunc {
 			filter = &search.FilterNode{Op: search.OpEQ, Field: "folder_id", Value: targetID.String()}
 		}
 
-		h.executeSearch(w, r, filter, search.SortSpec{Field: "name", Direction: "asc"}, DefaultPageLimit, "", topologyType+":"+targetID.String())
+		limit := DefaultPageLimit
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			parsed, err := strconv.Atoi(limitStr)
+			if err != nil || parsed <= 0 {
+				h.writeProblem(w, http.StatusBadRequest, "Bad Request", "limit must be a positive integer", "invalid_parameter")
+				return
+			}
+			if parsed > MaxPageLimit {
+				limit = MaxPageLimit
+			} else {
+				limit = parsed
+			}
+		}
+		rawCursor := r.URL.Query().Get("cursor")
+
+		h.executeSearch(w, r, filter, search.SortSpec{Field: "name", Direction: "asc"}, limit, rawCursor, topologyType+":"+targetID.String())
 	}
 }
 

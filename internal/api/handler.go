@@ -14,14 +14,15 @@ import (
 	db "github.com/infrastructure/sims/generated/db"
 	"github.com/infrastructure/sims/internal/auth"
 	"github.com/infrastructure/sims/internal/logging"
+	"github.com/infrastructure/sims/internal/search"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
-	DefaultPageLimit = 20
-	MaxPageLimit     = 100
+	DefaultPageLimit = search.DefaultPageLimit
+	MaxPageLimit     = search.MaxPageLimit
 )
 
 // Handler serves Query API endpoints.
@@ -159,28 +160,30 @@ func (h *Handler) writeProblemWithDetails(w http.ResponseWriter, status int, tit
 
 // VMListItem represents a VM entry in list pagination responses.
 type VMListItem struct {
-	ID              string `json:"id"`
-	VCenterID       string `json:"vcenter_id"`
-	MoRef           string `json:"moref"`
-	InstanceUUID    string `json:"instance_uuid"`
-	BiosUUID        string `json:"bios_uuid,omitempty"`
-	Name            string `json:"name"`
-	PowerState      string `json:"power_state"`
-	ConnectionState string `json:"connection_state"`
-	CPUCores        int32  `json:"cpu_cores"`
-	MemoryMB        int64  `json:"memory_mb"`
-	FolderID        string `json:"folder_id,omitempty"`
-	FolderPath      string `json:"folder_path,omitempty"`
-	HostID          string `json:"host_id,omitempty"`
-	ClusterID       string `json:"cluster_id,omitempty"`
-	DatacenterID    string `json:"datacenter_id,omitempty"`
-	GuestOS         string `json:"guest_os,omitempty"`
-	GuestHostName   string `json:"guest_host_name,omitempty"`
-	GuestIPAddress  string `json:"guest_ip_address,omitempty"`
-	Annotation      string `json:"annotation,omitempty"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
-	FirstSeenAt     string `json:"first_seen_at,omitempty"`
+	ID                      string `json:"id"`
+	VCenterID               string `json:"vcenter_id"`
+	MoRef                   string `json:"moref"`
+	InstanceUUID            string `json:"instance_uuid"`
+	BiosUUID                string `json:"bios_uuid,omitempty"`
+	Name                    string `json:"name"`
+	PowerState              string `json:"power_state"`
+	ConnectionState         string `json:"connection_state"`
+	CPUCores                int32  `json:"cpu_cores"`
+	MemoryMB                int64  `json:"memory_mb"`
+	FolderID                string `json:"folder_id,omitempty"`
+	FolderPath              string `json:"folder_path,omitempty"`
+	HostID                  string `json:"host_id,omitempty"`
+	ClusterID               string `json:"cluster_id,omitempty"`
+	DatacenterID            string `json:"datacenter_id,omitempty"`
+	GuestOS                 string `json:"guest_os,omitempty"`
+	GuestHostName           string `json:"guest_host_name,omitempty"`
+	GuestIPAddress          string `json:"guest_ip_address,omitempty"`
+	Annotation              string `json:"annotation,omitempty"`
+	CommittedStorageBytes   int64  `json:"committed_storage_bytes"`
+	ProvisionedStorageBytes int64  `json:"provisioned_storage_bytes"`
+	CreatedAt               string `json:"created_at"`
+	UpdatedAt               string `json:"updated_at"`
+	FirstSeenAt             string `json:"first_seen_at,omitempty"`
 }
 
 // PaginationMeta contains keyset pagination metadata.
@@ -216,7 +219,7 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Parse optional vcenter_id
-	var vcenterID pgtype.UUID
+	var vcenterUUID *uuid.UUID
 	vcenterIDStr := q.Get("vcenter_id")
 	if vcenterIDStr != "" {
 		parsedUUID, err := uuid.Parse(vcenterIDStr)
@@ -224,32 +227,20 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusBadRequest, "Bad Request", "invalid vcenter_id format, expected UUID")
 			return
 		}
-		vcenterID = pgtype.UUID{Bytes: parsedUUID, Valid: true}
+		vcenterUUID = &parsedUUID
 	}
 
 	nameFilter := strings.TrimSpace(q.Get("name"))
 
 	// Enforce tenant boundary scoping
+	var scope *search.ScopeConstraint
 	callerID, hasAuth := auth.FromContext(r.Context())
 	if hasAuth && callerID != nil {
-		if vcenterID.Valid {
-			vcUUID, _ := uuid.FromBytes(vcenterID.Bytes[:])
-			if !callerID.CanAccessVCenter(vcUUID) {
-				h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested vCenter denied", "forbidden")
-				return
-			}
-		} else if !callerID.HasRole(auth.RoleAdmin) {
-			if len(callerID.AllowedVCenterIDs) == 0 {
-				h.writeJSON(w, http.StatusOK, ListVMsResponse{
-					Items:      []VMListItem{},
-					Pagination: PaginationMeta{Limit: limit, HasMore: false},
-				})
-				return
-			}
-			if len(callerID.AllowedVCenterIDs) == 1 && len(callerID.AllowedFolderPaths) == 0 {
-				vcenterID = pgtype.UUID{Bytes: callerID.AllowedVCenterIDs[0], Valid: true}
-			}
+		if vcenterUUID != nil && !callerID.CanAccessVCenter(*vcenterUUID) {
+			h.writeProblem(w, http.StatusForbidden, "Forbidden", "access to requested vCenter denied", "forbidden")
+			return
 		}
+		scope = callerID.ToScopeConstraint()
 	}
 
 	// 3. Parse opaque cursor
@@ -260,66 +251,83 @@ func (h *Handler) handleListVMs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch limit + 1 to detect whether a next page exists
-	fetchLimit := int32(limit + 1)
-
-	var vms []db.VirtualMachine
-	if vcenterID.Valid {
-		if cursor == nil {
-			vms, err = h.queries.ListVMsByVCenterFirstPage(ctx, db.ListVMsByVCenterFirstPageParams{
-				VcenterID:  vcenterID,
-				NameFilter: nameFilter,
-				PageLimit:  fetchLimit,
-			})
-		} else {
-			cursorUUID, parseErr := uuid.Parse(cursor.ID)
-			if parseErr != nil {
-				h.writeError(w, http.StatusBadRequest, "Bad Request", "malformed cursor ID")
-				return
-			}
-			vms, err = h.queries.ListVMsByVCenterNextPage(ctx, db.ListVMsByVCenterNextPageParams{
-				VcenterID:  vcenterID,
-				NameFilter: nameFilter,
-				CursorName: cursor.Name,
-				CursorID:   pgtype.UUID{Bytes: cursorUUID, Valid: true},
-				PageLimit:  fetchLimit,
-			})
-		}
-	} else {
-		if cursor == nil {
-			vms, err = h.queries.ListVMsFirstPage(ctx, db.ListVMsFirstPageParams{
-				NameFilter: nameFilter,
-				PageLimit:  fetchLimit,
-			})
-		} else {
-			cursorUUID, parseErr := uuid.Parse(cursor.ID)
-			if parseErr != nil {
-				h.writeError(w, http.StatusBadRequest, "Bad Request", "malformed cursor ID")
-				return
-			}
-			vms, err = h.queries.ListVMsNextPage(ctx, db.ListVMsNextPageParams{
-				NameFilter: nameFilter,
-				CursorName: cursor.Name,
-				CursorID:   pgtype.UUID{Bytes: cursorUUID, Valid: true},
-				PageLimit:  fetchLimit,
-			})
+	var cursorValues *search.CursorValues
+	if cursor != nil {
+		cursorValues = &search.CursorValues{
+			SortField: "name",
+			LastValue: cursor.Name,
+			LastID:    cursor.ID,
 		}
 	}
 
+	var filterNodes []*search.FilterNode
+	if vcenterUUID != nil {
+		filterNodes = append(filterNodes, &search.FilterNode{
+			Op:    search.OpEQ,
+			Field: "vcenter_id",
+			Value: vcenterUUID.String(),
+		})
+	}
+	if nameFilter != "" {
+		filterNodes = append(filterNodes, &search.FilterNode{
+			Op:    search.OpContains,
+			Field: "name",
+			Value: nameFilter,
+		})
+	}
+
+	var rootFilter *search.FilterNode
+	if len(filterNodes) == 1 {
+		rootFilter = filterNodes[0]
+	} else if len(filterNodes) > 1 {
+		rootFilter = &search.FilterNode{
+			Op:       search.OpAnd,
+			Operands: filterNodes,
+		}
+	}
+
+	opts := search.CompileOptions{
+		Scope:  scope,
+		Sort:   search.SortSpec{Field: "name", Direction: "asc"},
+		Cursor: cursorValues,
+		Limit:  limit + 1,
+	}
+
+	compiled, err := search.CompileVMQuery(rootFilter, opts)
+	if err != nil {
+		h.logger.Error("failed to compile list vms query", "error", err)
+		h.writeError(w, http.StatusBadRequest, "Bad Request", err.Error())
+		return
+	}
+
+	rows, err := h.pool.Query(ctx, compiled.SQL, compiled.Args...)
 	if err != nil {
 		h.logger.Error("failed to list virtual machines", slog.String("error", err.Error()))
 		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "database query failed")
 		return
 	}
+	defer rows.Close()
 
-	hasMore := len(vms) > limit
-	if hasMore {
-		vms = vms[:limit]
+	items := make([]VMListItem, 0, limit)
+	for rows.Next() {
+		item, err := scanVMListItemDirect(rows)
+		if err != nil {
+			h.logger.Error("failed to scan VM row", slog.String("error", err.Error()))
+			h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "failed to scan VM results")
+			return
+		}
+		items = append(items, item)
 	}
 
-	items := make([]VMListItem, len(vms))
-	for i, vm := range vms {
-		items[i] = mapDBVMToListItem(vm)
+	if err := rows.Err(); err != nil {
+		h.logger.Error("row iteration error", slog.String("error", err.Error()))
+		h.writeError(w, http.StatusInternalServerError, "Internal Server Error", "row iteration error")
+		return
+	}
+
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
 	}
 
 	nextCursor := ""
@@ -376,6 +384,8 @@ type NICAttachment struct {
 	IPAddress   string `json:"ip_address,omitempty"`
 	NetworkID   string `json:"network_id,omitempty"`
 	PortgroupID string `json:"portgroup_id,omitempty"`
+	NetworkName string `json:"network_name,omitempty"`
+	VlanIDs     string `json:"vlan_ids,omitempty"`
 }
 
 func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
@@ -461,6 +471,27 @@ func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
 		if nic.IpAddress != nil {
 			ip = nic.IpAddress.String()
 		}
+
+		var vlanStr string
+		if len(nic.VlanIds) > 0 {
+			var parts []string
+			for _, r := range nic.VlanIds {
+				if r.Valid && r.Lower.Valid && r.Upper.Valid {
+					low := r.Lower.Int32
+					up := r.Upper.Int32
+					if r.LowerType == pgtype.Inclusive && r.UpperType == pgtype.Exclusive {
+						up = up - 1
+					}
+					if low == up {
+						parts = append(parts, fmt.Sprintf("%d", low))
+					} else {
+						parts = append(parts, fmt.Sprintf("%d-%d", low, up))
+					}
+				}
+			}
+			vlanStr = strings.Join(parts, ", ")
+		}
+
 		nicAttachments[i] = NICAttachment{
 			ID:          formatUUID(nic.ID),
 			DeviceKey:   nic.DeviceKey,
@@ -468,6 +499,8 @@ func (h *Handler) handleGetVM(w http.ResponseWriter, r *http.Request) {
 			IPAddress:   ip,
 			NetworkID:   formatUUID(nic.NetworkID),
 			PortgroupID: formatUUID(nic.PortgroupID),
+			NetworkName: nic.NetworkName,
+			VlanIDs:     vlanStr,
 		}
 	}
 
@@ -522,27 +555,29 @@ func mapDBVMToListItem(vm db.VirtualMachine) VMListItem {
 	}
 
 	return VMListItem{
-		ID:              formatUUID(vm.ID),
-		VCenterID:       formatUUID(vm.VcenterID),
-		MoRef:           vm.Moref,
-		InstanceUUID:    vm.InstanceUuid,
-		BiosUUID:        vm.BiosUuid.String,
-		Name:            vm.Name,
-		PowerState:      vm.PowerState,
-		ConnectionState: vm.ConnectionState,
-		CPUCores:        vm.CpuCores,
-		MemoryMB:        vm.MemoryMb,
-		FolderID:        formatUUID(vm.FolderID),
-		FolderPath:      vm.FolderPath.String,
-		HostID:          formatUUID(vm.HostID),
-		ClusterID:       formatUUID(vm.ClusterID),
-		DatacenterID:    formatUUID(vm.DatacenterID),
-		GuestOS:         vm.GuestOs,
-		GuestHostName:   vm.GuestHostName,
-		GuestIPAddress:  ip,
-		Annotation:      vm.Annotation,
-		CreatedAt:       formatTime(vm.CreatedAt.Time),
-		UpdatedAt:       formatTime(vm.UpdatedAt.Time),
+		ID:                      formatUUID(vm.ID),
+		VCenterID:               formatUUID(vm.VcenterID),
+		MoRef:                   vm.Moref,
+		InstanceUUID:            vm.InstanceUuid,
+		BiosUUID:                vm.BiosUuid.String,
+		Name:                    vm.Name,
+		PowerState:              vm.PowerState,
+		ConnectionState:         vm.ConnectionState,
+		CPUCores:                vm.CpuCores,
+		MemoryMB:                vm.MemoryMb,
+		FolderID:                formatUUID(vm.FolderID),
+		FolderPath:              vm.FolderPath.String,
+		HostID:                  formatUUID(vm.HostID),
+		ClusterID:               formatUUID(vm.ClusterID),
+		DatacenterID:            formatUUID(vm.DatacenterID),
+		GuestOS:                 vm.GuestOs,
+		GuestHostName:           vm.GuestHostName,
+		GuestIPAddress:          ip,
+		Annotation:              vm.Annotation,
+		CommittedStorageBytes:   vm.CommittedStorageBytes,
+		ProvisionedStorageBytes: vm.ProvisionedStorageBytes,
+		CreatedAt:               formatTime(vm.CreatedAt.Time),
+		UpdatedAt:               formatTime(vm.UpdatedAt.Time),
 	}
 }
 

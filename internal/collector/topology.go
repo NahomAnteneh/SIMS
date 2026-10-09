@@ -6,13 +6,22 @@ import (
 
 // TopologyNode represents a resolved topology entity in the memory cache.
 type TopologyNode struct {
-	ID        string
-	VCenterID string
-	MoRef     string
-	Name      string
-	ParentID  string
-	Path      string
-	VLANSpec  string
+	ID          string
+	VCenterID   string
+	MoRef       string
+	Name        string
+	ParentID    string
+	Path        string
+	VLANSpec    string
+	SwitchMoRef string
+}
+
+// DatastoreInfo contains runtime and sizing metadata for a datastore.
+type DatastoreInfo struct {
+	Capacity   int64
+	FreeSpace  int64
+	Type       string
+	Accessible bool
 }
 
 // TopologySnapshot is an immutable cache of vSphere topology objects and ID mappings.
@@ -32,10 +41,19 @@ type TopologySnapshot struct {
 	Hosts       map[string]TopologyNode
 	Clusters    map[string]TopologyNode
 
+	// Datastore runtime metadata
+	DatastoreInfoByMoRef map[string]DatastoreInfo
+
 	// Fast ID resolutions for VM normalization
 	DatastoreIDByMoRef  map[string]string
+	DatastoreByName     map[string]TopologyNode
+	DatastoreIDByName   map[string]string
 	NetworkIDByMoRef    map[string]string
 	PortgroupIDByMoRef  map[string]string
+	NetworkIDByName     map[string]string
+	PortgroupIDByName   map[string]string
+	NetworkByName       map[string]TopologyNode
+	PortgroupByName     map[string]TopologyNode
 	FolderIDByMoRef     map[string]string
 	FolderPathByMoRef   map[string]string
 	HostIDByMoRef       map[string]string
@@ -49,25 +67,32 @@ type TopologySnapshot struct {
 // NewEmptySnapshot returns an empty, initialized TopologySnapshot.
 func NewEmptySnapshot(vcenterID string) *TopologySnapshot {
 	return &TopologySnapshot{
-		VCenterID:           vcenterID,
-		ByMoRef:             make(map[string]TopologyNode),
-		ByID:                make(map[string]TopologyNode),
-		Datacenters:         make(map[string]TopologyNode),
-		Datastores:          make(map[string]TopologyNode),
-		Networks:            make(map[string]TopologyNode),
-		Portgroups:          make(map[string]TopologyNode),
-		Folders:             make(map[string]TopologyNode),
-		Hosts:               make(map[string]TopologyNode),
-		Clusters:            make(map[string]TopologyNode),
-		DatastoreIDByMoRef:  make(map[string]string),
-		NetworkIDByMoRef:    make(map[string]string),
-		PortgroupIDByMoRef:  make(map[string]string),
-		FolderIDByMoRef:     make(map[string]string),
-		FolderPathByMoRef:   make(map[string]string),
-		HostIDByMoRef:       make(map[string]string),
-		ClusterIDByMoRef:    make(map[string]string),
-		DatacenterIDByMoRef: make(map[string]string),
-		CustomFieldsByKey:   make(map[int32]string),
+		VCenterID:            vcenterID,
+		ByMoRef:              make(map[string]TopologyNode),
+		ByID:                 make(map[string]TopologyNode),
+		Datacenters:          make(map[string]TopologyNode),
+		Datastores:           make(map[string]TopologyNode),
+		Networks:             make(map[string]TopologyNode),
+		Portgroups:           make(map[string]TopologyNode),
+		Folders:              make(map[string]TopologyNode),
+		Hosts:                make(map[string]TopologyNode),
+		Clusters:             make(map[string]TopologyNode),
+		DatastoreInfoByMoRef: make(map[string]DatastoreInfo),
+		DatastoreIDByMoRef:   make(map[string]string),
+		DatastoreByName:      make(map[string]TopologyNode),
+		DatastoreIDByName:    make(map[string]string),
+		NetworkIDByMoRef:     make(map[string]string),
+		PortgroupIDByMoRef:   make(map[string]string),
+		NetworkIDByName:      make(map[string]string),
+		PortgroupIDByName:    make(map[string]string),
+		NetworkByName:        make(map[string]TopologyNode),
+		PortgroupByName:      make(map[string]TopologyNode),
+		FolderIDByMoRef:      make(map[string]string),
+		FolderPathByMoRef:    make(map[string]string),
+		HostIDByMoRef:        make(map[string]string),
+		ClusterIDByMoRef:     make(map[string]string),
+		DatacenterIDByMoRef:  make(map[string]string),
+		CustomFieldsByKey:    make(map[int32]string),
 	}
 }
 

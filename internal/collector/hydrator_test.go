@@ -86,6 +86,7 @@ func TestHydrateInventoryAndContainerViewLifecycle(t *testing.T) {
 	if len(totalVMs) < 4 {
 		t.Errorf("expected at least 4 VMs from VPX model, got %d", len(totalVMs))
 	}
+	t.Logf("VM[0] %s NICs count: %d, NICs: %+v", totalVMs[0].Name, len(totalVMs[0].NetworkInterfaces), totalVMs[0].NetworkInterfaces)
 	if batchCount < 2 {
 		t.Errorf("expected at least 2 pages due to MaxObjects=2, got %d batches", batchCount)
 	}

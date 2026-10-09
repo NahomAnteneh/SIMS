@@ -43,6 +43,7 @@ type CreateUserRequest struct {
 // UpdateUserRequest allows updating an existing user's credentials or role.
 type UpdateUserRequest struct {
 	Password *string `json:"password,omitempty"`
+	Role     *string `json:"role,omitempty"`
 }
 
 // UserResponse represents user profile data without exposing sensitive credentials.
@@ -157,12 +158,17 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	normRole := strings.ToLower(strings.TrimSpace(req.Role))
-	if normRole == "" || normRole == "user" || normRole == "viewer" {
+	switch normRole {
+	case "", "user", "viewer":
 		req.Role = string(auth.RoleUser)
-	} else if normRole == "admin" || normRole == "inventory-admin" {
+	case "operator":
+		req.Role = "operator"
+	case "admin", "inventory-admin":
 		req.Role = string(auth.RoleAdmin)
-	} else {
-		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be either 'admin' or 'user'", "invalid_role")
+	case "suspended":
+		req.Role = "suspended"
+	default:
+		h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be one of: 'admin', 'operator', 'user', or 'suspended'", "invalid_role")
 		return
 	}
 
@@ -389,6 +395,43 @@ func (h *Handler) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "failed to update password", "internal_error")
+			return
+		}
+	}
+
+	if req.Role != nil {
+		normRole := strings.ToLower(strings.TrimSpace(*req.Role))
+		var targetRole string
+		switch normRole {
+		case "admin", "inventory-admin":
+			targetRole = "admin"
+		case "operator":
+			targetRole = "operator"
+		case "viewer", "user":
+			targetRole = "user"
+		case "suspended":
+			targetRole = "suspended"
+		default:
+			h.writeProblem(w, http.StatusBadRequest, "Bad Request", "role must be one of: 'admin', 'operator', 'user', or 'suspended'", "invalid_role")
+			return
+		}
+
+		// Prevent admin from modifying their own role or suspending themselves
+		if callerID, ok := auth.FromContext(r.Context()); ok && callerID != nil {
+			existing, err := h.queries.GetUserByID(r.Context(), pgtype.UUID{Bytes: parsedID, Valid: true})
+			if err == nil && existing.Username == callerID.Subject && targetRole != existing.Role {
+				h.writeProblem(w, http.StatusBadRequest, "Bad Request", "cannot modify own role or suspend own account", "cannot_modify_self")
+				return
+			}
+		}
+
+		err = h.queries.UpdateUserRole(r.Context(), db.UpdateUserRoleParams{
+			ID:   pgtype.UUID{Bytes: parsedID, Valid: true},
+			Role: targetRole,
+		})
+		if err != nil {
+			h.logger.Error("failed to update user role", slog.String("error", err.Error()))
+			h.writeProblem(w, http.StatusInternalServerError, "Internal Server Error", "failed to update user role", "internal_error")
 			return
 		}
 	}

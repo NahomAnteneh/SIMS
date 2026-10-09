@@ -127,11 +127,53 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 		}
 	}
 
-	// Extract VLAN specifications from DistributedVirtualPortgroup
+	// Retrieve Datacenter entities to capture directly attached datastore and network lists
+	var datacenters []mo.Datacenter
+	if err := cv.Retrieve(ctx, []string{"Datacenter"}, []string{"name", "datastore", "network"}, &datacenters); err == nil {
+		for _, dc := range datacenters {
+			dcRef := dc.Reference().Value
+			for _, dsRef := range dc.Datastore {
+				snap.DatacenterIDByMoRef[dsRef.Value] = dcRef
+			}
+			for _, netRef := range dc.Network {
+				snap.DatacenterIDByMoRef[netRef.Value] = dcRef
+			}
+		}
+	}
+
+	// Retrieve Datastores with summary sizing information and true names
+	var datastores []mo.Datastore
+	if err := cv.Retrieve(ctx, []string{"Datastore"}, []string{"name", "parent", "summary"}, &datastores); err == nil {
+		for _, ds := range datastores {
+			mRef := ds.Reference().Value
+			node := snap.Datastores[mRef]
+			if ds.Name != "" {
+				node.Name = ds.Name
+				snap.DatastoreByName[ds.Name] = node
+			}
+			snap.Datastores[mRef] = node
+			snap.ByMoRef[mRef] = node
+			snap.DatastoreInfoByMoRef[mRef] = DatastoreInfo{
+				Capacity:   ds.Summary.Capacity,
+				FreeSpace:  ds.Summary.FreeSpace,
+				Type:       ds.Summary.Type,
+				Accessible: ds.Summary.Accessible,
+			}
+		}
+	}
+
+	// Extract VLAN specifications, true names, and switch references from DistributedVirtualPortgroup
 	var dvpgs []mo.DistributedVirtualPortgroup
-	if err := cv.Retrieve(ctx, []string{"DistributedVirtualPortgroup"}, []string{"config.defaultPortConfig"}, &dvpgs); err == nil {
+	if err := cv.Retrieve(ctx, []string{"DistributedVirtualPortgroup"}, []string{"name", "config.defaultPortConfig", "config.distributedVirtualSwitch"}, &dvpgs); err == nil {
 		for _, dvpg := range dvpgs {
 			mRef := dvpg.Reference().Value
+			pgNode := snap.Portgroups[mRef]
+			if dvpg.Name != "" {
+				pgNode.Name = dvpg.Name
+			}
+			if dvpg.Config.DistributedVirtualSwitch != nil {
+				pgNode.SwitchMoRef = dvpg.Config.DistributedVirtualSwitch.Value
+			}
 			var vlanSpec string
 			if setting, ok := dvpg.Config.DefaultPortConfig.(*types.VMwareDVSPortSetting); ok && setting != nil && setting.Vlan != nil {
 				switch vs := setting.Vlan.(type) {
@@ -156,11 +198,47 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 				}
 			}
 			if vlanSpec != "" {
-				if pgNode, ok := snap.Portgroups[mRef]; ok {
-					pgNode.VLANSpec = vlanSpec
-					snap.Portgroups[mRef] = pgNode
-					snap.ByMoRef[mRef] = pgNode
-				}
+				pgNode.VLANSpec = vlanSpec
+			}
+			snap.Portgroups[mRef] = pgNode
+			snap.ByMoRef[mRef] = pgNode
+			if pgNode.Name != "" {
+				snap.PortgroupByName[pgNode.Name] = pgNode
+			}
+		}
+	}
+
+	// Retrieve Distributed Virtual Switches with true names
+	var switches []mo.VmwareDistributedVirtualSwitch
+	if err := cv.Retrieve(ctx, []string{"VmwareDistributedVirtualSwitch", "DistributedVirtualSwitch"}, []string{"name", "parent"}, &switches); err == nil {
+		for _, sw := range switches {
+			mRef := sw.Reference().Value
+			node := snap.ByMoRef[mRef]
+			node.VCenterID = vcenterID
+			node.MoRef = mRef
+			if sw.Name != "" {
+				node.Name = sw.Name
+			}
+			if sw.Parent != nil {
+				node.ParentID = sw.Parent.Value
+			}
+			snap.ByMoRef[mRef] = node
+		}
+	}
+
+	// Retrieve Standard Networks with true names
+	var networks []mo.Network
+	if err := cv.Retrieve(ctx, []string{"Network"}, []string{"name"}, &networks); err == nil {
+		for _, net := range networks {
+			mRef := net.Reference().Value
+			netNode := snap.Networks[mRef]
+			if net.Name != "" {
+				netNode.Name = net.Name
+			}
+			snap.Networks[mRef] = netNode
+			snap.ByMoRef[mRef] = netNode
+			if netNode.Name != "" {
+				snap.NetworkByName[netNode.Name] = netNode
 			}
 		}
 	}
@@ -183,6 +261,7 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 								netNode.VLANSpec = vlanSpec
 								snap.Networks[mRef] = netNode
 								snap.ByMoRef[mRef] = netNode
+								snap.NetworkByName[netNode.Name] = netNode
 							}
 						}
 						for mRef, pgNode := range snap.Portgroups {
@@ -190,10 +269,35 @@ func (h *Hydrator) HydrateTopology(ctx context.Context, vcenterID string) (*Topo
 								pgNode.VLANSpec = vlanSpec
 								snap.Portgroups[mRef] = pgNode
 								snap.ByMoRef[mRef] = pgNode
+								snap.PortgroupByName[pgNode.Name] = pgNode
 							}
 						}
 					}
 				}
+			}
+		}
+	}
+
+	// Fallback Datacenter resolution: if vCenter has only 1 datacenter, ensure all entities link to it
+	if len(snap.Datacenters) == 1 {
+		var singleDCMoRef string
+		for dcMoRef := range snap.Datacenters {
+			singleDCMoRef = dcMoRef
+			break
+		}
+		for mRef := range snap.Datastores {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleDCMoRef
+			}
+		}
+		for mRef := range snap.Networks {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleDCMoRef
+			}
+		}
+		for mRef := range snap.Portgroups {
+			if snap.DatacenterIDByMoRef[mRef] == "" {
+				snap.DatacenterIDByMoRef[mRef] = singleDCMoRef
 			}
 		}
 	}
@@ -311,7 +415,9 @@ func (h *Hydrator) HydrateInventory(
 			"name",
 			"summary.config",
 			"summary.runtime",
+			"summary.storage",
 			"config",
+			"config.hardware.device",
 			"guest",
 			"runtime",
 			"parent",

@@ -1,0 +1,95 @@
+"use client";
+
+import React, { useEffect, useState, useMemo } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  BackgroundVariant,
+  type Node,
+  type Edge,
+  type NodeTypes,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+
+import { simsApi } from "@/lib/api/client";
+import { transformInfraToFlow } from "@/lib/transformers/infraToFlow";
+import { CustomInfraNode } from "@/components/ui/nodes/DatacenterNode";
+
+export default function InfraCanvas() {
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [loading, setLoading] = useState(true);
+
+  const nodeTypes: NodeTypes = useMemo(() => ({ infraNode: CustomInfraNode as any }), []);
+
+  useEffect(() => {
+    async function loadCanvasData() {
+      try {
+        setLoading(true);
+
+        const [datacenters, clusters, hosts] = await Promise.all([
+          simsApi.listDatacenters(),
+          simsApi.listClusters(),
+          simsApi.listHosts(),
+        ]);
+
+        // Transform REST records into calculated Node/Edge trees
+        const { nodes: flowNodes, edges: flowEdges } = transformInfraToFlow({
+          datacenters,
+          clusters,
+          hosts,
+        });
+
+        setNodes(flowNodes);
+        setEdges(flowEdges);
+      } catch (error) {
+        console.error("Error loading infrastructure canvas data:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadCanvasData();
+  }, [setNodes, setEdges]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-none flex items-center justify-center text-zinc-500 text-sm font-mono">
+        Building Infrastructure Diagram...
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full min-h-[calc(100vh-7rem)] bg-[#121110] rounded-none overflow-hidden border border-zinc-800/80 shadow-2xl">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-zinc-900/40 via-[#121110] to-[#0a0a09] pointer-events-none z-10" />
+
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1.5}
+          color="#33312e"
+        />
+        <Controls className="!bg-[#1c1b1a] !border-zinc-800 [&>button]:!bg-[#1c1b1a] [&>button]:!border-zinc-800 [&>button]:!text-zinc-300" />
+        <MiniMap
+          nodeColor="#27272a"
+          maskColor="rgba(18, 17, 16, 0.7)"
+          className="!bg-[#1c1b1a] !border-zinc-800 rounded-none overflow-hidden"
+        />
+      </ReactFlow>
+    </div>
+  );
+}
