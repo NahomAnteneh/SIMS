@@ -83,6 +83,11 @@ echo "--> [3/8] Configuring PostgreSQL database and single user (${DB_USER})..."
 systemctl start postgresql
 systemctl enable postgresql
 
+if [ "${CLEAN_DB:-false}" = "true" ]; then
+  echo "    CLEAN_DB=true detected: dropping existing database ${DB_NAME} for clean install..."
+  sudo -u postgres psql -c "DROP DATABASE IF EXISTS ${DB_NAME};"
+fi
+
 sudo -u postgres psql -v ON_ERROR_STOP=1 <<EOF
 -- Create Database
 SELECT 'CREATE DATABASE ${DB_NAME}' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
@@ -104,10 +109,66 @@ BEGIN
 END
 \$\$;
 
+-- Grant database and schema privileges
 GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO "${DB_USER}";
 GRANT ALL ON SCHEMA public TO "${DB_USER}";
 ALTER SCHEMA public OWNER TO "${DB_USER}";
 ALTER DATABASE ${DB_NAME} OWNER TO "${DB_USER}";
+
+-- Reassign ownership of any existing tables (e.g. goose_db_version) from legacy roles to DB_USER
+DO \$\$
+DECLARE
+  tbl text;
+  seq text;
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'migration_owner') AND '${DB_USER}' <> 'migration_owner' THEN
+    BEGIN
+      EXECUTE format('REASSIGN OWNED BY migration_owner TO %I', '${DB_USER}');
+      EXECUTE 'DROP OWNED BY migration_owner';
+      EXECUTE 'DROP ROLE migration_owner';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'collector_rw') AND '${DB_USER}' <> 'collector_rw' THEN
+    BEGIN
+      EXECUTE format('REASSIGN OWNED BY collector_rw TO %I', '${DB_USER}');
+      EXECUTE 'DROP OWNED BY collector_rw';
+      EXECUTE 'DROP ROLE collector_rw';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'query_ro') AND '${DB_USER}' <> 'query_ro' THEN
+    BEGIN
+      EXECUTE format('REASSIGN OWNED BY query_ro TO %I', '${DB_USER}');
+      EXECUTE 'DROP OWNED BY query_ro';
+      EXECUTE 'DROP ROLE query_ro';
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+  END IF;
+
+  -- Ensure DB_USER owns and has full rights on all tables in public schema
+  FOR tbl IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO %I', tbl, '${DB_USER}');
+  END LOOP;
+  FOR seq IN SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public' LOOP
+    EXECUTE format('ALTER SEQUENCE public.%I OWNER TO %I', seq, '${DB_USER}');
+  END LOOP;
+  FOR tbl IN SELECT table_name FROM information_schema.views WHERE table_schema = 'public' LOOP
+    EXECUTE format('ALTER VIEW public.%I OWNER TO %I', tbl, '${DB_USER}');
+  END LOOP;
+END
+\$\$;
+
+-- Grant full privileges on all existing and future tables, sequences, and routines
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO "${DB_USER}";
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO "${DB_USER}";
+GRANT ALL PRIVILEGES ON ALL ROUTINES IN SCHEMA public TO "${DB_USER}";
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "${DB_USER}";
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "${DB_USER}";
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO "${DB_USER}";
 EOF
 
 # 4. Generate Production Configuration Files

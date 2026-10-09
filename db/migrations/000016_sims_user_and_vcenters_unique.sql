@@ -3,7 +3,7 @@
 DO $$
 BEGIN
     IF EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'sims') THEN
-        EXECUTE 'GRANT CONNECT ON DATABASE sims TO sims';
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO sims', current_database());
         EXECUTE 'GRANT USAGE, CREATE ON SCHEMA public TO sims';
         EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sims';
         EXECUTE 'GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sims';
