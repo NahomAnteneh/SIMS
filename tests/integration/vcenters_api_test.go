@@ -290,6 +290,13 @@ func TestVCentersAPI_FullLifecycle(t *testing.T) {
 		if rec.Code != http.StatusAccepted {
 			t.Fatalf("expected 202 Accepted, got %d: %s", rec.Code, rec.Body.String())
 		}
+		var resp map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("expected valid JSON response, got: %s", rec.Body.String())
+		}
+		if resp["message"] == "" {
+			t.Fatalf("expected non-empty message in response, got: %v", resp)
+		}
 	})
 
 	// 9. DELETE /v1/vcenters/{id} (Decommission and tombstone inventory)

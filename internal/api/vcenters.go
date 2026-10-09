@@ -741,7 +741,9 @@ func (h *Handler) handleResyncVCenter(w http.ResponseWriter, r *http.Request) {
 	})
 	h.notifyVCenterEvent(r.Context(), idStr, "resync")
 
-	w.WriteHeader(http.StatusAccepted)
+	h.writeJSON(w, http.StatusAccepted, map[string]string{
+		"message": "PropertyCollector resync initiated successfully",
+	})
 }
 
 func uuidFromPg(u pgtype.UUID) string {
