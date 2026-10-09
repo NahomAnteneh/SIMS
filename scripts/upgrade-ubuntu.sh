@@ -104,7 +104,9 @@ UPGRADE_HEALTHY=false
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   if curl -sf http://127.0.0.1:8080/readyz >/dev/null 2>&1 && \
-     curl -sf http://127.0.0.1:8081/readyz >/dev/null 2>&1; then
+     curl -sf http://127.0.0.1:8081/readyz >/dev/null 2>&1 && \
+     curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:8082/ | grep -q "^[23]" && \
+     curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1/ | grep -q "^[23]"; then
     UPGRADE_HEALTHY=true
     break
   fi

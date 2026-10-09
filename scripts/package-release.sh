@@ -38,7 +38,7 @@ echo "--> Building Next.js Web Console (standalone)..."
 )
 
 echo "--> Assembling standalone web distribution..."
-cp -r "${REPO_ROOT}/web/.next/standalone"/* "${STAGE_DIR}/web/"
+cp -r "${REPO_ROOT}/web/.next/standalone/." "${STAGE_DIR}/web/"
 mkdir -p "${STAGE_DIR}/web/.next"
 cp -r "${REPO_ROOT}/web/.next/static" "${STAGE_DIR}/web/.next/static"
 if [ -d "${REPO_ROOT}/web/public" ]; then

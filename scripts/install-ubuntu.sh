@@ -231,7 +231,7 @@ else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
   if [ -d "${REPO_ROOT}/dist/sims-v${VERSION}" ]; then
-    cp -r "${REPO_ROOT}/dist/sims-v${VERSION}"/* "${TARGET_DIR}/"
+    cp -r "${REPO_ROOT}/dist/sims-v${VERSION}/." "${TARGET_DIR}/"
   else
     echo "ERROR: Release artifacts not found. Please provide release tarball or run ./scripts/package-release.sh first." >&2
     exit 1
@@ -269,13 +269,15 @@ systemctl restart nginx
 echo "--> [8/8] Verifying health and readiness probes..."
 sleep 3
 
-MAX_RETRIES=10
+MAX_RETRIES=15
 RETRY_COUNT=0
 HEALTHY=false
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
   if curl -sf http://127.0.0.1:8080/readyz >/dev/null 2>&1 && \
-     curl -sf http://127.0.0.1:8081/readyz >/dev/null 2>&1; then
+     curl -sf http://127.0.0.1:8081/readyz >/dev/null 2>&1 && \
+     curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1:8082/ | grep -q "^[23]" && \
+     curl -sf -o /dev/null -w "%{http_code}" http://127.0.0.1/ | grep -q "^[23]"; then
     HEALTHY=true
     break
   fi
